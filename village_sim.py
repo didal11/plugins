@@ -54,6 +54,7 @@ from editable_data import (
     load_job_defs,
     load_monster_templates,
     load_npc_templates,
+    load_races,
     load_sim_settings,
 )
 
@@ -306,7 +307,9 @@ class VillageGame:
         ensure_data_files()
         loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings, loaded_items, self.entities)
+        self.races = load_races()
+        self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name", "")): r for r in self.races if isinstance(r, dict)}
+        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -495,6 +498,18 @@ class VillageGame:
             wx, wy = tile_to_world_px_center(tx, ty)
             max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))) + int(race_cfg.get("hp_bonus", 0)))
             hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
+            tr = Traits(
+                name=nm,
+                race=race,
+                gender=str(t.get("gender", "기타")),
+                age=int(t.get("age", self.rng.randint(18, 58))),
+                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
+                race_str_bonus=int(race_cfg.get("str_bonus", 0)),
+                race_agi_bonus=int(race_cfg.get("agi_bonus", 0)),
+                race_hp_bonus=int(race_cfg.get("hp_bonus", 0)),
+                race_speed_bonus=float(race_cfg.get("speed_bonus", 0.0)),
+                is_hostile=hostile,
+            )
             st = Status(
                 money=int(t.get("money", self.rng.randint(60, 180))),
                 happiness=self.rng.randint(45, 75),
