@@ -1,0 +1,8 @@
+{
+  "npc_speed": 220.0,
+  "hunger_gain_per_hour": 5.0,
+  "fatigue_gain_per_hour": 4.0,
+  "meal_hunger_restore": 30.0,
+  "rest_fatigue_restore": 35.0,
+  "potion_heal": 14.0
+}

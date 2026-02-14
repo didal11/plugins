@@ -1,52 +1,7 @@
 [
-  {
-    "name": "엘린",
-    "race": "인간",
-    "gender": "여",
-    "age": 24,
-    "height_cm": 167,
-    "weight_kg": 56,
-    "job": "모험가",
-    "goal": "돈벌기"
-  },
-  {
-    "name": "보른",
-    "race": "드워프",
-    "gender": "남",
-    "age": 39,
-    "height_cm": 146,
-    "weight_kg": 76,
-    "job": "대장장이",
-    "goal": "명품 제작"
-  },
-  {
-    "name": "마라",
-    "race": "엘프",
-    "gender": "여",
-    "age": 31,
-    "height_cm": 178,
-    "weight_kg": 60,
-    "job": "약사",
-    "goal": "치유 연구"
-  },
-  {
-    "name": "레오",
-    "race": "인간",
-    "gender": "남",
-    "age": 28,
-    "height_cm": 175,
-    "weight_kg": 69,
-    "job": "농부",
-    "goal": "풍작"
-  },
-  {
-    "name": "시안",
-    "race": "엘프",
-    "gender": "기타",
-    "age": 26,
-    "height_cm": 182,
-    "weight_kg": 64,
-    "job": "어부",
-    "goal": "대어 잡기"
-  }
+  {"name": "엘린", "race": "인간", "gender": "여", "age": 24, "job": "모험가"},
+  {"name": "보른", "race": "드워프", "gender": "남", "age": 39, "job": "대장장이"},
+  {"name": "마라", "race": "엘프", "gender": "여", "age": 31, "job": "약사"},
+  {"name": "레오", "race": "인간", "gender": "남", "age": 28, "job": "농부"},
+  {"name": "시안", "race": "엘프", "gender": "기타", "age": 26, "job": "어부"}
 ]

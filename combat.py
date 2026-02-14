@@ -24,17 +24,17 @@ def _distance_tiles(a: NPC, b: NPC) -> int:
 
 
 def _attack_once(attacker: NPC, defender: NPC, cfg: Dict[str, object], rng: random.Random) -> str:
-    hit = float(cfg["base_hit_chance"])
-    hit += float(cfg["adventurer_attack_bonus"]) if attacker.traits.job == JobType.ADVENTURER else 0.0
-    if attacker.traits.race == str(cfg["hostile_race"]):
-        hit += float(cfg["hostile_attack_bonus"])
-    hit -= max(0.0, defender.status.agility - attacker.status.agility) * float(cfg["agility_evasion_scale"])
+    hit = float(cfg.get("base_hit_chance",0.75))
+    hit += float(cfg.get("adventurer_attack_bonus",0.0)) if attacker.traits.job == JobType.ADVENTURER else 0.0
+    if getattr(attacker.traits, "is_hostile", False):
+        hit += float(cfg.get("hostile_attack_bonus",0.0))
+    hit -= max(0.0, defender.status.agility - attacker.status.agility) * float(cfg.get("agility_evasion_scale",0.015))
 
     if rng.random() > max(0.05, min(0.99, hit)):
         return f"{attacker.traits.name} -> {defender.traits.name} 공격 빗나감"
 
-    base = rng.randint(int(cfg["min_damage"]), int(cfg["max_damage"]))
-    dmg = max(1, int(base + attacker.status.strength * float(cfg["strength_damage_scale"])))
+    base = rng.randint(int(cfg.get("min_damage",5)), int(cfg.get("max_damage",14)))
+    dmg = max(1, int(base + attacker.status.strength * float(cfg.get("strength_damage_scale",0.45))))
     before = defender.status.hp
     defender.status.hp = max(0, defender.status.hp - dmg)
     if defender.status.hp <= 0:
@@ -47,11 +47,10 @@ def _attack_once(attacker: NPC, defender: NPC, cfg: Dict[str, object], rng: rand
 
 def resolve_combat_round(npcs: List[NPC], cfg: Dict[str, object], rng: random.Random) -> List[str]:
     events: List[str] = []
-    hostile_race = str(cfg["hostile_race"])
-    engage = int(cfg["engage_range_tiles"])
+    engage = int(cfg.get("engage_range_tiles", 2))
 
-    hostiles = [n for n in npcs if _is_alive(n) and n.traits.race == hostile_race]
-    adventurers = [n for n in npcs if _is_alive(n) and n.traits.job == JobType.ADVENTURER and n.traits.race != hostile_race]
+    hostiles = [n for n in npcs if _is_alive(n) and getattr(n.traits, "is_hostile", False)]
+    adventurers = [n for n in npcs if _is_alive(n) and n.traits.job == JobType.ADVENTURER and not getattr(n.traits, "is_hostile", False)]
 
     used_pairs: set[Tuple[int, int]] = set()
 
