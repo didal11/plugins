@@ -69,7 +69,6 @@ from model import (
     ModalKind,
     NPCTab,
     NPC,
-    PlanStage,
     RegionType,
     SelectionType,
     Status,
@@ -609,7 +608,6 @@ class VillageGame:
                 target_building=None,
                 location_building=home if not hostile else None,
                 inventory={},
-                stage=PlanStage.PRIMARY,
                 target_outside_tile=None,
             )
             if self.rng.random() < 0.6 and "bread" in self.items:
@@ -684,8 +682,10 @@ class VillageGame:
     def _scheduled_destination(self, npc: NPC) -> Optional[Tuple[str, Optional[Building], Optional[Tuple[int, int]]]]:
         activity = self.planner.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.MEAL:
+            npc.status.current_action = "식사"
             return ("eat", self.building_by_name.get("식당"), None)
         if activity == ScheduledActivity.SLEEP:
+            npc.status.current_action = "취침"
             return ("rest", npc.home_building, None)
         return None
 
@@ -739,9 +739,11 @@ class VillageGame:
             npc.path = []
             npc.target_building = None
             npc.target_outside_tile = None
+            npc.status.current_action = "사망"
             return
 
         if self._is_hostile(npc):
+            npc.status.current_action = "배회"
             self._set_target_outside(npc, self.random_outside_tile())
             return
 
@@ -758,6 +760,7 @@ class VillageGame:
         job = npc.traits.job
         activity = self.planner.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
+            npc.status.current_action = "업무"
             if job == JobType.ADVENTURER:
                 hostile = self._nearest_hostile(npc)
                 if hostile is not None:
@@ -769,10 +772,7 @@ class VillageGame:
                 self._set_target_building(npc, wp if wp is not None else npc.home_building)
             return
 
-        if npc.stage == PlanStage.PRIMARY:
-            self._set_target_building(npc, npc.home_building)
-        else:
-            self._set_target_building(npc, self._profit_place_for_job(job))
+        self._set_target_building(npc, npc.home_building)
 
     def _do_eat_at_restaurant(self, npc: NPC) -> str:
         s = npc.status
@@ -800,6 +800,7 @@ class VillageGame:
         st.task = "조리/서빙"
         st.task_progress = (st.task_progress + 15) % 101
         st.last_event = f"{npc.traits.name} 식사"
+        npc.status.current_action = "식사"
         return f"{npc.traits.name}: 식사 허기 {before}->{s.hunger}"
 
     def _do_rest_at_home(self, npc: NPC) -> str:
@@ -811,6 +812,7 @@ class VillageGame:
         self._status_clamp(npc)
         st = self.bstate[npc.home_building.name]
         st.last_event = f"{npc.traits.name} 휴식"
+        npc.status.current_action = "취침"
         return f"{npc.traits.name}: 휴식 피로 {before}->{s.fatigue}"
 
     def _primary_action(self, npc: NPC) -> str:
@@ -858,6 +860,7 @@ class VillageGame:
         tools = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
         tool_text = f" 도구:{', '.join([str(x) for x in tools])}" if tools else ""
         gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
+        npc.status.current_action = action_name
         return f"{npc.traits.name}: {action_name}({gained_text}){tool_text}"
 
     def _profit_action(self, npc: NPC) -> str:
@@ -1012,12 +1015,6 @@ class VillageGame:
                 if npc.target_building is not None and npc.location_building is not None and npc.location_building == npc.target_building:
                     if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK:
                         self.logs.append(self._primary_action(npc))
-                    elif npc.stage == PlanStage.PRIMARY:
-                        self.logs.append(self._primary_action(npc))
-                        npc.stage = PlanStage.PROFIT
-                    else:
-                        self.logs.append(self._profit_action(npc))
-                        npc.stage = PlanStage.PRIMARY
                     self._plan_next_target(npc)
                 else:
                     self._plan_next_target(npc)
@@ -1144,10 +1141,10 @@ def draw_building_modal(screen: pygame.Surface, game: VillageGame, font: pygame.
         if not occupants:
             draw_text_lines(screen, small, body.x + 12, y, ["(현재 건물에 있는 인원이 없습니다.)"])
         else:
-            screen.blit(small.render("이름     직업     스테이지", True, (200, 200, 200)), (body.x + 12, y))
+            screen.blit(small.render("이름     직업     현재행동", True, (200, 200, 200)), (body.x + 12, y))
             y += 22
             for npc in occupants:
-                row = f"{npc.traits.name:6s}  {npc.traits.job.value:6s}  {npc.stage.value}"
+                row = f"{npc.traits.name:6s}  {npc.traits.job.value:6s}  {npc.status.current_action}"
                 screen.blit(small.render(row, True, (230, 230, 230)), (body.x + 12, y))
                 y += 20
 
@@ -1172,8 +1169,8 @@ def draw_building_modal(screen: pygame.Surface, game: VillageGame, font: pygame.
             f"최근 이벤트: {st.last_event if st.last_event else '(없음)'}",
             "",
             "표 기준 행동:",
-            "- 1차행동(직업별) → 수익창출행동(직업별) → 반복",
-            "- 모험가만 '마을 밖'에서 1차행동 수행",
+            "- 현재 시간표/직업에 맞는 행동을 수행",
+            "- 현재 행동은 NPC 스테이터스의 '현재 행동'으로 표시",
         ]
         draw_text_lines(screen, small, body.x + 12, body.y + 12, lines)
 
@@ -1233,7 +1230,7 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
             "스테이터스",
             "",
             f"현재 위치: {loc}",
-            f"현재 스테이지: {npc.stage.value}",
+            f"현재 행동: {npc.status.current_action}",
             f"이동 목표: {tgt}",
             "",
             f"돈: {s.money}",
@@ -1410,7 +1407,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
             f"선택(NPC): {npc.traits.name} / {npc.traits.job.value} / {loc}",
             f"돈 {s.money} | 행복 {s.happiness} | 허기 {s.hunger} | 피로 {s.fatigue}",
             f"HP {s.hp}/{s.max_hp} | 힘 {s.strength} | 민첩 {s.agility}",
-            f"스테이지: {npc.stage.value}",
+            f"현재 행동: {npc.status.current_action}",
             econ_line,
             "I: 모달 | 휠: 줌 | 미니맵 클릭: 이동",
         ]
