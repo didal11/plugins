@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -140,7 +141,7 @@ class EditorApp(tk.Tk):
         ttk.Button(btns, text="추가", command=self._add_item).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=self._update_item).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=self._delete_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.items, save_item_defs, "아이템")).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=partial(self._save_list, self.items, save_item_defs, "아이템")).pack(side="left", padx=3)
 
     def _item_from_form(self):
         try:
@@ -292,7 +293,7 @@ class EditorApp(tk.Tk):
         ttk.Button(btns, text="추가", command=add_row).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=upd_row).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=del_row).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=lambda: self._save_list(data, save_fn, "NPC" if mode == "npc" else "몬스터")).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=partial(self._save_list, data, save_fn, "NPC" if mode == "npc" else "몬스터")).pack(side="left", padx=3)
 
     def _build_npc_tab(self):
         self._build_person_tab(self.npc_tab, "npc")
@@ -334,7 +335,7 @@ class EditorApp(tk.Tk):
         ttk.Button(btns, text="추가", command=self._add_entity).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=self._update_entity).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=self._delete_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.entities, save_entities, "엔티티")).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=partial(self._save_list, self.entities, save_entities, "엔티티")).pack(side="left", padx=3)
 
     def _entity_from_form(self):
         try:

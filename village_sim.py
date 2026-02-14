@@ -287,7 +287,8 @@ class VillageGame:
                     self.combat_settings.update(raw)
             except Exception:
                 pass
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
+        jobs_data = data.get("jobs", []) if isinstance(data, dict) else []
+        self.economy = EconomySystem(jobs_data if isinstance(jobs_data, list) else [], self.sim_settings)
         self.last_economy_snapshot = None
 
         # Logs
