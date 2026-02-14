@@ -1,0 +1,11 @@
+{
+  "hostile_race": "적대",
+  "engage_range_tiles": 2,
+  "base_hit_chance": 0.75,
+  "agility_evasion_scale": 0.015,
+  "min_damage": 5,
+  "max_damage": 14,
+  "strength_damage_scale": 0.45,
+  "adventurer_attack_bonus": 0.1,
+  "hostile_attack_bonus": 0.05
+}
