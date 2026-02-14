@@ -164,13 +164,20 @@ def load_npc_templates() -> List[Dict[str, object]]:
         job = str(it.get("job", "농부")).strip() or "농부"
         if job not in VALID_JOBS:
             job = "농부"
-        out.append({"name": name, "race": str(it.get("race", "인간")).strip() or "인간", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 25)), "job": job})
-    return _seed_if_empty(NPCS_FILE, out, DEFAULT_NPCS)
+        row: Dict[str, object] = {"name": name, "race": str(it.get("race", "인간")).strip() or "인간", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 25)), "job": job}
+        if "height_cm" in it:
+            row["height_cm"] = int(it.get("height_cm", 170))
+        if "weight_kg" in it:
+            row["weight_kg"] = int(it.get("weight_kg", 65))
+        if "goal" in it:
+            row["goal"] = str(it.get("goal", ""))
+        out.append(row)
+    return out
 
 
 def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
     ensure_data_files()
-    _write_json(NPCS_FILE, load_npc_templates() if not npcs else npcs)
+    _write_json(NPCS_FILE, npcs)
 
 
 def load_monster_templates() -> List[Dict[str, object]]:
@@ -183,13 +190,16 @@ def load_monster_templates() -> List[Dict[str, object]]:
         name = str(it.get("name", "")).strip()
         if not name:
             continue
-        out.append({"name": name, "race": str(it.get("race", "고블린")).strip() or "고블린", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 5)), "job": "모험가"})
-    return _seed_if_empty(MONSTERS_FILE, out, DEFAULT_MONSTERS)
+        job = str(it.get("job", "모험가")).strip() or "모험가"
+        if job not in VALID_JOBS:
+            job = "모험가"
+        out.append({"name": name, "race": str(it.get("race", "고블린")).strip() or "고블린", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 5)), "job": job})
+    return out
 
 
 def save_monster_templates(monsters: List[Dict[str, object]]) -> None:
     ensure_data_files()
-    _write_json(MONSTERS_FILE, load_monster_templates() if not monsters else monsters)
+    _write_json(MONSTERS_FILE, monsters)
 
 
 def load_races() -> List[Dict[str, object]]:
