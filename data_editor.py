@@ -64,14 +64,6 @@ class EditorApp(tk.Tk):
         self._build_job_tab()
         self._build_sim_tab()
 
-    def _save_list(self, rows, save_fn, label: str):
-        try:
-            save_fn(rows)
-        except Exception as e:
-            messagebox.showerror("저장 실패", f"{label} 저장 중 오류: {e}")
-            return
-        messagebox.showinfo("저장 완료", f"{label} 데이터를 저장했습니다.")
-
     def _race_names(self) -> list[str]:
         names = [str(r.get("name", "")).strip() for r in self.races if isinstance(r, dict)]
         names = [n for n in names if n]
