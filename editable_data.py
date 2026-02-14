@@ -34,6 +34,7 @@ DEFAULT_ITEMS: List[Dict[str, object]] = [
     {"key": "hide", "display": "가죽"},
     {"key": "leather", "display": "가공가죽"},
     {"key": "artifact", "display": "유물"},
+    {"key": "tool", "display": "도구"},
 ]
 
 DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
