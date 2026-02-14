@@ -48,6 +48,7 @@ from config import (
 )
 
 from economy import EconomySystem
+from planning import DailyPlanner, ScheduledActivity
 from editable_data import (
     ensure_data_files,
     load_entities,
@@ -294,6 +295,7 @@ class VillageGame:
 
         # Logs
         self.logs: List[str] = []
+        self.planner = DailyPlanner()
 
         # Selection / modal
         self.selection_type: SelectionType = SelectionType.NONE
@@ -667,11 +669,11 @@ class VillageGame:
             s.happiness -= 3
         self._status_clamp(npc)
 
-    def _need_override_destination(self, npc: NPC) -> Optional[Tuple[str, Optional[Building], Optional[Tuple[int, int]]]]:
-        s = npc.status
-        if s.hunger >= 75:
+    def _scheduled_destination(self, npc: NPC) -> Optional[Tuple[str, Optional[Building], Optional[Tuple[int, int]]]]:
+        activity = self.planner.activity_for_hour(self.time.hour)
+        if activity == ScheduledActivity.MEAL:
             return ("eat", self.building_by_name.get("식당"), None)
-        if s.fatigue >= 75:
+        if activity == ScheduledActivity.SLEEP:
             return ("rest", npc.home_building, None)
         return None
 
@@ -731,7 +733,7 @@ class VillageGame:
             self._set_target_outside(npc, self.random_outside_tile())
             return
 
-        override = self._need_override_destination(npc)
+        override = self._scheduled_destination(npc)
         if override is not None:
             _, b, out_tile = override
             if b is not None:
@@ -1007,7 +1009,7 @@ class VillageGame:
             npc.location_building = self.find_building_by_tile(tx, ty)
 
             if len(npc.path) == 0:
-                override = self._need_override_destination(npc)
+                override = self._scheduled_destination(npc)
                 if override is not None:
                     kind, b, _ = override
                     if kind == "eat" and b is not None and b.name == "식당":
