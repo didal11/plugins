@@ -48,16 +48,7 @@ from config import (
 )
 
 from economy import EconomySystem
-import editable_data as _edata
-
-ensure_data_files = _edata.ensure_data_files
-load_item_defs = _edata.load_item_defs
-load_job_defs = _edata.load_job_defs
-load_sim_settings = _edata.load_sim_settings
-load_npc_templates = getattr(_edata, "load_npc_templates", lambda: [])
-load_monster_templates = getattr(_edata, "load_monster_templates", lambda: [])
-load_races = getattr(_edata, "load_races", lambda: [{"name": "인간", "is_hostile": False, "str_bonus": 0, "agi_bonus": 0, "hp_bonus": 0, "speed_bonus": 0.0}])
-load_entities = getattr(_edata, "load_entities", lambda: [])
+from editable_data import ensure_data_files, load_item_defs, load_job_defs, load_npc_templates, load_sim_settings
 
 from model import (
     Building,
@@ -280,10 +271,7 @@ class VillageGame:
         self.time = TimeSystem()
         self.camera = Camera()
         self.sim_settings = load_sim_settings()
-        self.races = load_races()
-        self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name")): r for r in self.races}
-        self.entities = load_entities()
-        self.combat_settings: Dict[str, object] = {}
+        self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
         combat_path = Path(__file__).parent / "data" / "combat.json"
         if combat_path.exists():
             try:
@@ -292,6 +280,7 @@ class VillageGame:
                     self.combat_settings.update(raw)
             except Exception:
                 pass
+        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
         self.last_economy_snapshot = None
 
         # Logs
@@ -500,26 +489,14 @@ class VillageGame:
             max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))) + int(race_cfg.get("hp_bonus", 0)))
             hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
             st = Status(
-                money=int(t.get("money", self.rng.randint(20, 120) if hostile else self.rng.randint(60, 180))),
-                happiness=self.rng.randint(40, 75),
+                money=int(t.get("money", self.rng.randint(60, 180))),
+                happiness=self.rng.randint(45, 75),
                 hunger=self.rng.randint(15, 55),
                 fatigue=self.rng.randint(15, 55),
                 max_hp=max_hp,
                 hp=hp,
                 strength=max(1, int(t.get("strength", self.rng.randint(8, 16))) + int(race_cfg.get("str_bonus", 0))),
                 agility=max(1, int(t.get("agility", self.rng.randint(8, 16))) + int(race_cfg.get("agi_bonus", 0))),
-            )
-            tr = Traits(
-                name=nm,
-                race=race,
-                gender=str(t.get("gender", "기타")),
-                age=int(t.get("age", 25)),
-                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
-                race_str_bonus=int(race_cfg.get("str_bonus", 0)),
-                race_agi_bonus=int(race_cfg.get("agi_bonus", 0)),
-                race_hp_bonus=int(race_cfg.get("hp_bonus", 0)),
-                race_speed_bonus=float(race_cfg.get("speed_bonus", 0.0)),
-                is_hostile=hostile,
             )
             npc = NPC(
                 traits=tr,
@@ -990,7 +967,7 @@ class VillageGame:
                 npc.x, npc.y = float(gx), float(gy)
                 npc.path.pop(0)
                 continue
-            step = max(40.0, float(self.sim_settings.get("npc_speed", 220.0)) + float(getattr(npc.traits, "race_speed_bonus", 0.0))) * dt
+            step = float(self.sim_settings.get("npc_speed", 220.0)) * dt
             if step >= dist:
                 npc.x, npc.y = float(gx), float(gy)
                 npc.path.pop(0)
