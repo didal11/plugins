@@ -3,8 +3,8 @@
 
 """pygame bridge module.
 
-- 실제 pygame 패키지가 있으면 그것을 우선 사용.
-- 없으면 headless fallback 제공.
+- If real pygame is installed, proxy to it so graphical mode works normally.
+- Otherwise provide a minimal fallback used by headless text simulation.
 """
 
 from __future__ import annotations
@@ -16,25 +16,15 @@ from pathlib import Path
 
 
 def _load_real_pygame():
-    this_dir = Path(__file__).resolve().parent
-    search_path = [p for p in sys.path if p and Path(p).resolve() != this_dir]
+    this_file = Path(__file__).resolve()
+    this_dir = str(this_file.parent)
+    search_path = [p for p in sys.path if p and Path(p).resolve() != Path(this_dir).resolve()]
     spec = importlib.machinery.PathFinder.find_spec("pygame", search_path)
     if spec is None or spec.loader is None:
         return None
-
     module = importlib.util.module_from_spec(spec)
-    prev = sys.modules.get("pygame")
-    try:
-        # pygame 패키지 내부의 `import pygame.base`를 위해 sys.modules 교체
-        sys.modules["pygame"] = module
-        spec.loader.exec_module(module)
-        return module
-    except Exception:
-        if prev is not None:
-            sys.modules["pygame"] = prev
-        else:
-            sys.modules.pop("pygame", None)
-        return None
+    spec.loader.exec_module(module)
+    return module
 
 
 _REAL = _load_real_pygame()

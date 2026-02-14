@@ -50,7 +50,8 @@ from config import (
 from economy import EconomySystem
 from editable_data import (
     ensure_data_files,
-    load_all_data,
+    load_entities,
+    load_item_defs,
     load_job_defs,
 )
 
@@ -303,12 +304,11 @@ class VillageGame:
 
         # Data (single-source loader)
         ensure_data_files()
-        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in data["items"] if isinstance(it, dict) and "key" in it and "display" in it}
-        self.races = [r for r in data["races"] if isinstance(r, dict)]
-        self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name", "")): r for r in self.races}
-        self.entities: List[Dict[str, object]] = [e for e in data["entities"] if isinstance(e, dict)]
-        self.npc_templates: List[Dict[str, object]] = [n for n in data["npcs"] if isinstance(n, dict)]
-        self.monster_templates: List[Dict[str, object]] = [m for m in data["monsters"] if isinstance(m, dict)]
+        loaded_items = load_item_defs()
+        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
+        self.races = load_races()
+        self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name", "")): r for r in self.races if isinstance(r, dict)}
+        self.entities: List[Dict[str, object]] = [e for e in load_entities() if isinstance(e, dict)]
         self.economy = EconomySystem(load_job_defs(), self.sim_settings)
 
         # Table-driven building names
