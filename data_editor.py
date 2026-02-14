@@ -4,498 +4,341 @@
 from __future__ import annotations
 
 import json
-from functools import partial
+from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from editable_data import (
-    VALID_GENDERS,
-    VALID_JOBS,
-    load_all_data,
-    save_entities,
-    save_item_defs,
-    save_job_defs,
-    save_monster_templates,
-    save_npc_templates,
-    save_sim_settings,
-)
+DATA_DIR = Path(__file__).parent / "data"
+
+VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사"]
+VALID_GENDERS = ["남", "여", "기타"]
+ENTITY_TYPES = ["workbench", "resource"]
+
+TAB_SCHEMAS: dict[str, list[tuple[str, str, str, list[str] | None]]] = {
+    "items.json": [
+        ("key", "아이템 키", "str", None),
+        ("display", "표시 이름", "str", None),
+        ("is_craftable", "제작 가능", "bool", None),
+        ("is_gatherable", "채집 가능", "bool", None),
+        ("craft_time", "제작 시간", "int", None),
+        ("gather_time", "채집 시간", "int", None),
+    ],
+    "npcs.json": [
+        ("name", "이름", "str", None),
+        ("race", "종족", "str", None),
+        ("gender", "성별", "combo", VALID_GENDERS),
+        ("age", "나이", "int", None),
+        ("job", "직업", "combo", VALID_JOBS),
+    ],
+    "monsters.json": [
+        ("name", "이름", "str", None),
+        ("race", "종족", "str", None),
+        ("gender", "성별", "combo", VALID_GENDERS),
+        ("age", "나이", "int", None),
+        ("job", "직업", "combo", VALID_JOBS),
+    ],
+    "races.json": [
+        ("name", "종족명", "str", None),
+        ("is_hostile", "적대 여부", "bool", None),
+        ("str_bonus", "힘 보너스", "int", None),
+        ("agi_bonus", "민첩 보너스", "int", None),
+        ("hp_bonus", "체력 보너스", "int", None),
+        ("speed_bonus", "속도 보너스(정수)", "int", None),
+    ],
+    "entities.json": [
+        ("type", "유형", "combo", ENTITY_TYPES),
+        ("name", "이름", "str", None),
+        ("x", "X", "int", None),
+        ("y", "Y", "int", None),
+        ("stock", "재고", "int", None),
+    ],
+    "jobs.json": [
+        ("job", "직업", "combo", VALID_JOBS),
+        ("sell_limit", "판매 한도", "int", None),
+        ("sell_items_csv", "판매 아이템(csv)", "str", None),
+    ],
+}
+
+DICT_TABS = ["sim_settings.json", "combat.json"]
+
+
+class ListTab:
+    def __init__(self, parent: ttk.Frame, filename: str, schema: list[tuple[str, str, str, list[str] | None]]):
+        self.filename = filename
+        self.path = DATA_DIR / filename
+        self.schema = schema
+        self.rows: list[dict[str, object]] = []
+        self.widgets: dict[str, tk.Widget] = {}
+        self.bool_vars: dict[str, tk.BooleanVar] = {}
+
+        left = ttk.Frame(parent)
+        left.pack(side="left", fill="y", padx=8, pady=8)
+        right = ttk.Frame(parent)
+        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+
+        self.pick_var = tk.StringVar()
+        self.pick_box = ttk.Combobox(left, textvariable=self.pick_var, state="readonly", width=36)
+        self.pick_box.pack(fill="x", pady=(0, 8))
+        self.pick_box.bind("<<ComboboxSelected>>", self._on_select)
+
+        ttk.Button(left, text="새 항목", command=self._new).pack(fill="x", pady=2)
+        ttk.Button(left, text="추가", command=self._add).pack(fill="x", pady=2)
+        ttk.Button(left, text="수정", command=self._update).pack(fill="x", pady=2)
+        ttk.Button(left, text="삭제", command=self._delete).pack(fill="x", pady=2)
+        ttk.Button(left, text="저장", command=self._save).pack(fill="x", pady=(10, 2))
+
+        for idx, (key, label, kind, options) in enumerate(schema):
+            ttk.Label(right, text=label).grid(row=idx, column=0, sticky="w", pady=3)
+            if kind == "bool":
+                var = tk.BooleanVar(value=False)
+                w = ttk.Checkbutton(right, variable=var)
+                self.bool_vars[key] = var
+            elif kind == "combo":
+                w = ttk.Combobox(right, values=options or [], state="readonly", width=40)
+            else:
+                w = ttk.Entry(right, width=43)
+            w.grid(row=idx, column=1, sticky="w", pady=3)
+            self.widgets[key] = w
+
+        self._load()
+
+    def _read_list(self) -> list[dict[str, object]]:
+        if not self.path.exists():
+            self.path.write_text("[]", encoding="utf-8")
+            return []
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            return [x for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
+        except Exception:
+            return []
+
+    def _write_list(self) -> None:
+        self.path.write_text(json.dumps(self.rows, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _display_text(self, row: dict[str, object], idx: int) -> str:
+        if "name" in row:
+            return f"{idx}: {row.get('name', '')}"
+        if "key" in row:
+            return f"{idx}: {row.get('key', '')}"
+        if "job" in row:
+            return f"{idx}: {row.get('job', '')}"
+        return f"{idx}: 항목"
+
+    def _refresh_combo(self) -> None:
+        labels = [self._display_text(r, i) for i, r in enumerate(self.rows)]
+        self.pick_box["values"] = labels
+        if labels:
+            self.pick_box.current(0)
+            self._fill_form(0)
+        else:
+            self.pick_var.set("")
+            self._clear_form()
+
+    def _clear_form(self) -> None:
+        for key, _, kind, _ in self.schema:
+            if kind == "bool":
+                self.bool_vars[key].set(False)
+            elif kind == "combo":
+                cast = self.widgets[key]
+                if isinstance(cast, ttk.Combobox):
+                    cast.set("")
+            else:
+                cast = self.widgets[key]
+                if isinstance(cast, ttk.Entry):
+                    cast.delete(0, "end")
+
+    def _fill_form(self, index: int) -> None:
+        if not (0 <= index < len(self.rows)):
+            return
+        row = self.rows[index]
+        for key, _, kind, _ in self.schema:
+            value = row.get(key, "")
+            if key == "sell_items_csv":
+                value = ",".join([str(v) for v in row.get("sell_items", [])])
+            if kind == "bool":
+                self.bool_vars[key].set(bool(value))
+            elif kind == "combo":
+                cast = self.widgets[key]
+                if isinstance(cast, ttk.Combobox):
+                    cast.set(str(value))
+            else:
+                cast = self.widgets[key]
+                if isinstance(cast, ttk.Entry):
+                    cast.delete(0, "end")
+                    cast.insert(0, str(value))
+
+    def _row_from_form(self) -> dict[str, object] | None:
+        out: dict[str, object] = {}
+        try:
+            for key, _, kind, _ in self.schema:
+                if kind == "bool":
+                    out[key] = bool(self.bool_vars[key].get())
+                elif kind == "combo":
+                    cast = self.widgets[key]
+                    out[key] = cast.get().strip() if isinstance(cast, ttk.Combobox) else ""
+                else:
+                    cast = self.widgets[key]
+                    text = cast.get().strip() if isinstance(cast, ttk.Entry) else ""
+                    if kind == "int":
+                        out[key] = int(text or "0")
+                    else:
+                        out[key] = text
+
+            if "sell_items_csv" in out:
+                csv = str(out.pop("sell_items_csv", ""))
+                out["sell_items"] = [s.strip() for s in csv.split(",") if s.strip()]
+
+            return out
+        except ValueError:
+            messagebox.showwarning("경고", "정수 필드는 숫자만 입력하세요.")
+            return None
+
+    def _selected_index(self) -> int | None:
+        text = self.pick_var.get().strip()
+        if not text:
+            return None
+        head = text.split(":", 1)[0].strip()
+        try:
+            return int(head)
+        except ValueError:
+            return None
+
+    def _on_select(self, _event=None) -> None:
+        idx = self._selected_index()
+        if idx is None:
+            return
+        self._fill_form(idx)
+
+    def _new(self) -> None:
+        self._clear_form()
+
+    def _add(self) -> None:
+        row = self._row_from_form()
+        if row is None:
+            return
+        self.rows.append(row)
+        self._refresh_combo()
+
+    def _update(self) -> None:
+        idx = self._selected_index()
+        if idx is None or not (0 <= idx < len(self.rows)):
+            return
+        row = self._row_from_form()
+        if row is None:
+            return
+        self.rows[idx] = row
+        self._refresh_combo()
+        self.pick_box.current(idx)
+
+    def _delete(self) -> None:
+        idx = self._selected_index()
+        if idx is None or not (0 <= idx < len(self.rows)):
+            return
+        self.rows.pop(idx)
+        self._refresh_combo()
+
+    def _save(self) -> None:
+        self._write_list()
+        messagebox.showinfo("저장 완료", f"{self.filename} 저장 완료")
+
+    def _load(self) -> None:
+        self.rows = self._read_list()
+        self._refresh_combo()
+
+
+class DictTab:
+    def __init__(self, parent: ttk.Frame, filename: str):
+        self.filename = filename
+        self.path = DATA_DIR / filename
+        self.entries: dict[str, ttk.Entry] = {}
+
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True, padx=12, pady=12)
+
+        self.inner = ttk.Frame(frame)
+        self.inner.pack(fill="x")
+
+        btns = ttk.Frame(frame)
+        btns.pack(fill="x", pady=8)
+        ttk.Button(btns, text="키 추가", command=self._add_key_row).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=self._save).pack(side="left", padx=3)
+
+        self._load()
+
+    def _add_key_row(self, key: str = "", value: int = 0) -> None:
+        row = len(self.entries)
+        key_entry = ttk.Entry(self.inner, width=26)
+        val_entry = ttk.Entry(self.inner, width=26)
+        key_entry.grid(row=row, column=0, sticky="w", pady=3)
+        val_entry.grid(row=row, column=1, sticky="w", pady=3, padx=8)
+        key_entry.insert(0, key)
+        val_entry.insert(0, str(value))
+        self.entries[f"k{row}"] = key_entry
+        self.entries[f"v{row}"] = val_entry
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            self.path.write_text("{}", encoding="utf-8")
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+        for child in self.inner.winfo_children():
+            child.destroy()
+        self.entries.clear()
+        for k, v in data.items():
+            try:
+                iv = int(v)
+            except Exception:
+                iv = 0
+            self._add_key_row(str(k), iv)
+        if not data:
+            self._add_key_row()
+
+    def _save(self) -> None:
+        out: dict[str, int] = {}
+        row_count = len(self.entries) // 2
+        try:
+            for i in range(row_count):
+                k_entry = self.entries.get(f"k{i}")
+                v_entry = self.entries.get(f"v{i}")
+                if not isinstance(k_entry, ttk.Entry) or not isinstance(v_entry, ttk.Entry):
+                    continue
+                key = k_entry.get().strip()
+                if not key:
+                    continue
+                out[key] = int(v_entry.get().strip() or "0")
+        except ValueError:
+            messagebox.showwarning("경고", "값은 정수만 입력하세요.")
+            return
+
+        self.path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        messagebox.showinfo("저장 완료", f"{self.filename} 저장 완료")
 
 
 class EditorApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("판타지 마을 데이터 편집기")
-        self.geometry("1100x760")
+    """data/*.json 파일을 탭 단위로 수정/추가/저장하는 도구."""
 
-        data = load_all_data()
-        self.items = data["items"]
-        self.npcs = data["npcs"]
-        self.monsters = data["monsters"]
-        self.races = data["races"]
-        self.entities = data["entities"]
-        self.jobs = data["jobs"]
-        self.sim = data["sim"]
+    def __init__(self) -> None:
+        super().__init__()
+        self.title("데이터 에디터")
+        self.geometry("1100x760")
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
 
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
 
-        self.item_tab = ttk.Frame(nb)
-        self.npc_tab = ttk.Frame(nb)
-        self.monster_tab = ttk.Frame(nb)
-        self.entity_tab = ttk.Frame(nb)
-        self.job_tab = ttk.Frame(nb)
-        self.sim_tab = ttk.Frame(nb)
+        for filename, schema in TAB_SCHEMAS.items():
+            tab = ttk.Frame(nb)
+            nb.add(tab, text=filename)
+            ListTab(tab, filename, schema)
 
-        nb.add(self.item_tab, text="아이템")
-        nb.add(self.npc_tab, text="NPC")
-        nb.add(self.monster_tab, text="몬스터")
-        nb.add(self.entity_tab, text="엔티티")
-        nb.add(self.job_tab, text="직업")
-        nb.add(self.sim_tab, text="시뮬레이션 설정")
-
-        self._build_item_tab()
-        self._build_npc_tab()
-        self._build_monster_tab()
-        self._build_entity_tab()
-        self._build_job_tab()
-        self._build_sim_tab()
-
-    def _race_names(self) -> list[str]:
-        names = [str(r.get("name", "")).strip() for r in self.races if isinstance(r, dict)]
-        names = [n for n in names if n]
-        return names or ["인간"]
-
-    def _build_npc_tab(self):
-        left = ttk.Frame(self.npc_tab)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(self.npc_tab)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        self.npc_list = tk.Listbox(left, width=30, height=28)
-        self.npc_list.pack(fill="y")
-        self.npc_list.bind("<<ListboxSelect>>", self._on_npc_select)
-        for row in self.npcs:
-            self.npc_list.insert("end", f"{row['name']} ({row['race']}/{row['job']})")
-
-        self.npc_entries = {}
-        labels = [("name", "이름"), ("race", "종족"), ("gender", "성별"), ("age", "나이"), ("job", "직업")]
-        for idx, (key, label) in enumerate(labels):
-            ttk.Label(right, text=label).grid(row=idx, column=0, sticky="w", pady=2)
-            if key == "job":
-                widget = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=39)
-            elif key == "gender":
-                widget = ttk.Combobox(right, values=VALID_GENDERS, state="readonly", width=39)
-            else:
-                widget = ttk.Entry(right, width=42)
-            widget.grid(row=idx, column=1, sticky="w", pady=2)
-            self.npc_entries[key] = widget
-
-        btns = ttk.Frame(right)
-        btns.grid(row=len(labels), column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Button(btns, text="추가", command=self._add_npc).pack(side="left", padx=3)
-        ttk.Button(btns, text="수정", command=self._update_npc).pack(side="left", padx=3)
-        ttk.Button(btns, text="삭제", command=self._delete_npc).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.npcs, save_npc_templates, "NPC")).pack(side="left", padx=3)
-
-    def _npc_from_form(self):
-        try:
-            save_fn(rows)
-        except Exception as e:
-            messagebox.showerror("저장 실패", f"{label} 저장 중 오류: {e}")
-            return
-        messagebox.showinfo("저장 완료", f"{label} 데이터를 저장했습니다.")
-
-    def _race_names(self) -> list[str]:
-        names = [str(r.get("name", "")).strip() for r in self.races if isinstance(r, dict)]
-        return [n for n in names if n] or ["인간"]
-
-    def _build_item_tab(self):
-        left = ttk.Frame(self.item_tab)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(self.item_tab)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        self.item_list = tk.Listbox(left, width=32, height=30)
-        self.item_list.pack(fill="y")
-        self.item_list.bind("<<ListboxSelect>>", self._on_item_select)
-        for it in self.items:
-            self.item_list.insert("end", f"{it.get('key','')} ({it.get('display','')})")
-
-        ttk.Label(right, text="아이템 키").grid(row=0, column=0, sticky="w")
-        ttk.Label(right, text="표시 이름").grid(row=1, column=0, sticky="w")
-        self.item_key = ttk.Entry(right, width=44)
-        self.item_display = ttk.Entry(right, width=44)
-        self.item_key.grid(row=0, column=1, sticky="w", pady=4)
-        self.item_display.grid(row=1, column=1, sticky="w", pady=4)
-
-        self.item_entries = {"key": self.item_key, "display": self.item_display}
-        self.item_vars = {"is_craftable": tk.BooleanVar(value=False), "is_gatherable": tk.BooleanVar(value=False)}
-        ttk.Checkbutton(right, text="제작 가능", variable=self.item_vars["is_craftable"]).grid(row=2, column=1, sticky="w")
-        ttk.Checkbutton(right, text="채집 가능", variable=self.item_vars["is_gatherable"]).grid(row=3, column=1, sticky="w")
-        ttk.Label(right, text="가공 재료(JSON)").grid(row=2, column=0, sticky="nw")
-        self.item_craft_inputs = tk.Text(right, width=40, height=3)
-        self.item_craft_inputs.grid(row=4, column=1, sticky="w", pady=4)
-
-        btns = ttk.Frame(right)
-        btns.grid(row=5, column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Button(btns, text="추가", command=self._add_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="수정", command=self._update_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="삭제", command=self._delete_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=partial(self._save_list, self.items, save_item_defs, "아이템")).pack(side="left", padx=3)
-
-    def _item_from_form(self):
-        try:
-            return {
-                "key": self.item_key.get().strip(),
-                "display": self.item_display.get().strip(),
-                "is_craftable": bool(self.item_vars["is_craftable"].get()),
-                "is_gatherable": bool(self.item_vars["is_gatherable"].get()),
-                "craft_inputs": json.loads(self.item_craft_inputs.get("1.0", "end").strip() or "{}"),
-                "craft_time": 0,
-                "craft_fatigue": 0,
-                "craft_station": "",
-                "craft_amount": 0,
-                "gather_time": 0,
-                "gather_amount": 0,
-                "gather_fatigue": 0,
-                "gather_spot": "",
-            }
-        except Exception:
-            messagebox.showwarning("경고", "아이템 입력값(JSON/숫자)을 확인하세요.")
-            return None
-
-    def _on_item_select(self, _=None):
-        sel = self.item_list.curselection()
-        if not sel:
-            return
-        row = self.items[sel[0]]
-        self.item_key.delete(0, "end")
-        self.item_key.insert(0, str(row.get("key", "")))
-        self.item_display.delete(0, "end")
-        self.item_display.insert(0, str(row.get("display", "")))
-        self.item_vars["is_craftable"].set(bool(row.get("is_craftable", False)))
-        self.item_vars["is_gatherable"].set(bool(row.get("is_gatherable", False)))
-        self.item_craft_inputs.delete("1.0", "end")
-        self.item_craft_inputs.insert("1.0", json.dumps(row.get("craft_inputs", {}), ensure_ascii=False))
-
-    def _add_item(self):
-        row = self._item_from_form()
-        if not row or not row["key"] or not row["display"]:
-            return
-        self.items.append(row)
-        self.item_list.insert("end", f"{row['key']} ({row['display']})")
-
-    def _update_item(self):
-        sel = self.item_list.curselection()
-        if not sel:
-            return
-        row = self._item_from_form()
-        if not row or not row["key"] or not row["display"]:
-            return
-        i = sel[0]
-        self.items[i] = row
-        self.item_list.delete(i)
-        self.item_list.insert(i, f"{row['key']} ({row['display']})")
-
-    def _delete_item(self):
-        sel = self.item_list.curselection()
-        if not sel:
-            return
-        i = sel[0]
-        self.item_list.delete(i)
-        self.items.pop(i)
-
-    def _build_person_tab(self, tab: ttk.Frame, mode: str):
-        left = ttk.Frame(tab)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(tab)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        data = self.npcs if mode == "npc" else self.monsters
-        lb = tk.Listbox(left, width=34, height=30)
-        lb.pack(fill="y")
-        for n in data:
-            lb.insert("end", f"{n.get('name','')} ({n.get('race','')}/{n.get('job','')})")
-
-        entries = {}
-        fields = [("name", "이름"), ("race", "종족"), ("gender", "성별"), ("age", "나이"), ("job", "직업")]
-        for i, (f, label) in enumerate(fields):
-            ttk.Label(right, text=label).grid(row=i, column=0, sticky="w", pady=2)
-            if f == "gender":
-                w = ttk.Combobox(right, values=VALID_GENDERS, state="readonly", width=40)
-            elif f == "job":
-                w = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=40)
-            elif f == "race":
-                w = ttk.Combobox(right, values=self._race_names(), state="readonly", width=40)
-            else:
-                w = ttk.Entry(right, width=43)
-            w.grid(row=i, column=1, sticky="w", pady=2)
-            entries[f] = w
-
-        def on_select(_=None):
-            sel = lb.curselection()
-            if not sel:
-                return
-            row = data[sel[0]]
-            entries["name"].delete(0, "end")
-            entries["name"].insert(0, str(row.get("name", "")))
-            entries["race"].set(str(row.get("race", "인간")))
-            entries["gender"].set(str(row.get("gender", "기타")))
-            entries["age"].delete(0, "end")
-            entries["age"].insert(0, str(row.get("age", 20)))
-            entries["job"].set(str(row.get("job", "농부" if mode == "npc" else "모험가")))
-
-        lb.bind("<<ListboxSelect>>", on_select)
-
-        def from_form():
-            try:
-                return {
-                    "name": entries["name"].get().strip(),
-                    "race": entries["race"].get().strip() or ("인간" if mode == "npc" else "고블린"),
-                    "gender": entries["gender"].get().strip() or "기타",
-                    "age": int(entries["age"].get().strip() or "20"),
-                    "job": entries["job"].get().strip() or ("농부" if mode == "npc" else "모험가"),
-                }
-            except ValueError:
-                messagebox.showwarning("경고", "나이는 숫자로 입력하세요.")
-                return None
-
-        def add_row():
-            row = from_form()
-            if not row or not row["name"]:
-                return
-            data.append(row)
-            lb.insert("end", f"{row['name']} ({row['race']}/{row['job']})")
-
-        def upd_row():
-            sel = lb.curselection()
-            if not sel:
-                return
-            row = from_form()
-            if not row or not row["name"]:
-                return
-            i = sel[0]
-            data[i] = row
-            lb.delete(i)
-            lb.insert(i, f"{row['name']} ({row['race']}/{row['job']})")
-
-        def del_row():
-            sel = lb.curselection()
-            if not sel:
-                return
-            i = sel[0]
-            lb.delete(i)
-            data.pop(i)
-
-        save_fn = save_npc_templates if mode == "npc" else save_monster_templates
-        btns = ttk.Frame(right)
-        btns.grid(row=len(fields), column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Button(btns, text="추가", command=add_row).pack(side="left", padx=3)
-        ttk.Button(btns, text="수정", command=upd_row).pack(side="left", padx=3)
-        ttk.Button(btns, text="삭제", command=del_row).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=partial(self._save_list, data, save_fn, "NPC" if mode == "npc" else "몬스터")).pack(side="left", padx=3)
-
-    def _build_npc_tab(self):
-        self._build_person_tab(self.npc_tab, "npc")
-
-    def _build_monster_tab(self):
-        self._build_person_tab(self.monster_tab, "monster")
-
-    def _build_entity_tab(self):
-        left = ttk.Frame(self.entity_tab)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(self.entity_tab)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        self.entity_list = tk.Listbox(left, width=36, height=30)
-        self.entity_list.pack(fill="y")
-        self.entity_list.bind("<<ListboxSelect>>", self._on_entity_select)
-        for e in self.entities:
-            self.entity_list.insert("end", f"{e.get('type','')}:{e.get('name','')} ({e.get('x',0)},{e.get('y',0)})")
-
-        ttk.Label(right, text="유형").grid(row=0, column=0, sticky="w")
-        ttk.Label(right, text="이름").grid(row=1, column=0, sticky="w")
-        ttk.Label(right, text="X").grid(row=2, column=0, sticky="w")
-        ttk.Label(right, text="Y").grid(row=3, column=0, sticky="w")
-        ttk.Label(right, text="재고(자원형만)").grid(row=4, column=0, sticky="w")
-
-        self.entity_type = ttk.Combobox(right, values=["workbench", "resource"], state="readonly", width=40)
-        self.entity_name = ttk.Entry(right, width=43)
-        self.entity_x = ttk.Entry(right, width=43)
-        self.entity_y = ttk.Entry(right, width=43)
-        self.entity_stock = ttk.Entry(right, width=43)
-        self.entity_type.grid(row=0, column=1, sticky="w", pady=2)
-        self.entity_name.grid(row=1, column=1, sticky="w", pady=2)
-        self.entity_x.grid(row=2, column=1, sticky="w", pady=2)
-        self.entity_y.grid(row=3, column=1, sticky="w", pady=2)
-        self.entity_stock.grid(row=4, column=1, sticky="w", pady=2)
-
-        btns = ttk.Frame(right)
-        btns.grid(row=5, column=0, columnspan=2, sticky="w", pady=8)
-        ttk.Button(btns, text="추가", command=self._add_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="수정", command=self._update_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="삭제", command=self._delete_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=partial(self._save_list, self.entities, save_entities, "엔티티")).pack(side="left", padx=3)
-
-    def _entity_from_form(self):
-        try:
-            out = {"type": self.entity_type.get().strip() or "workbench", "name": self.entity_name.get().strip(), "x": int(self.entity_x.get().strip() or "0"), "y": int(self.entity_y.get().strip() or "0")}
-            if out["type"] == "resource":
-                out["stock"] = max(0, int(self.entity_stock.get().strip() or "0"))
-            return out if out["name"] else None
-        except ValueError:
-            messagebox.showwarning("경고", "좌표/재고는 숫자만 입력하세요.")
-            return None
-
-    def _on_entity_select(self, _=None):
-        sel = self.entity_list.curselection()
-        if not sel:
-            return
-        row = self.entities[sel[0]]
-        self.entity_type.set(str(row.get("type", "workbench")))
-        self.entity_name.delete(0, "end")
-        self.entity_name.insert(0, str(row.get("name", "")))
-        self.entity_x.delete(0, "end")
-        self.entity_x.insert(0, str(row.get("x", 0)))
-        self.entity_y.delete(0, "end")
-        self.entity_y.insert(0, str(row.get("y", 0)))
-        self.entity_stock.delete(0, "end")
-        self.entity_stock.insert(0, str(row.get("stock", 0)))
-
-    def _add_entity(self):
-        row = self._entity_from_form()
-        if not row:
-            return
-        self.entities.append(row)
-        self.entity_list.insert("end", f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
-
-    def _update_entity(self):
-        sel = self.entity_list.curselection()
-        if not sel:
-            return
-        row = self._entity_from_form()
-        if not row:
-            return
-        i = sel[0]
-        self.entities[i] = row
-        self.entity_list.delete(i)
-        self.entity_list.insert(i, f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
-
-    def _delete_entity(self):
-        sel = self.entity_list.curselection()
-        if not sel:
-            return
-        i = sel[0]
-        self.entity_list.delete(i)
-        self.entities.pop(i)
-
-    def _build_job_tab(self):
-        left = ttk.Frame(self.job_tab)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(self.job_tab)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        self.job_list = tk.Listbox(left, width=28, height=25)
-        self.job_list.pack(fill="y")
-        self.job_list.bind("<<ListboxSelect>>", self._on_job_select)
-        for row in self.jobs:
-            self.job_list.insert("end", str(row.get("job", "")))
-
-        ttk.Label(right, text="직업").grid(row=0, column=0, sticky="w")
-        ttk.Label(right, text="판매 아이템(쉼표)").grid(row=1, column=0, sticky="w")
-        ttk.Label(right, text="판매 한도").grid(row=2, column=0, sticky="w")
-
-        self.job_name = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=40)
-        self.job_sell_items = ttk.Entry(right, width=43)
-        self.job_sell_limit = ttk.Entry(right, width=43)
-        self.job_name.grid(row=0, column=1, sticky="w", pady=2)
-        self.job_sell_items.grid(row=1, column=1, sticky="w", pady=2)
-        self.job_sell_limit.grid(row=2, column=1, sticky="w", pady=2)
-
-        btns = ttk.Frame(right)
-        btns.grid(row=3, column=0, columnspan=2, sticky="w", pady=10)
-        ttk.Button(btns, text="추가", command=self._add_job).pack(side="left", padx=4)
-        ttk.Button(btns, text="수정", command=self._update_job).pack(side="left", padx=4)
-        ttk.Button(btns, text="삭제", command=self._delete_job).pack(side="left", padx=4)
-        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.jobs, save_job_defs, "직업")).pack(side="left", padx=4)
-
-    def _on_job_select(self, _ev=None):
-        sel = self.job_list.curselection()
-        if not sel:
-            return
-        row = self.jobs[sel[0]]
-        self.job_name.set(str(row.get("job", "")))
-        self.job_sell_items.delete(0, "end")
-        self.job_sell_items.insert(0, ",".join([str(x) for x in row.get("sell_items", [])]))
-        self.job_sell_limit.delete(0, "end")
-        self.job_sell_limit.insert(0, str(row.get("sell_limit", 3)))
-
-    def _job_from_form(self):
-        try:
-            job_name = self.job_name.get().strip()
-            if not job_name:
-                return None
-            return {"job": job_name, "primary_output": {}, "input_need": {}, "craft_output": {}, "sell_items": [s.strip() for s in self.job_sell_items.get().split(",") if s.strip()], "sell_limit": int(self.job_sell_limit.get().strip() or "3")}
-        except ValueError:
-            return None
-
-    def _add_job(self):
-        row = self._job_from_form()
-        if not row:
-            return
-        self.jobs.append(row)
-        self.job_list.insert("end", str(row["job"]))
-
-    def _update_job(self):
-        sel = self.job_list.curselection()
-        if not sel:
-            return
-        row = self._job_from_form()
-        if not row:
-            return
-        i = sel[0]
-        self.jobs[i] = row
-        self.job_list.delete(i)
-        self.job_list.insert(i, str(row["job"]))
-
-    def _delete_job(self):
-        sel = self.job_list.curselection()
-        if not sel:
-            return
-        i = sel[0]
-        self.job_list.delete(i)
-        self.jobs.pop(i)
-
-    def _build_sim_tab(self):
-        frame = ttk.Frame(self.sim_tab)
-        frame.pack(fill="both", expand=True, padx=16, pady=16)
-        self.sim_entries = {}
-        labels = {
-            "npc_speed": "NPC 이동속도(px/s)",
-            "hunger_gain_per_hour": "시간당 배고픔 증가",
-            "fatigue_gain_per_hour": "시간당 피로 증가",
-            "meal_hunger_restore": "식사 시 배고픔 회복",
-            "rest_fatigue_restore": "휴식 시 피로 회복",
-            "potion_heal": "포션 회복량",
-        }
-        for i, (k, lab) in enumerate(labels.items()):
-            ttk.Label(frame, text=lab).grid(row=i, column=0, sticky="w", pady=4)
-            ent = ttk.Entry(frame, width=24)
-            ent.grid(row=i, column=1, sticky="w", pady=4)
-            ent.insert(0, str(self.sim.get(k, 0)))
-            self.sim_entries[k] = ent
-
-        ttk.Button(frame, text="저장", command=self._save_sim).grid(row=len(labels), column=0, sticky="w", pady=12)
-
-    def _save_sim(self):
-        out = {}
-        try:
-            for k, w in self.sim_entries.items():
-                out[k] = float(w.get().strip())
-        except ValueError:
-            messagebox.showwarning("경고", "시뮬레이션 설정은 숫자로 입력하세요.")
-            return
-        self._save_list(out, save_sim_settings, "시뮬레이션 설정")
+        for filename in DICT_TABS:
+            tab = ttk.Frame(nb)
+            nb.add(tab, text=filename)
+            DictTab(tab, filename)
 
 
 if __name__ == "__main__":
