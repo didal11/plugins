@@ -10,10 +10,14 @@ from typing import Dict, List
 DATA_DIR = Path(__file__).parent / "data"
 ITEMS_FILE = DATA_DIR / "items.json"
 NPCS_FILE = DATA_DIR / "npcs.json"
+MONSTERS_FILE = DATA_DIR / "monsters.json"
+RACES_FILE = DATA_DIR / "races.json"
+ENTITIES_FILE = DATA_DIR / "entities.json"
 JOBS_FILE = DATA_DIR / "jobs.json"
 SIM_SETTINGS_FILE = DATA_DIR / "sim_settings.json"
 
 VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사"]
+VALID_GENDERS = ["남", "여", "기타"]
 
 DEFAULT_ITEMS: List[Dict[str, str]] = [
     {"key": "wheat", "display": "밀"},
@@ -97,6 +101,20 @@ DEFAULT_NPCS: List[Dict[str, object]] = [
     {"name": "노아", "race": "인간", "gender": "남", "age": 33, "height_cm": 171, "weight_kg": 70, "job": "농부", "goal": "곡물 상인"},
     {"name": "세라", "race": "엘프", "gender": "여", "age": 34, "height_cm": 179, "weight_kg": 62, "job": "약사", "goal": "특효약 개발"},
 ]
+
+DEFAULT_MONSTERS: List[Dict[str, object]] = [
+    {"name": "들개 고블린", "race": "고블린", "gender": "기타", "age": 8, "job": "모험가"},
+    {"name": "늪지 슬라임", "race": "슬라임", "gender": "기타", "age": 3, "job": "모험가"},
+    {"name": "산악 코볼트", "race": "코볼트", "gender": "기타", "age": 9, "job": "모험가"},
+]
+
+DEFAULT_RACES: List[Dict[str, object]] = [
+    {"name": "인간", "is_hostile": False, "str_bonus": 0, "agi_bonus": 0, "hp_bonus": 0, "speed_bonus": 0.0},
+    {"name": "엘프", "is_hostile": False, "str_bonus": 0, "agi_bonus": 1, "hp_bonus": 0, "speed_bonus": 0.05},
+    {"name": "드워프", "is_hostile": False, "str_bonus": 1, "agi_bonus": 0, "hp_bonus": 2, "speed_bonus": -0.03},
+]
+
+DEFAULT_ENTITIES: List[Dict[str, object]] = []
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -188,18 +206,6 @@ def _normalize_entity(row: Dict[str, object]) -> Dict[str, object]:
 
 def ensure_data_files() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if not ITEMS_FILE.exists():
-        _write_json(ITEMS_FILE, DEFAULT_ITEMS)
-    if not NPCS_FILE.exists():
-        _write_json(NPCS_FILE, DEFAULT_NPCS)
-    if not JOBS_FILE.exists():
-        _write_json(JOBS_FILE, DEFAULT_JOB_DEFS)
-    if not SIM_SETTINGS_FILE.exists():
-        _write_json(SIM_SETTINGS_FILE, DEFAULT_SIM_SETTINGS)
-
-
-def ensure_data_files() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
     defaults = {
         ITEMS_FILE: DEFAULT_ITEMS,
         NPCS_FILE: DEFAULT_NPCS,
@@ -248,7 +254,7 @@ def save_item_defs(items: List[Dict[str, object]]) -> None:
     _write_json(ITEMS_FILE, items)
 
 
-def load_races() -> List[Dict[str, object]]:
+def load_npc_templates() -> List[Dict[str, object]]:
     ensure_data_files()
     try:
         raw = json.loads(NPCS_FILE.read_text(encoding="utf-8"))
@@ -279,6 +285,28 @@ def load_races() -> List[Dict[str, object]]:
     return out or list(DEFAULT_NPCS)
 
 
+def load_monster_templates() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    out: List[Dict[str, object]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "name": name,
+                "race": str(it.get("race", "고블린")).strip() or "고블린",
+                "gender": str(it.get("gender", "기타")).strip() or "기타",
+                "age": int(it.get("age", 5)),
+                "job": "모험가",
+            }
+        )
+    return out or list(DEFAULT_MONSTERS)
+
+
 def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
     ensure_data_files()
     clean: List[Dict[str, object]] = []
@@ -302,6 +330,25 @@ def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
             }
         )
     _write_json(NPCS_FILE, clean)
+
+
+def save_monster_templates(monsters: List[Dict[str, object]]) -> None:
+    ensure_data_files()
+    clean: List[Dict[str, object]] = []
+    for it in monsters:
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        clean.append(
+            {
+                "name": name,
+                "race": str(it.get("race", "고블린")).strip() or "고블린",
+                "gender": str(it.get("gender", "기타")).strip() or "기타",
+                "age": int(it.get("age", 5)),
+                "job": "모험가",
+            }
+        )
+    _write_json(MONSTERS_FILE, clean)
 
 
 def load_job_defs() -> List[Dict[str, object]]:

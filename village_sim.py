@@ -48,7 +48,14 @@ from config import (
 )
 
 from economy import EconomySystem
-from editable_data import ensure_data_files, load_item_defs, load_job_defs, load_npc_templates, load_sim_settings
+from editable_data import (
+    ensure_data_files,
+    load_item_defs,
+    load_job_defs,
+    load_monster_templates,
+    load_npc_templates,
+    load_sim_settings,
+)
 
 from model import (
     Building,
