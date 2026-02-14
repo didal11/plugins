@@ -48,7 +48,14 @@ from config import (
 )
 
 from economy import EconomySystem
-from editable_data import ensure_data_files, load_item_defs, load_job_defs, load_npc_templates, load_sim_settings
+from editable_data import (
+    ensure_data_files,
+    load_item_defs,
+    load_job_defs,
+    load_monster_templates,
+    load_npc_templates,
+    load_sim_settings,
+)
 
 from model import (
     Building,
@@ -280,7 +287,6 @@ class VillageGame:
                     self.combat_settings.update(raw)
             except Exception:
                 pass
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
         self.last_economy_snapshot = None
 
         # Logs
@@ -299,7 +305,7 @@ class VillageGame:
         ensure_data_files()
         loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings, loaded_items, self.entities)
+        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
