@@ -46,7 +46,7 @@ from config import (
     MODAL_H,
 )
 
-from editable_data import ensure_data_files, load_combat_settings, load_item_defs, load_npc_templates
+from editable_data import ensure_data_files, load_item_defs, load_npc_templates
 
 from model import (
     Building,
@@ -287,8 +287,6 @@ class VillageGame:
         ensure_data_files()
         loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
-        # Keep attribute assignment explicit so stale merged files still get a valid value.
-        self.combat_settings = load_combat_settings()
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -488,6 +486,16 @@ class VillageGame:
                 job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
                 goal=str(t.get("goal", "돈벌기")),
             )
+            tr = Traits(
+                name=nm,
+                race=str(t.get("race", "인간")),
+                gender=str(t.get("gender", "기타")),
+                age=int(t.get("age", 25)),
+                height_cm=int(t.get("height_cm", 170)),
+                weight_kg=int(t.get("weight_kg", 65)),
+                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
+                goal=str(t.get("goal", "돈벌기")),
+            )
             npc = NPC(
                 traits=tr,
                 status=st,
@@ -608,17 +616,9 @@ class VillageGame:
         npc.target_outside_tile = tile
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
 
-    def _combat_cfg(self) -> Dict[str, object]:
-        """Return combat settings safely even if attribute is missing due to merge conflicts."""
-        cfg = getattr(self, "combat_settings", None)
-        if not isinstance(cfg, dict):
-            cfg = load_combat_settings()
-            self.combat_settings = cfg
-        return cfg
-
 
     def _is_hostile(self, npc: NPC) -> bool:
-        return npc.traits.race == str(self._combat_cfg().get("hostile_race", "적대"))
+        return npc.traits.race == str(self.combat_settings.get("hostile_race", "적대"))
 
     def _nearest_hostile(self, npc: NPC) -> Optional[NPC]:
         candidates = [x for x in self.npcs if x is not npc and self._is_hostile(x) and x.status.hp > 0]
@@ -896,7 +896,7 @@ class VillageGame:
             if npc.status.hp > 0:
                 self.npc_passive_1h(npc)
 
-        self.logs.extend(resolve_combat_round(self.npcs, self._combat_cfg(), self.rng))
+        self.logs.extend(resolve_combat_round(self.npcs, self.combat_settings, self.rng))
 
         for npc in self.npcs:
             if npc.status.hp <= 0:
