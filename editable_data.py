@@ -338,6 +338,28 @@ def load_monster_templates() -> List[Dict[str, object]]:
     return out or list(DEFAULT_MONSTERS)
 
 
+def load_monster_templates() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    out: List[Dict[str, object]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "name": name,
+                "race": str(it.get("race", "고블린")).strip() or "고블린",
+                "gender": str(it.get("gender", "기타")).strip() or "기타",
+                "age": int(it.get("age", 5)),
+                "job": "모험가",
+            }
+        )
+    return out or list(DEFAULT_MONSTERS)
+
+
 def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
     ensure_data_files()
     clean: List[Dict[str, object]] = []
