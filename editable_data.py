@@ -88,6 +88,28 @@ def _seed_if_empty(path: Path, rows: List[Dict[str, object]], defaults: List[Dic
     return seeded
 
 
+def _job_names_from_raw(raw: object) -> List[str]:
+    names: List[str] = []
+    for row in raw if isinstance(raw, list) else []:
+        if not isinstance(row, dict):
+            continue
+        job_name = str(row.get("job", "")).strip()
+        if not job_name or job_name in names:
+            continue
+        names.append(job_name)
+    return names
+
+
+def load_job_names() -> List[str]:
+    """jobs.json의 직업명을 읽어 UI/검증에 공통으로 사용한다."""
+    ensure_data_files()
+    raw = _read_json(JOBS_FILE, DEFAULT_JOB_DEFS)
+    names = _job_names_from_raw(raw)
+    if names:
+        return names
+    return list(VALID_JOBS)
+
+
 def ensure_data_files() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     defaults = {
@@ -154,6 +176,7 @@ def save_item_defs(items: List[Dict[str, object]]) -> None:
 def load_npc_templates() -> List[Dict[str, object]]:
     ensure_data_files()
     raw = _read_json(NPCS_FILE, DEFAULT_NPCS)
+    valid_jobs = set(load_job_names())
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
@@ -162,7 +185,7 @@ def load_npc_templates() -> List[Dict[str, object]]:
         if not name:
             continue
         job = str(it.get("job", "농부")).strip() or "농부"
-        if job not in VALID_JOBS:
+        if job not in valid_jobs:
             job = "농부"
         row: Dict[str, object] = {"name": name, "race": str(it.get("race", "인간")).strip() or "인간", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 25)), "job": job}
         if "height_cm" in it:
@@ -183,6 +206,7 @@ def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
 def load_monster_templates() -> List[Dict[str, object]]:
     ensure_data_files()
     raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    valid_jobs = set(load_job_names())
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
@@ -191,7 +215,7 @@ def load_monster_templates() -> List[Dict[str, object]]:
         if not name:
             continue
         job = str(it.get("job", "모험가")).strip() or "모험가"
-        if job not in VALID_JOBS:
+        if job not in valid_jobs:
             job = "모험가"
         out.append({"name": name, "race": str(it.get("race", "고블린")).strip() or "고블린", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 5)), "job": job})
     return out
@@ -242,7 +266,7 @@ def load_job_defs() -> List[Dict[str, object]]:
         if not isinstance(row, dict):
             continue
         job = str(row.get("job", "")).strip()
-        if job not in VALID_JOBS:
+        if not job:
             continue
         out.append({"job": job, "primary_output": row.get("primary_output", {}), "input_need": row.get("input_need", {}), "craft_output": row.get("craft_output", {}), "sell_items": row.get("sell_items", []), "sell_limit": int(row.get("sell_limit", 3))})
     return _seed_if_empty(JOBS_FILE, out, DEFAULT_JOB_DEFS)
