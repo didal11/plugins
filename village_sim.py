@@ -824,10 +824,7 @@ class VillageGame:
         outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
 
         gained_parts: List[str] = []
-        valid_items = set(self.items.keys())
         for item, spec in outputs.items():
-            if str(item) not in valid_items:
-                continue
             qty = 0
             if isinstance(spec, int):
                 qty = max(0, int(spec))
