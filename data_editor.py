@@ -164,14 +164,16 @@ class EditorApp(tk.Tk):
         self.item_key.grid(row=0, column=1, sticky="w", pady=4)
         self.item_display.grid(row=1, column=1, sticky="w", pady=4)
 
-        self.item_entries = {"key": self.item_key, "display": self.item_disp}
+        self.item_entries = {"key": self.item_key, "display": self.item_display}
         self.item_vars = {"is_craftable": tk.BooleanVar(value=False), "is_gatherable": tk.BooleanVar(value=False)}
+        ttk.Checkbutton(right, text="제작 가능", variable=self.item_vars["is_craftable"]).grid(row=2, column=1, sticky="w")
+        ttk.Checkbutton(right, text="채집 가능", variable=self.item_vars["is_gatherable"]).grid(row=3, column=1, sticky="w")
         ttk.Label(right, text="가공 재료(JSON)").grid(row=2, column=0, sticky="nw")
         self.item_craft_inputs = tk.Text(right, width=40, height=3)
-        self.item_craft_inputs.grid(row=2, column=1, sticky="w", pady=4)
+        self.item_craft_inputs.grid(row=4, column=1, sticky="w", pady=4)
 
         btns = ttk.Frame(right)
-        btns.grid(row=3, column=0, columnspan=2, sticky="w", pady=8)
+        btns.grid(row=5, column=0, columnspan=2, sticky="w", pady=8)
         ttk.Button(btns, text="추가", command=self._add_item).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=self._update_item).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=self._delete_item).pack(side="left", padx=3)
@@ -197,7 +199,6 @@ class EditorApp(tk.Tk):
         except Exception:
             messagebox.showwarning("경고", "아이템 입력값(JSON/숫자)을 확인하세요.")
             return None
-        return {"key": key, "display": display}
 
     def _on_item_select(self, _=None):
         sel = self.item_list.curselection()
@@ -208,6 +209,10 @@ class EditorApp(tk.Tk):
         self.item_key.insert(0, str(row.get("key", "")))
         self.item_display.delete(0, "end")
         self.item_display.insert(0, str(row.get("display", "")))
+        self.item_vars["is_craftable"].set(bool(row.get("is_craftable", False)))
+        self.item_vars["is_gatherable"].set(bool(row.get("is_gatherable", False)))
+        self.item_craft_inputs.delete("1.0", "end")
+        self.item_craft_inputs.insert("1.0", json.dumps(row.get("craft_inputs", {}), ensure_ascii=False))
 
     def _add_item(self):
         row = self._item_from_form()
