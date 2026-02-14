@@ -46,16 +46,16 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "농사", "duration_hours": 1, "required_tools": ["호미"], "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
-    {"name": "낚시", "duration_hours": 1, "required_tools": ["낚싯대"], "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
-    {"name": "제련", "duration_hours": 1, "required_tools": ["화덕", "망치"], "outputs": {"ingot": {"min": 1, "max": 2}}, "fatigue": 12, "hunger": 7},
-    {"name": "도구제작", "duration_hours": 1, "required_tools": ["망치", "모루"], "outputs": {"wood": {"min": 1, "max": 2}}, "fatigue": 11, "hunger": 6},
-    {"name": "약 제조", "duration_hours": 1, "required_tools": ["약절구"], "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
-    {"name": "약초채집", "duration_hours": 1, "required_tools": ["채집가방"], "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
-    {"name": "벌목", "duration_hours": 1, "required_tools": ["도끼"], "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
-    {"name": "채광", "duration_hours": 1, "required_tools": ["곡괭이"], "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
-    {"name": "동물사냥", "duration_hours": 1, "required_tools": ["활", "사냥칼"], "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
-    {"name": "몬스터사냥", "duration_hours": 1, "required_tools": ["무기"], "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
+    {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
+    {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
+    {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
+    {"name": "도구제작", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
+    {"name": "약 제조", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
+    {"name": "약초채집", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
+    {"name": "벌목", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
+    {"name": "채광", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
+    {"name": "동물사냥", "duration_hours": 3, "required_tools": ["도구"], "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
+    {"name": "몬스터사냥", "duration_hours": 3, "required_tools": ["도구"], "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -292,6 +292,7 @@ def load_job_defs() -> List[Dict[str, object]]:
 def load_action_defs() -> List[Dict[str, object]]:
     ensure_data_files()
     raw = _read_json(ACTIONS_FILE, DEFAULT_ACTION_DEFS)
+    item_keys = {str(it.get("key", "")).strip() for it in load_item_defs() if isinstance(it, dict)}
     out: List[Dict[str, object]] = []
     for row in raw if isinstance(raw, list) else []:
         if not isinstance(row, dict):
@@ -299,17 +300,24 @@ def load_action_defs() -> List[Dict[str, object]]:
         name = str(row.get("name", "")).strip()
         if not name:
             continue
-        outputs = row.get("outputs", {}) if isinstance(row.get("outputs", {}), dict) else {}
+        outputs_raw = row.get("outputs", {}) if isinstance(row.get("outputs", {}), dict) else {}
+        outputs = {k: v for k, v in outputs_raw.items() if str(k).strip() in item_keys}
         out.append({
             "name": name,
             "duration_hours": max(1, int(row.get("duration_hours", 1))),
-            "required_tools": [str(x).strip() for x in row.get("required_tools", []) if str(x).strip()] if isinstance(row.get("required_tools", []), list) else [],
+            "required_tools": ["도구"],
             "outputs": outputs,
             "fatigue": int(row.get("fatigue", 12)),
             "hunger": int(row.get("hunger", 8)),
         })
     return _seed_if_empty(ACTIONS_FILE, out, DEFAULT_ACTION_DEFS)
 
+
+
+
+def save_action_defs(action_defs: List[Dict[str, object]]) -> None:
+    ensure_data_files()
+    _write_json(ACTIONS_FILE, action_defs)
 
 def save_job_defs(job_defs: List[Dict[str, object]]) -> None:
     ensure_data_files()
