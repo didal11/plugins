@@ -427,6 +427,33 @@ def save_monster_templates(monsters: List[Dict[str, object]]) -> None:
     _write_json(MONSTERS_FILE, clean)
 
 
+
+
+def load_entities() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(ENTITIES_FILE, DEFAULT_ENTITIES)
+    out: List[Dict[str, object]] = []
+    for row in raw if isinstance(raw, list) else []:
+        if not isinstance(row, dict):
+            continue
+        norm = _normalize_entity(row)
+        if norm:
+            out.append(norm)
+    return out
+
+
+def save_entities(entities: List[Dict[str, object]]) -> None:
+    ensure_data_files()
+    clean: List[Dict[str, object]] = []
+    for row in entities:
+        if not isinstance(row, dict):
+            continue
+        norm = _normalize_entity(row)
+        if norm:
+            clean.append(norm)
+    _write_json(ENTITIES_FILE, clean)
+
+
 def load_job_defs() -> List[Dict[str, object]]:
     ensure_data_files()
     try:
