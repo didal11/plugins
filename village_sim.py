@@ -311,6 +311,9 @@ class VillageGame:
         if not loaded_items:
             loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items if isinstance(it, dict) and "key" in it and "display" in it}
+        self.item_display_to_key: Dict[str, str] = {
+            v.display: k for k, v in self.items.items()
+        }
 
         loaded_races = data.get("races", []) if isinstance(data.get("races"), list) else []
         if not loaded_races:
@@ -620,6 +623,8 @@ class VillageGame:
                 npc.inventory["ore"] = 1
             if self.rng.random() < 0.20 and "herb" in self.items:
                 npc.inventory["herb"] = 1
+            if (not hostile) and "tool" in self.items and npc.inventory.get("tool", 0) <= 0:
+                npc.inventory["tool"] = 1
             self.npcs.append(npc)
 
     # -----------------------------
