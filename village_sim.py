@@ -60,6 +60,7 @@ from editable_data import (
 )
 
 from model import (
+    TileRect,
     Building,
     BuildingState,
     BuildingTab,
@@ -122,9 +123,9 @@ def manhattan_path(start: Tuple[int, int], goal: Tuple[int, int]) -> List[Tuple[
     return path
 
 
-def rect_union(rects: List[pygame.Rect]) -> pygame.Rect:
+def rect_union(rects: List[TileRect]) -> TileRect:
     if not rects:
-        return pygame.Rect(0, 0, 0, 0)
+        return TileRect(0, 0, 0, 0)
     r = rects[0].copy()
     for rr in rects[1:]:
         r.union_ip(rr)
@@ -326,7 +327,7 @@ class VillageGame:
 
         # Village outline for outside logic
         self.village_rect_tiles = rect_union([z.rect_tiles for z in self.zones]).inflate(4, 4)
-        self.village_rect_tiles.clamp_ip(pygame.Rect(0, 0, GRID_W, GRID_H))
+        self.village_rect_tiles.clamp_ip(TileRect(0, 0, GRID_W, GRID_H))
 
         # Building state
         self.bstate: Dict[str, BuildingState] = {}
@@ -348,7 +349,7 @@ class VillageGame:
     # -----------------------------
     # Worldgen
     # -----------------------------
-    def _create_buildings_grid(self, zone_type: ZoneType, zone_rect: pygame.Rect, names: List[str], cols: int, rows: int, pad: int = 1) -> List[Building]:
+    def _create_buildings_grid(self, zone_type: ZoneType, zone_rect: TileRect, names: List[str], cols: int, rows: int, pad: int = 1) -> List[Building]:
         b_w, b_h = 4, 3
         out: List[Building] = []
         start_x = zone_rect.x + 1
@@ -366,7 +367,7 @@ class VillageGame:
                     continue
                 if by + b_h > zone_rect.y + zone_rect.h - 1:
                     continue
-                out.append(Building(zone_type, names[idx], pygame.Rect(bx, by, b_w, b_h)))
+                out.append(Building(zone_type, names[idx], TileRect(bx, by, b_w, b_h)))
                 idx += 1
         return out
 
@@ -382,10 +383,10 @@ class VillageGame:
         start_x = max(1, min(GRID_W - block_w - 1, (GRID_W // 2) - (block_w // 2)))
         start_y = max(1, min(GRID_H - block_h - 1, (GRID_H // 2) - (block_h // 2)))
 
-        market_rect = pygame.Rect(start_x, start_y, zone_w, zone_h)
-        res_rect = pygame.Rect(start_x + zone_w + gap, start_y, zone_w, zone_h)
-        inter_rect = pygame.Rect(start_x, start_y + zone_h + gap, inter_w, inter_h)
-        job_rect = pygame.Rect(start_x, inter_rect.y + inter_h + gap, job_w, job_h)
+        market_rect = TileRect(start_x, start_y, zone_w, zone_h)
+        res_rect = TileRect(start_x + zone_w + gap, start_y, zone_w, zone_h)
+        inter_rect = TileRect(start_x, start_y + zone_h + gap, inter_w, inter_h)
+        job_rect = TileRect(start_x, inter_rect.y + inter_h + gap, job_w, job_h)
 
         zones: List[Zone] = []
         zones.append(Zone(ZoneType.MARKET, market_rect, self._create_buildings_grid(ZoneType.MARKET, market_rect, self.market_building_names, cols=3, rows=1, pad=1)))
