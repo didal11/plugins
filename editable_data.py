@@ -103,6 +103,89 @@ def _write_json(path: Path, obj: object) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _read_json(path: Path, fallback: object) -> object:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+
+
+def _normalize_item(it: Dict[str, object]) -> Dict[str, object]:
+    key = str(it.get("key", "")).strip()
+    display = str(it.get("display", "")).strip()
+    if not key or not display:
+        return {}
+    return {
+        "key": key,
+        "display": display,
+        "is_craftable": bool(it.get("is_craftable", False)),
+        "is_gatherable": bool(it.get("is_gatherable", False)),
+        "craft_inputs": it.get("craft_inputs", {}) if isinstance(it.get("craft_inputs", {}), dict) else {},
+        "craft_time": max(0, int(it.get("craft_time", 0))),
+        "craft_fatigue": max(0, int(it.get("craft_fatigue", 0))),
+        "craft_station": str(it.get("craft_station", "")),
+        "craft_amount": max(0, int(it.get("craft_amount", 0))),
+        "gather_time": max(0, int(it.get("gather_time", 0))),
+        "gather_amount": max(0, int(it.get("gather_amount", 0))),
+        "gather_fatigue": max(0, int(it.get("gather_fatigue", 0))),
+        "gather_spot": str(it.get("gather_spot", "")),
+    }
+
+
+def _normalize_race(row: Dict[str, object]) -> Dict[str, object]:
+    name = str(row.get("name", "")).strip()
+    if not name:
+        return {}
+    return {
+        "name": name,
+        "is_hostile": bool(row.get("is_hostile", False)),
+        "str_bonus": int(row.get("str_bonus", 0)),
+        "agi_bonus": int(row.get("agi_bonus", 0)),
+        "hp_bonus": int(row.get("hp_bonus", 0)),
+        "speed_bonus": float(row.get("speed_bonus", 0.0)),
+    }
+
+
+def _normalize_person(row: Dict[str, object], valid_races: set[str]) -> Dict[str, object]:
+    name = str(row.get("name", "")).strip()
+    if not name:
+        return {}
+    race = str(row.get("race", "인간")).strip() or "인간"
+    if race not in valid_races:
+        race = "인간"
+    gender = str(row.get("gender", "기타")).strip() or "기타"
+    if gender not in VALID_GENDERS:
+        gender = "기타"
+    job = str(row.get("job", "농부")).strip() or "농부"
+    if job not in VALID_JOBS:
+        job = "농부"
+    return {
+        "name": name,
+        "race": race,
+        "gender": gender,
+        "age": max(1, int(row.get("age", 25))),
+        "job": job,
+    }
+
+
+def _normalize_entity(row: Dict[str, object]) -> Dict[str, object]:
+    kind = str(row.get("type", "workbench")).strip() or "workbench"
+    if kind not in ("workbench", "resource"):
+        return {}
+    name = str(row.get("name", "")).strip()
+    if not name:
+        return {}
+    out: Dict[str, object] = {
+        "type": kind,
+        "name": name,
+        "x": int(row.get("x", 0)),
+        "y": int(row.get("y", 0)),
+    }
+    if kind == "resource":
+        out["stock"] = max(0, int(row.get("stock", 0)))
+    return out
+
+
 def ensure_data_files() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not ITEMS_FILE.exists():
