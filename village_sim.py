@@ -46,7 +46,7 @@ from config import (
     MODAL_H,
 )
 
-from editable_data import ensure_data_files, load_combat_settings, load_item_defs, load_npc_templates
+from editable_data import ensure_data_files, load_item_defs, load_npc_templates
 
 from model import (
     Building,
@@ -285,7 +285,6 @@ class VillageGame:
         ensure_data_files()
         loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
-        self.combat_settings = load_combat_settings()
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -474,6 +473,16 @@ class VillageGame:
                 hp=hp,
                 strength=max(1, int(t.get("strength", self.rng.randint(8, 16)))),
                 agility=max(1, int(t.get("agility", self.rng.randint(8, 16)))),
+            )
+            tr = Traits(
+                name=nm,
+                race=str(t.get("race", "인간")),
+                gender=str(t.get("gender", "기타")),
+                age=int(t.get("age", 25)),
+                height_cm=int(t.get("height_cm", 170)),
+                weight_kg=int(t.get("weight_kg", 65)),
+                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
+                goal=str(t.get("goal", "돈벌기")),
             )
             tr = Traits(
                 name=nm,
