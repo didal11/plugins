@@ -354,18 +354,16 @@ class EditorApp(tk.Tk):
 
         def save_rows() -> None:
             sel = lb.curselection()
-            if not sel:
-                messagebox.showwarning("경고", "저장할 NPC/몬스터 행을 먼저 선택하세요.")
-                return
-            row = from_form()
-            if not row or not row.get("name"):
-                return
-            idx = sel[0]
-            data[idx] = row
-            lb.delete(idx)
-            lb.insert(idx, f"{row['name']} ({row['race']}/{row['job']})")
-            lb.selection_set(idx)
-            lb.activate(idx)
+            if sel:
+                row = from_form()
+                if not row or not row.get("name"):
+                    return
+                idx = sel[0]
+                data[idx] = row
+                lb.delete(idx)
+                lb.insert(idx, f"{row['name']} ({row['race']}/{row['job']})")
+                lb.selection_set(idx)
+                lb.activate(idx)
             if mode == "npc":
                 save_npc_templates(data)
                 messagebox.showinfo("저장 완료", "NPC 데이터를 저장했습니다.")

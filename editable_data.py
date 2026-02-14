@@ -176,6 +176,7 @@ def save_item_defs(items: List[Dict[str, object]]) -> None:
 def load_npc_templates() -> List[Dict[str, object]]:
     ensure_data_files()
     raw = _read_json(NPCS_FILE, DEFAULT_NPCS)
+    valid_jobs = set(load_job_names())
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
@@ -184,6 +185,8 @@ def load_npc_templates() -> List[Dict[str, object]]:
         if not name:
             continue
         job = str(it.get("job", "농부")).strip() or "농부"
+        if job not in valid_jobs:
+            job = "농부"
         row: Dict[str, object] = {"name": name, "race": str(it.get("race", "인간")).strip() or "인간", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 25)), "job": job}
         if "height_cm" in it:
             row["height_cm"] = int(it.get("height_cm", 170))
@@ -203,6 +206,7 @@ def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
 def load_monster_templates() -> List[Dict[str, object]]:
     ensure_data_files()
     raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    valid_jobs = set(load_job_names())
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
@@ -211,6 +215,8 @@ def load_monster_templates() -> List[Dict[str, object]]:
         if not name:
             continue
         job = str(it.get("job", "모험가")).strip() or "모험가"
+        if job not in valid_jobs:
+            job = "모험가"
         out.append({"name": name, "race": str(it.get("race", "고블린")).strip() or "고블린", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 5)), "job": job})
     return out
 
