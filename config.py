@@ -15,7 +15,7 @@ SCREEN_W, SCREEN_H = 1280, 720
 FPS = 60
 
 # --- Simulation ---
-SIM_TICK_MS = 350          # 1시뮬 틱(=1시간) 당 현실시간(ms)
+SIM_TICK_MS = 10000          # 1시뮬 틱(=1시간) 당 현실시간(ms)
 NPC_SPEED = 220.0          # px/s
 CAMERA_SPEED = 1100.0      # px/s (카메라 이동)
 
