@@ -10,13 +10,7 @@ from tkinter import messagebox, ttk
 from editable_data import (
     VALID_GENDERS,
     VALID_JOBS,
-    load_entities,
-    load_item_defs,
-    load_job_defs,
-    load_monster_templates,
-    load_npc_templates,
-    load_races,
-    load_sim_settings,
+    load_all_data,
     save_entities,
     save_item_defs,
     save_job_defs,
@@ -32,13 +26,14 @@ class EditorApp(tk.Tk):
         self.title("판타지 마을 데이터 편집기")
         self.geometry("1100x760")
 
-        self.items = load_item_defs()
-        self.npcs = load_npc_templates()
-        self.monsters = load_monster_templates()
-        self.races = load_races()
-        self.entities = load_entities()
-        self.jobs = load_job_defs()
-        self.sim = load_sim_settings()
+        data = load_all_data()
+        self.items = data["items"]
+        self.npcs = data["npcs"]
+        self.monsters = data["monsters"]
+        self.races = data["races"]
+        self.entities = data["entities"]
+        self.jobs = data["jobs"]
+        self.sim = data["sim"]
 
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
@@ -103,52 +98,15 @@ class EditorApp(tk.Tk):
 
     def _npc_from_form(self):
         try:
-            return {
-                "name": self.npc_entries["name"].get().strip(),
-                "race": self.npc_entries["race"].get().strip() or "인간",
-                "gender": self.npc_entries["gender"].get().strip() or "기타",
-                "age": int(self.npc_entries["age"].get().strip() or "20"),
-                "job": self.npc_entries["job"].get().strip() or "농부",
-            }
-        except ValueError:
-            messagebox.showwarning("경고", "나이는 숫자로 입력하세요.")
-            return None
+            save_fn(rows)
+        except Exception as e:
+            messagebox.showerror("저장 실패", f"{label} 저장 중 오류: {e}")
+            return
+        messagebox.showinfo("저장 완료", f"{label} 데이터를 저장했습니다.")
 
-    def _on_npc_select(self, _=None):
-        sel = self.npc_list.curselection()
-        if not sel:
-            return
-        row = self.npcs[sel[0]]
-        for key, w in self.npc_entries.items():
-            w.delete(0, "end")
-            w.insert(0, str(row.get(key, "")))
-
-    def _add_npc(self):
-        row = self._npc_from_form()
-        if not row or not row["name"]:
-            return
-        self.npcs.append(row)
-        self.npc_list.insert("end", f"{row['name']} ({row['race']}/{row['job']})")
-
-    def _update_npc(self):
-        sel = self.npc_list.curselection()
-        if not sel:
-            return
-        row = self._npc_from_form()
-        if not row or not row["name"]:
-            return
-        idx = sel[0]
-        self.npcs[idx] = row
-        self.npc_list.delete(idx)
-        self.npc_list.insert(idx, f"{row['name']} ({row['race']}/{row['job']})")
-
-    def _delete_npc(self):
-        sel = self.npc_list.curselection()
-        if not sel:
-            return
-        idx = sel[0]
-        self.npc_list.delete(idx)
-        self.npcs.pop(idx)
+    def _race_names(self) -> list[str]:
+        names = [str(r.get("name", "")).strip() for r in self.races if isinstance(r, dict)]
+        return [n for n in names if n] or ["인간"]
 
     def _build_item_tab(self):
         left = ttk.Frame(self.item_tab)
@@ -187,8 +145,8 @@ class EditorApp(tk.Tk):
     def _item_from_form(self):
         try:
             return {
-                "key": self.item_entries["key"].get().strip(),
-                "display": self.item_entries["display"].get().strip(),
+                "key": self.item_key.get().strip(),
+                "display": self.item_display.get().strip(),
                 "is_craftable": bool(self.item_vars["is_craftable"].get()),
                 "is_gatherable": bool(self.item_vars["is_gatherable"].get()),
                 "craft_inputs": json.loads(self.item_craft_inputs.get("1.0", "end").strip() or "{}"),
@@ -221,8 +179,7 @@ class EditorApp(tk.Tk):
 
     def _add_item(self):
         row = self._item_from_form()
-        if not row:
-            messagebox.showwarning("경고", "아이템 키/이름을 입력하세요.")
+        if not row or not row["key"] or not row["display"]:
             return
         self.items.append(row)
         self.item_list.insert("end", f"{row['key']} ({row['display']})")
@@ -232,23 +189,21 @@ class EditorApp(tk.Tk):
         if not sel:
             return
         row = self._item_from_form()
-        if not row:
-            messagebox.showwarning("경고", "아이템 키/이름을 입력하세요.")
+        if not row or not row["key"] or not row["display"]:
             return
-        idx = sel[0]
-        self.items[idx] = row
-        self.item_list.delete(idx)
-        self.item_list.insert(idx, f"{row['key']} ({row['display']})")
+        i = sel[0]
+        self.items[i] = row
+        self.item_list.delete(i)
+        self.item_list.insert(i, f"{row['key']} ({row['display']})")
 
     def _delete_item(self):
         sel = self.item_list.curselection()
         if not sel:
             return
-        idx = sel[0]
-        self.item_list.delete(idx)
-        self.items.pop(idx)
+        i = sel[0]
+        self.item_list.delete(i)
+        self.items.pop(i)
 
-    # ---------- NPC / Monster shared helpers ----------
     def _build_person_tab(self, tab: ttk.Frame, mode: str):
         left = ttk.Frame(tab)
         left.pack(side="left", fill="y", padx=8, pady=8)
@@ -260,9 +215,8 @@ class EditorApp(tk.Tk):
         lb.pack(fill="y")
         for n in data:
             lb.insert("end", f"{n.get('name','')} ({n.get('race','')}/{n.get('job','')})")
-        setattr(self, f"{mode}_list", lb)
 
-        entries: dict[str, tk.Widget] = {}
+        entries = {}
         fields = [("name", "이름"), ("race", "종족"), ("gender", "성별"), ("age", "나이"), ("job", "직업")]
         for i, (f, label) in enumerate(fields):
             ttk.Label(right, text=label).grid(row=i, column=0, sticky="w", pady=2)
@@ -276,7 +230,6 @@ class EditorApp(tk.Tk):
                 w = ttk.Entry(right, width=43)
             w.grid(row=i, column=1, sticky="w", pady=2)
             entries[f] = w
-        setattr(self, f"{mode}_entries", entries)
 
         def on_select(_=None):
             sel = lb.curselection()
@@ -347,7 +300,6 @@ class EditorApp(tk.Tk):
     def _build_monster_tab(self):
         self._build_person_tab(self.monster_tab, "monster")
 
-    # ---------- Entity tab ----------
     def _build_entity_tab(self):
         left = ttk.Frame(self.entity_tab)
         left.pack(side="left", fill="y", padx=8, pady=8)
@@ -371,7 +323,6 @@ class EditorApp(tk.Tk):
         self.entity_x = ttk.Entry(right, width=43)
         self.entity_y = ttk.Entry(right, width=43)
         self.entity_stock = ttk.Entry(right, width=43)
-
         self.entity_type.grid(row=0, column=1, sticky="w", pady=2)
         self.entity_name.grid(row=1, column=1, sticky="w", pady=2)
         self.entity_x.grid(row=2, column=1, sticky="w", pady=2)
@@ -387,12 +338,7 @@ class EditorApp(tk.Tk):
 
     def _entity_from_form(self):
         try:
-            out = {
-                "type": self.entity_type.get().strip() or "workbench",
-                "name": self.entity_name.get().strip(),
-                "x": int(self.entity_x.get().strip() or "0"),
-                "y": int(self.entity_y.get().strip() or "0"),
-            }
+            out = {"type": self.entity_type.get().strip() or "workbench", "name": self.entity_name.get().strip(), "x": int(self.entity_x.get().strip() or "0"), "y": int(self.entity_y.get().strip() or "0")}
             if out["type"] == "resource":
                 out["stock"] = max(0, int(self.entity_stock.get().strip() or "0"))
             return out if out["name"] else None
@@ -418,7 +364,6 @@ class EditorApp(tk.Tk):
     def _add_entity(self):
         row = self._entity_from_form()
         if not row:
-            messagebox.showwarning("경고", "엔티티 이름/유형을 확인하세요.")
             return
         self.entities.append(row)
         self.entity_list.insert("end", f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
@@ -429,22 +374,20 @@ class EditorApp(tk.Tk):
             return
         row = self._entity_from_form()
         if not row:
-            messagebox.showwarning("경고", "엔티티 이름/유형을 확인하세요.")
             return
-        idx = sel[0]
-        self.entities[idx] = row
-        self.entity_list.delete(idx)
-        self.entity_list.insert(idx, f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
+        i = sel[0]
+        self.entities[i] = row
+        self.entity_list.delete(i)
+        self.entity_list.insert(i, f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
 
     def _delete_entity(self):
         sel = self.entity_list.curselection()
         if not sel:
             return
-        idx = sel[0]
-        self.entity_list.delete(idx)
-        self.entities.pop(idx)
+        i = sel[0]
+        self.entity_list.delete(i)
+        self.entities.pop(i)
 
-    # ---------- Job tab ----------
     def _build_job_tab(self):
         left = ttk.Frame(self.job_tab)
         left.pack(side="left", fill="y", padx=8, pady=8)
@@ -473,7 +416,7 @@ class EditorApp(tk.Tk):
         ttk.Button(btns, text="추가", command=self._add_job).pack(side="left", padx=4)
         ttk.Button(btns, text="수정", command=self._update_job).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=self._delete_job).pack(side="left", padx=4)
-        ttk.Button(btns, text="저장", command=self._save_jobs).pack(side="left", padx=4)
+        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.jobs, save_job_defs, "직업")).pack(side="left", padx=4)
 
     def _on_job_select(self, _ev=None):
         sel = self.job_list.curselection()
@@ -491,22 +434,13 @@ class EditorApp(tk.Tk):
             job_name = self.job_name.get().strip()
             if not job_name:
                 return None
-            old = next((r for r in self.jobs if str(r.get("job", "")).strip() == job_name), None)
-            return {
-                "job": job_name,
-                "primary_output": dict(old.get("primary_output", {})) if isinstance(old, dict) else {},
-                "input_need": dict(old.get("input_need", {})) if isinstance(old, dict) else {},
-                "craft_output": dict(old.get("craft_output", {})) if isinstance(old, dict) else {},
-                "sell_items": [s.strip() for s in self.job_sell_items.get().split(",") if s.strip()],
-                "sell_limit": int(self.job_sell_limit.get().strip() or "3"),
-            }
+            return {"job": job_name, "primary_output": {}, "input_need": {}, "craft_output": {}, "sell_items": [s.strip() for s in self.job_sell_items.get().split(",") if s.strip()], "sell_limit": int(self.job_sell_limit.get().strip() or "3")}
         except ValueError:
-            messagebox.showwarning("경고", "판매 한도는 숫자여야 합니다.")
             return None
 
     def _add_job(self):
         row = self._job_from_form()
-        if not row or not row["job"]:
+        if not row:
             return
         self.jobs.append(row)
         self.job_list.insert("end", str(row["job"]))
@@ -518,24 +452,19 @@ class EditorApp(tk.Tk):
         row = self._job_from_form()
         if not row:
             return
-        idx = sel[0]
-        self.jobs[idx] = row
-        self.job_list.delete(idx)
-        self.job_list.insert(idx, str(row["job"]))
+        i = sel[0]
+        self.jobs[i] = row
+        self.job_list.delete(i)
+        self.job_list.insert(i, str(row["job"]))
 
     def _delete_job(self):
         sel = self.job_list.curselection()
         if not sel:
             return
-        idx = sel[0]
-        self.job_list.delete(idx)
-        self.jobs.pop(idx)
+        i = sel[0]
+        self.job_list.delete(i)
+        self.jobs.pop(i)
 
-    def _save_jobs(self):
-        save_job_defs(self.jobs)
-        messagebox.showinfo("저장 완료", "직업 데이터를 저장했습니다.")
-
-    # ---------- Sim tab ----------
     def _build_sim_tab(self):
         frame = ttk.Frame(self.sim_tab)
         frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -565,8 +494,7 @@ class EditorApp(tk.Tk):
         except ValueError:
             messagebox.showwarning("경고", "시뮬레이션 설정은 숫자로 입력하세요.")
             return
-        save_sim_settings(out)
-        messagebox.showinfo("저장 완료", "시뮬레이션 설정을 저장했습니다.")
+        self._save_list(out, save_sim_settings, "시뮬레이션 설정")
 
 
 if __name__ == "__main__":

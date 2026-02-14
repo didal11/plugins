@@ -53,10 +53,6 @@ from editable_data import (
     load_entities,
     load_item_defs,
     load_job_defs,
-    load_monster_templates,
-    load_npc_templates,
-    load_races,
-    load_sim_settings,
 )
 
 from model import (
@@ -280,7 +276,8 @@ class VillageGame:
         self.rng = random.Random(seed)
         self.time = TimeSystem()
         self.camera = Camera()
-        self.sim_settings = load_sim_settings()
+        data = load_all_data()
+        self.sim_settings = data["sim"] if isinstance(data.get("sim"), dict) else {}
         self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
         combat_path = Path(__file__).parent / "data" / "combat.json"
         if combat_path.exists():
@@ -305,7 +302,7 @@ class VillageGame:
         self.building_tab: BuildingTab = BuildingTab.PEOPLE
         self.npc_tab: NPCTab = NPCTab.TRAITS
 
-        # Items (editable JSON)
+        # Data (single-source loader)
         ensure_data_files()
         loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
@@ -523,7 +520,7 @@ class VillageGame:
         return mapping.get(job_text, JobType.FARMER)
 
     def _create_npcs(self) -> None:
-        templates = list(load_npc_templates()) + list(load_monster_templates())
+        templates = list(self.npc_templates) + list(self.monster_templates)
         res_buildings = [b for b in self.buildings if b.zone == ZoneType.RESIDENTIAL]
         for t in templates:
             nm = str(t.get("name", "이름없음"))
