@@ -1396,7 +1396,13 @@ def draw_world(screen: pygame.Surface, game: VillageGame, small: pygame.font.Fon
     # NPC
     for i, npc in enumerate(game.npcs):
         sel = (game.selection_type == SelectionType.NPC and game.selected_npc == i)
-        color = (255, 210, 120) if sel else (230, 230, 230)
+        hostile = game._is_hostile(npc)
+        if sel:
+            color = (255, 210, 120)
+        elif hostile:
+            color = (220, 60, 60)
+        else:
+            color = (230, 230, 230)
         sx, sy = cam.world_to_screen(npc.x, npc.y)
         rad = max(3, int(9 * cam.zoom))
         pygame.draw.circle(screen, color, (sx, sy), rad)
