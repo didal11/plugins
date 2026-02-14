@@ -1,0 +1,6 @@
+[
+  {"type": "workbench", "name": "화덕", "x": 120, "y": 100},
+  {"type": "workbench", "name": "약제작대", "x": 160, "y": 110},
+  {"type": "resource", "name": "야생 약초 군락", "x": 280, "y": 210, "stock": 40},
+  {"type": "resource", "name": "노천 광맥", "x": 300, "y": 220, "stock": 35}
+]
