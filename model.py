@@ -126,10 +126,15 @@ class Traits:
     race: str
     gender: str
     age: int
-    height_cm: int
-    weight_kg: int
+    # height_cm: int  # 사용 중단
+    # weight_kg: int  # 사용 중단
     job: JobType
-    goal: str
+    # goal: str  # 사용 중단
+    race_str_bonus: int = 0
+    race_agi_bonus: int = 0
+    race_hp_bonus: int = 0
+    race_speed_bonus: float = 0.0
+    is_hostile: bool = False
 
 
 @dataclass
