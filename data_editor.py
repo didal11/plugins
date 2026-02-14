@@ -267,7 +267,7 @@ class EditorApp(tk.Tk):
         right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
         data = self.npcs if mode == "npc" else self.monsters
-        lb = tk.Listbox(left, width=36, height=30)
+        lb = tk.Listbox(left, width=36, height=30, exportselection=False)
         lb.pack(fill="y")
         for row in data:
             lb.insert("end", f"{row.get('name','')} ({row.get('race','')}/{row.get('job','')})")
