@@ -1,0 +1,26 @@
+[
+  {
+    "key": "bread",
+    "display": "빵"
+  },
+  {
+    "key": "meat",
+    "display": "고기"
+  },
+  {
+    "key": "fish",
+    "display": "생선"
+  },
+  {
+    "key": "potion",
+    "display": "포션"
+  },
+  {
+    "key": "wood",
+    "display": "목재"
+  },
+  {
+    "key": "ore",
+    "display": "광석"
+  }
+]
