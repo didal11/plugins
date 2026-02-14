@@ -24,6 +24,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 import pygame
+from combat import resolve_combat_round
 
 from config import (
     BASE_TILE_SIZE,
@@ -44,6 +45,8 @@ from config import (
     MODAL_W,
     MODAL_H,
 )
+
+from editable_data import ensure_data_files, load_combat_settings, load_item_defs, load_npc_templates
 
 from model import (
     Building,
@@ -265,6 +268,8 @@ class VillageGame:
         self.rng = random.Random(seed)
         self.time = TimeSystem()
         self.camera = Camera()
+        # Defensive default so merged/older call paths never fail before JSON load.
+        self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
 
         # Logs
         self.logs: List[str] = []
@@ -278,15 +283,12 @@ class VillageGame:
         self.building_tab: BuildingTab = BuildingTab.PEOPLE
         self.npc_tab: NPCTab = NPCTab.TRAITS
 
-        # Items
-        self.items: Dict[str, ItemDef] = {
-            "bread": ItemDef("bread", "빵"),
-            "meat": ItemDef("meat", "고기"),
-            "fish": ItemDef("fish", "생선"),
-            "potion": ItemDef("potion", "포션"),
-            "wood": ItemDef("wood", "목재"),
-            "ore": ItemDef("ore", "광석"),
-        }
+        # Items (editable JSON)
+        ensure_data_files()
+        loaded_items = load_item_defs()
+        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
+        # Keep attribute assignment explicit so stale merged files still get a valid value.
+        self.combat_settings = load_combat_settings()
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -446,20 +448,46 @@ class VillageGame:
         job = self.rng.choice(jobs)
         return Traits(name=name, race=race, gender=gender, age=age, height_cm=height, weight_kg=weight, job=job, goal="돈벌기")
 
+    def _job_from_text(self, job_text: str) -> JobType:
+        mapping = {
+            JobType.ADVENTURER.value: JobType.ADVENTURER,
+            JobType.FARMER.value: JobType.FARMER,
+            JobType.FISHER.value: JobType.FISHER,
+            JobType.BLACKSMITH.value: JobType.BLACKSMITH,
+            JobType.PHARMACIST.value: JobType.PHARMACIST,
+        }
+        return mapping.get(job_text, JobType.FARMER)
+
     def _create_npcs(self) -> None:
-        names = ["엘린", "보른", "마라", "레오", "시안", "누라", "토린", "하벨"]
+        templates = load_npc_templates()
         res_buildings = [b for b in self.buildings if b.zone == ZoneType.RESIDENTIAL]
-        for nm in names:
+        for t in templates:
+            nm = str(t.get("name", "이름없음"))
             home = self.rng.choice(res_buildings)
             tx, ty = home.random_tile_inside(self.rng)
             wx, wy = tile_to_world_px_center(tx, ty)
+            max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))))
+            hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
             st = Status(
                 money=self.rng.randint(15, 55),
                 happiness=self.rng.randint(45, 75),
                 hunger=self.rng.randint(15, 55),
                 fatigue=self.rng.randint(15, 55),
+                max_hp=max_hp,
+                hp=hp,
+                strength=max(1, int(t.get("strength", self.rng.randint(8, 16)))),
+                agility=max(1, int(t.get("agility", self.rng.randint(8, 16)))),
             )
-            tr = self._random_traits(nm)
+            tr = Traits(
+                name=nm,
+                race=str(t.get("race", "인간")),
+                gender=str(t.get("gender", "기타")),
+                age=int(t.get("age", 25)),
+                height_cm=int(t.get("height_cm", 170)),
+                weight_kg=int(t.get("weight_kg", 65)),
+                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
+                goal=str(t.get("goal", "돈벌기")),
+            )
             npc = NPC(
                 traits=tr,
                 status=st,
@@ -473,11 +501,11 @@ class VillageGame:
                 stage=PlanStage.PRIMARY,
                 target_outside_tile=None,
             )
-            if self.rng.random() < 0.6:
+            if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
-            if self.rng.random() < 0.30:
+            if self.rng.random() < 0.30 and "wood" in self.items:
                 npc.inventory["wood"] = 1
-            if self.rng.random() < 0.20:
+            if self.rng.random() < 0.20 and "ore" in self.items:
                 npc.inventory["ore"] = 1
             self.npcs.append(npc)
 
@@ -523,6 +551,10 @@ class VillageGame:
         s.happiness = clamp(s.happiness)
         s.hunger = clamp(s.hunger)
         s.fatigue = clamp(s.fatigue)
+        s.max_hp = max(1, s.max_hp)
+        s.hp = max(0, min(s.max_hp, s.hp))
+        s.strength = max(1, s.strength)
+        s.agility = max(1, s.agility)
 
     def npc_passive_1h(self, npc: NPC) -> None:
         s = npc.status
@@ -576,7 +608,36 @@ class VillageGame:
         npc.target_outside_tile = tile
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
 
+    def _combat_cfg(self) -> Dict[str, object]:
+        """Return combat settings safely even if attribute is missing due to merge conflicts."""
+        cfg = getattr(self, "combat_settings", None)
+        if not isinstance(cfg, dict):
+            cfg = load_combat_settings()
+            self.combat_settings = cfg
+        return cfg
+
+
+    def _is_hostile(self, npc: NPC) -> bool:
+        return npc.traits.race == str(self._combat_cfg().get("hostile_race", "적대"))
+
+    def _nearest_hostile(self, npc: NPC) -> Optional[NPC]:
+        candidates = [x for x in self.npcs if x is not npc and self._is_hostile(x) and x.status.hp > 0]
+        if not candidates:
+            return None
+        ntx, nty = world_px_to_tile(npc.x, npc.y)
+        return min(candidates, key=lambda x: abs(ntx - world_px_to_tile(x.x, x.y)[0]) + abs(nty - world_px_to_tile(x.x, x.y)[1]))
+
     def _plan_next_target(self, npc: NPC) -> None:
+        if npc.status.hp <= 0:
+            npc.path = []
+            npc.target_building = None
+            npc.target_outside_tile = None
+            return
+
+        if self._is_hostile(npc):
+            self._set_target_outside(npc, self.random_outside_tile())
+            return
+
         override = self._need_override_destination(npc)
         if override is not None:
             _, b, out_tile = override
@@ -590,7 +651,11 @@ class VillageGame:
         job = npc.traits.job
         if npc.stage == PlanStage.PRIMARY:
             if job == JobType.ADVENTURER:
-                self._set_target_outside(npc, self.random_outside_tile())
+                hostile = self._nearest_hostile(npc)
+                if hostile is not None:
+                    self._set_target_outside(npc, world_px_to_tile(hostile.x, hostile.y))
+                else:
+                    self._set_target_outside(npc, self.random_outside_tile())
             else:
                 wp = self._workplace_for_job(job)
                 self._set_target_building(npc, wp if wp is not None else npc.home_building)
@@ -828,9 +893,14 @@ class VillageGame:
     def sim_tick_1hour(self) -> None:
         self.time.advance(1)
         for npc in self.npcs:
-            self.npc_passive_1h(npc)
+            if npc.status.hp > 0:
+                self.npc_passive_1h(npc)
+
+        self.logs.extend(resolve_combat_round(self.npcs, self._combat_cfg(), self.rng))
 
         for npc in self.npcs:
+            if npc.status.hp <= 0:
+                continue
             tx, ty = world_px_to_tile(npc.x, npc.y)
             npc.location_building = self.find_building_by_tile(tx, ty)
 
@@ -844,6 +914,12 @@ class VillageGame:
                         continue
                     if kind == "rest" and b is not None and b.zone == ZoneType.RESIDENTIAL:
                         self.logs.append(self._do_rest_at_home(npc))
+                        self._plan_next_target(npc)
+                        continue
+
+                if self._is_hostile(npc) and npc.target_outside_tile is not None:
+                    if (tx, ty) == npc.target_outside_tile:
+                        self.logs.append(f"{npc.traits.name}: 적대 배회")
                         self._plan_next_target(npc)
                         continue
 
@@ -1085,6 +1161,9 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
             f"행복: {s.happiness}",
             f"허기: {s.hunger}",
             f"피로: {s.fatigue}",
+            f"체력: {s.hp}/{s.max_hp}",
+            f"힘: {s.strength}",
+            f"민첩: {s.agility}",
         ]
         draw_text_lines(screen, small, body.x + 12, body.y + 12, lines)
 
@@ -1217,6 +1296,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
         lines = [
             f"선택(NPC): {npc.traits.name} / {npc.traits.job.value} / {loc}",
             f"돈 {s.money} | 행복 {s.happiness} | 허기 {s.hunger} | 피로 {s.fatigue}",
+            f"HP {s.hp}/{s.max_hp} | 힘 {s.strength} | 민첩 {s.agility}",
             f"스테이지: {npc.stage.value}",
             "I: 모달 | 휠: 줌 | 미니맵 클릭: 이동",
         ]
@@ -1284,12 +1364,28 @@ def main():
 
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 mx, my = ev.pos
-                # minimap click
+                if game.modal_open:
+                    rect = modal_rect()
+                    if rect.collidepoint(mx, my):
+                        tab_y = rect.y + 48
+                        tab_x = rect.x + 16
+                        tab_w = 190
+                        tab_h = 34
+                        gap = 10
+                        for idx in range(3):
+                            r = pygame.Rect(tab_x + idx * (tab_w + gap), tab_y, tab_w, tab_h)
+                            if r.collidepoint(mx, my):
+                                if game.modal_kind == ModalKind.BUILDING:
+                                    game.building_tab = [BuildingTab.PEOPLE, BuildingTab.STOCK, BuildingTab.TASK][idx]
+                                elif game.modal_kind == ModalKind.NPC:
+                                    game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][idx]
+                                break
+                        continue
+
                 if minimap_rect.collidepoint(mx, my):
                     wx, wy = minimap_click_to_world((mx, my), minimap_rect)
                     game.camera.center_on_world(wx, wy)
                 else:
-                    # selection (npc first)
                     ni = game.pick_npc_at_screen(mx, my)
                     if ni is not None:
                         game.selection_type = SelectionType.NPC
@@ -1302,7 +1398,6 @@ def main():
                         game.selected_building = bn
                         game.selected_npc = None
                         continue
-                    # clear
                     game.selection_type = SelectionType.NONE
                     game.selected_npc = None
                     game.selected_building = None
@@ -1327,25 +1422,6 @@ def main():
                     elif game.modal_kind == ModalKind.NPC:
                         game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][int(ev.unicode) - 1]
 
-            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1 and game.modal_open:
-                # tab click inside modal
-                mx, my = ev.pos
-                rect = modal_rect()
-                if rect.collidepoint(mx, my):
-                    # approximate tab areas (same as draw_tabs)
-                    tab_y = rect.y + 48
-                    tab_x = rect.x + 16
-                    tab_w = 190
-                    tab_h = 34
-                    gap = 10
-                    for idx in range(3):
-                        r = pygame.Rect(tab_x + idx * (tab_w + gap), tab_y, tab_w, tab_h)
-                        if r.collidepoint(mx, my):
-                            if game.modal_kind == ModalKind.BUILDING:
-                                game.building_tab = [BuildingTab.PEOPLE, BuildingTab.STOCK, BuildingTab.TASK][idx]
-                            elif game.modal_kind == ModalKind.NPC:
-                                game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][idx]
-                            break
 
         # camera movement (disabled while modal open? keep enabled)
         keys = pygame.key.get_pressed()
