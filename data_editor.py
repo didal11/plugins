@@ -13,6 +13,7 @@ from editable_data import (
     load_entities,
     load_item_defs,
     load_job_defs,
+    load_action_defs,
     load_job_names,
     load_monster_templates,
     load_npc_templates,
@@ -21,6 +22,7 @@ from editable_data import (
     save_entities,
     save_item_defs,
     save_job_defs,
+    save_action_defs,
     save_monster_templates,
     save_npc_templates,
     save_sim_settings,
@@ -43,6 +45,7 @@ class EditorApp(tk.Tk):
         self.races = load_races()
         self.entities = load_entities()
         self.jobs = load_job_defs()
+        self.actions = load_action_defs()
         self.job_names = load_job_names()
         self.sim = load_sim_settings()
         self.combat = self._load_combat_settings()
@@ -57,6 +60,7 @@ class EditorApp(tk.Tk):
         self.race_tab = ttk.Frame(notebook)
         self.entity_tab = ttk.Frame(notebook)
         self.job_tab = ttk.Frame(notebook)
+        self.action_tab = ttk.Frame(notebook)
         self.sim_tab = ttk.Frame(notebook)
         self.combat_tab = ttk.Frame(notebook)
 
@@ -66,6 +70,7 @@ class EditorApp(tk.Tk):
         notebook.add(self.race_tab, text="종족")
         notebook.add(self.entity_tab, text="엔티티")
         notebook.add(self.job_tab, text="직업")
+        notebook.add(self.action_tab, text="행동")
         notebook.add(self.sim_tab, text="시뮬 설정")
         notebook.add(self.combat_tab, text="전투")
 
@@ -75,6 +80,7 @@ class EditorApp(tk.Tk):
         self._build_race_tab()
         self._build_entity_tab()
         self._build_job_tab()
+        self._build_action_tab()
         self._build_sim_tab()
         self._build_combat_tab()
         self._refresh_job_choices()
@@ -589,25 +595,12 @@ class EditorApp(tk.Tk):
         self.job_name = ttk.Combobox(right, values=self.job_names, state="readonly", width=40)
         self.job_name.grid(row=0, column=1, sticky="w", pady=2)
 
-        ttk.Label(right, text="생산(JSON)").grid(row=1, column=0, sticky="nw", pady=2)
-        ttk.Label(right, text="소모(JSON)").grid(row=2, column=0, sticky="nw", pady=2)
-        ttk.Label(right, text="가공(JSON)").grid(row=3, column=0, sticky="nw", pady=2)
-        self.job_primary_output = tk.Text(right, width=40, height=3)
-        self.job_input_need = tk.Text(right, width=40, height=3)
-        self.job_craft_output = tk.Text(right, width=40, height=3)
-        self.job_primary_output.grid(row=1, column=1, sticky="w", pady=2)
-        self.job_input_need.grid(row=2, column=1, sticky="w", pady=2)
-        self.job_craft_output.grid(row=3, column=1, sticky="w", pady=2)
-
-        ttk.Label(right, text="판매 아이템(쉼표)").grid(row=4, column=0, sticky="w", pady=2)
-        ttk.Label(right, text="판매 한도").grid(row=5, column=0, sticky="w", pady=2)
-        self.job_sell_items = ttk.Entry(right, width=43)
-        self.job_sell_limit = ttk.Entry(right, width=43)
-        self.job_sell_items.grid(row=4, column=1, sticky="w", pady=2)
-        self.job_sell_limit.grid(row=5, column=1, sticky="w", pady=2)
+        ttk.Label(right, text="가능한 일(쉼표)").grid(row=1, column=0, sticky="w", pady=2)
+        self.job_work_actions = ttk.Entry(right, width=43)
+        self.job_work_actions.grid(row=1, column=1, sticky="w", pady=2)
 
         btns = ttk.Frame(right)
-        btns.grid(row=6, column=0, columnspan=2, sticky="w", pady=10)
+        btns.grid(row=2, column=0, columnspan=2, sticky="w", pady=10)
         ttk.Button(btns, text="추가", command=self._add_job).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=self._update_job).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=self._delete_job).pack(side="left", padx=3)
@@ -619,33 +612,16 @@ class EditorApp(tk.Tk):
             return
         row = self.jobs[sel[0]]
         self.job_name.set(str(row.get("job", "")))
-        self.job_primary_output.delete("1.0", "end")
-        self.job_primary_output.insert("1.0", json.dumps(row.get("primary_output", {}), ensure_ascii=False, indent=2))
-        self.job_input_need.delete("1.0", "end")
-        self.job_input_need.insert("1.0", json.dumps(row.get("input_need", {}), ensure_ascii=False, indent=2))
-        self.job_craft_output.delete("1.0", "end")
-        self.job_craft_output.insert("1.0", json.dumps(row.get("craft_output", {}), ensure_ascii=False, indent=2))
-        self.job_sell_items.delete(0, "end")
-        self.job_sell_items.insert(0, ",".join([str(x) for x in row.get("sell_items", [])]))
-        self.job_sell_limit.delete(0, "end")
-        self.job_sell_limit.insert(0, str(row.get("sell_limit", 3)))
+        self.job_work_actions.delete(0, "end")
+        self.job_work_actions.insert(0, ",".join([str(x) for x in row.get("work_actions", [])]))
 
     def _job_from_form(self) -> dict[str, object] | None:
-        try:
-            name = self.job_name.get().strip()
-            if not name:
-                return None
-            return {
-                "job": name,
-                "primary_output": json.loads(self.job_primary_output.get("1.0", "end").strip() or "{}"),
-                "input_need": json.loads(self.job_input_need.get("1.0", "end").strip() or "{}"),
-                "craft_output": json.loads(self.job_craft_output.get("1.0", "end").strip() or "{}"),
-                "sell_items": [x.strip() for x in self.job_sell_items.get().split(",") if x.strip()],
-                "sell_limit": int(self.job_sell_limit.get().strip() or "3"),
-            }
-        except Exception:
-            messagebox.showwarning("경고", "직업 입력값(JSON/숫자)을 확인하세요.")
+        name = self.job_name.get().strip()
+        if not name:
+            messagebox.showwarning("경고", "직업명을 선택하세요.")
             return None
+        actions = [x.strip() for x in self.job_work_actions.get().split(",") if x.strip()]
+        return {"job": name, "work_actions": actions}
 
     def _add_job(self) -> None:
         row = self._job_from_form()
@@ -681,6 +657,113 @@ class EditorApp(tk.Tk):
         save_job_defs(self.jobs)
         self._refresh_job_choices()
         messagebox.showinfo("저장 완료", "직업 데이터를 저장했습니다.")
+
+    # ---------- Action tab ----------
+    def _build_action_tab(self) -> None:
+        left = ttk.Frame(self.action_tab)
+        left.pack(side="left", fill="y", padx=8, pady=8)
+        right = ttk.Frame(self.action_tab)
+        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+
+        self.action_list = tk.Listbox(left, width=28, height=25, exportselection=False)
+        self.action_list.pack(fill="y")
+        self.action_list.bind("<<ListboxSelect>>", self._on_action_select)
+        for row in self.actions:
+            self.action_list.insert("end", str(row.get("name", "")))
+
+        ttk.Label(right, text="행동명").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Label(right, text="소요 시간(시간)").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Label(right, text="산출물(JSON)").grid(row=2, column=0, sticky="nw", pady=2)
+        ttk.Label(right, text="피로").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Label(right, text="허기").grid(row=4, column=0, sticky="w", pady=2)
+
+        self.action_name = ttk.Entry(right, width=43)
+        self.action_duration = ttk.Entry(right, width=43)
+        self.action_outputs = tk.Text(right, width=40, height=8)
+        self.action_fatigue = ttk.Entry(right, width=43)
+        self.action_hunger = ttk.Entry(right, width=43)
+        self.action_name.grid(row=0, column=1, sticky="w", pady=2)
+        self.action_duration.grid(row=1, column=1, sticky="w", pady=2)
+        self.action_outputs.grid(row=2, column=1, sticky="w", pady=2)
+        self.action_fatigue.grid(row=3, column=1, sticky="w", pady=2)
+        self.action_hunger.grid(row=4, column=1, sticky="w", pady=2)
+
+        ttk.Label(right, text="도구는 자동으로 [\"도구\"] 로 저장됩니다.").grid(row=5, column=1, sticky="w", pady=2)
+
+        btns = ttk.Frame(right)
+        btns.grid(row=6, column=0, columnspan=2, sticky="w", pady=10)
+        ttk.Button(btns, text="추가", command=self._add_action).pack(side="left", padx=3)
+        ttk.Button(btns, text="수정", command=self._update_action).pack(side="left", padx=3)
+        ttk.Button(btns, text="삭제", command=self._delete_action).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=self._save_actions).pack(side="left", padx=3)
+
+    def _on_action_select(self, _=None) -> None:
+        sel = self.action_list.curselection()
+        if not sel:
+            return
+        row = self.actions[sel[0]]
+        self.action_name.delete(0, "end")
+        self.action_name.insert(0, str(row.get("name", "")))
+        self.action_duration.delete(0, "end")
+        self.action_duration.insert(0, str(row.get("duration_hours", 1)))
+        self.action_outputs.delete("1.0", "end")
+        self.action_outputs.insert("1.0", json.dumps(row.get("outputs", {}), ensure_ascii=False, indent=2))
+        self.action_fatigue.delete(0, "end")
+        self.action_fatigue.insert(0, str(row.get("fatigue", 12)))
+        self.action_hunger.delete(0, "end")
+        self.action_hunger.insert(0, str(row.get("hunger", 8)))
+
+    def _action_from_form(self) -> dict[str, object] | None:
+        try:
+            name = self.action_name.get().strip()
+            if not name:
+                return None
+            return {
+                "name": name,
+                "duration_hours": int(self.action_duration.get().strip() or "1"),
+                "required_tools": ["도구"],
+                "outputs": json.loads(self.action_outputs.get("1.0", "end").strip() or "{}"),
+                "fatigue": int(self.action_fatigue.get().strip() or "12"),
+                "hunger": int(self.action_hunger.get().strip() or "8"),
+            }
+        except Exception:
+            messagebox.showwarning("경고", "행동 입력값(JSON/숫자)을 확인하세요.")
+            return None
+
+    def _add_action(self) -> None:
+        row = self._action_from_form()
+        if not row:
+            return
+        self.actions.append(row)
+        self.action_list.insert("end", str(row["name"]))
+
+    def _update_action(self) -> None:
+        sel = self.action_list.curselection()
+        if not sel:
+            return
+        row = self._action_from_form()
+        if not row:
+            return
+        idx = sel[0]
+        self.actions[idx] = row
+        self.action_list.delete(idx)
+        self.action_list.insert(idx, str(row["name"]))
+
+    def _delete_action(self) -> None:
+        sel = self.action_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        self.action_list.delete(idx)
+        self.actions.pop(idx)
+
+    def _save_actions(self) -> None:
+        save_action_defs(self.actions)
+        self.actions = load_action_defs()
+        self.action_list.delete(0, "end")
+        for row in self.actions:
+            self.action_list.insert("end", str(row.get("name", "")))
+        messagebox.showinfo("저장 완료", "행동 데이터를 저장했습니다.")
 
     # ---------- Sim tab ----------
     def _build_sim_tab(self) -> None:

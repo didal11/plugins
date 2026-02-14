@@ -36,11 +36,6 @@ class JobType(Enum):
     PHARMACIST = "약사"
 
 
-class PlanStage(Enum):
-    PRIMARY = "1차행동"
-    PROFIT = "수익창출행동"
-
-
 class SelectionType(Enum):
     NONE = "none"
     NPC = "npc"
@@ -166,6 +161,7 @@ class Status:
     hp: int
     strength: int
     agility: int
+    current_action: str = "대기"
 
 
 @dataclass
@@ -193,5 +189,4 @@ class NPC:
     target_building: Optional[Building]
     location_building: Optional[Building]
     inventory: Dict[str, int]
-    stage: PlanStage
     target_outside_tile: Optional[Tuple[int, int]]
