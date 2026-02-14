@@ -360,6 +360,29 @@ def load_monster_templates() -> List[Dict[str, object]]:
     return out or list(DEFAULT_MONSTERS)
 
 
+
+
+def load_races() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(RACES_FILE, DEFAULT_RACES)
+    out: List[Dict[str, object]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "is_hostile": bool(it.get("is_hostile", False)),
+            "str_bonus": int(it.get("str_bonus", 0)),
+            "agi_bonus": int(it.get("agi_bonus", 0)),
+            "hp_bonus": int(it.get("hp_bonus", 0)),
+            "speed_bonus": float(it.get("speed_bonus", 0.0)),
+        })
+    return _seed_if_empty(RACES_FILE, out, DEFAULT_RACES)
+
+
 def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
     ensure_data_files()
     clean: List[Dict[str, object]] = []
