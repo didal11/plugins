@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from editable_data import (
+    VALID_GENDERS,
     VALID_JOBS,
     load_item_defs,
     load_job_defs,
@@ -48,6 +49,87 @@ class EditorApp(tk.Tk):
         self._build_job_tab()
         self._build_sim_tab()
 
+    def _build_npc_tab(self):
+        left = ttk.Frame(self.npc_tab)
+        left.pack(side="left", fill="y", padx=8, pady=8)
+        right = ttk.Frame(self.npc_tab)
+        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+
+        self.npc_list = tk.Listbox(left, width=30, height=28)
+        self.npc_list.pack(fill="y")
+        self.npc_list.bind("<<ListboxSelect>>", self._on_npc_select)
+        for row in self.npcs:
+            self.npc_list.insert("end", f"{row['name']} ({row['race']}/{row['job']})")
+
+        self.npc_entries = {}
+        labels = [("name", "이름"), ("race", "종족"), ("gender", "성별"), ("age", "나이"), ("job", "직업")]
+        for idx, (key, label) in enumerate(labels):
+            ttk.Label(right, text=label).grid(row=idx, column=0, sticky="w", pady=2)
+            if key == "job":
+                widget = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=39)
+            elif key == "gender":
+                widget = ttk.Combobox(right, values=VALID_GENDERS, state="readonly", width=39)
+            else:
+                widget = ttk.Entry(right, width=42)
+            widget.grid(row=idx, column=1, sticky="w", pady=2)
+            self.npc_entries[key] = widget
+
+        btns = ttk.Frame(right)
+        btns.grid(row=len(labels), column=0, columnspan=2, sticky="w", pady=8)
+        ttk.Button(btns, text="추가", command=self._add_npc).pack(side="left", padx=3)
+        ttk.Button(btns, text="수정", command=self._update_npc).pack(side="left", padx=3)
+        ttk.Button(btns, text="삭제", command=self._delete_npc).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.npcs, save_npc_templates, "NPC")).pack(side="left", padx=3)
+
+    def _npc_from_form(self):
+        try:
+            return {
+                "name": self.npc_entries["name"].get().strip(),
+                "race": self.npc_entries["race"].get().strip() or "인간",
+                "gender": self.npc_entries["gender"].get().strip() or "기타",
+                "age": int(self.npc_entries["age"].get().strip() or "20"),
+                "job": self.npc_entries["job"].get().strip() or "농부",
+            }
+        except ValueError:
+            messagebox.showwarning("경고", "나이는 숫자로 입력하세요.")
+            return None
+
+    def _on_npc_select(self, _=None):
+        sel = self.npc_list.curselection()
+        if not sel:
+            return
+        row = self.npcs[sel[0]]
+        for key, w in self.npc_entries.items():
+            w.delete(0, "end")
+            w.insert(0, str(row.get(key, "")))
+
+    def _add_npc(self):
+        row = self._npc_from_form()
+        if not row or not row["name"]:
+            return
+        self.npcs.append(row)
+        self.npc_list.insert("end", f"{row['name']} ({row['race']}/{row['job']})")
+
+    def _update_npc(self):
+        sel = self.npc_list.curselection()
+        if not sel:
+            return
+        row = self._npc_from_form()
+        if not row or not row["name"]:
+            return
+        idx = sel[0]
+        self.npcs[idx] = row
+        self.npc_list.delete(idx)
+        self.npc_list.insert(idx, f"{row['name']} ({row['race']}/{row['job']})")
+
+    def _delete_npc(self):
+        sel = self.npc_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        self.npc_list.delete(idx)
+        self.npcs.pop(idx)
+
     def _build_item_tab(self):
         left = ttk.Frame(self.item_tab)
         left.pack(side="left", fill="y", padx=8, pady=8)
@@ -67,8 +149,14 @@ class EditorApp(tk.Tk):
         self.item_key.grid(row=0, column=1, sticky="w", pady=4)
         self.item_disp.grid(row=1, column=1, sticky="w", pady=4)
 
+        self.item_entries = {"key": self.item_key, "display": self.item_disp}
+        self.item_vars = {"is_craftable": tk.BooleanVar(value=False), "is_gatherable": tk.BooleanVar(value=False)}
+        ttk.Label(right, text="가공 재료(JSON)").grid(row=2, column=0, sticky="nw")
+        self.item_craft_inputs = tk.Text(right, width=40, height=3)
+        self.item_craft_inputs.grid(row=2, column=1, sticky="w", pady=4)
+
         btns = ttk.Frame(right)
-        btns.grid(row=row, column=0, columnspan=2, sticky="w", pady=8)
+        btns.grid(row=3, column=0, columnspan=2, sticky="w", pady=8)
         ttk.Button(btns, text="추가", command=self._add_item).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=self._update_item).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=self._delete_item).pack(side="left", padx=3)
@@ -82,14 +170,14 @@ class EditorApp(tk.Tk):
                 "is_craftable": bool(self.item_vars["is_craftable"].get()),
                 "is_gatherable": bool(self.item_vars["is_gatherable"].get()),
                 "craft_inputs": json.loads(self.item_craft_inputs.get("1.0", "end").strip() or "{}"),
-                "craft_time": int(self.item_entries["craft_time"].get().strip() or "0"),
-                "craft_fatigue": int(self.item_entries["craft_fatigue"].get().strip() or "0"),
-                "craft_station": self.item_entries["craft_station"].get().strip(),
-                "craft_amount": int(self.item_entries["craft_amount"].get().strip() or "0"),
-                "gather_time": int(self.item_entries["gather_time"].get().strip() or "0"),
-                "gather_amount": int(self.item_entries["gather_amount"].get().strip() or "0"),
-                "gather_fatigue": int(self.item_entries["gather_fatigue"].get().strip() or "0"),
-                "gather_spot": self.item_entries["gather_spot"].get().strip(),
+                "craft_time": 0,
+                "craft_fatigue": 0,
+                "craft_station": "",
+                "craft_amount": 0,
+                "gather_time": 0,
+                "gather_amount": 0,
+                "gather_fatigue": 0,
+                "gather_spot": "",
             }
         except Exception:
             messagebox.showwarning("경고", "아이템 입력값(JSON/숫자)을 확인하세요.")
