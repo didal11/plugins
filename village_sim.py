@@ -268,6 +268,8 @@ class VillageGame:
         self.rng = random.Random(seed)
         self.time = TimeSystem()
         self.camera = Camera()
+        # Defensive default so merged/older call paths never fail before JSON load.
+        self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
 
         # Logs
         self.logs: List[str] = []
