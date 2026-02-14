@@ -114,12 +114,7 @@ DEFAULT_RACES: List[Dict[str, object]] = [
     {"name": "드워프", "is_hostile": False, "str_bonus": 1, "agi_bonus": 0, "hp_bonus": 2, "speed_bonus": -0.03},
 ]
 
-DEFAULT_ENTITIES: List[Dict[str, object]] = [
-    {"type": "workbench", "name": "화덕", "x": 120, "y": 100},
-    {"type": "workbench", "name": "약제작대", "x": 160, "y": 110},
-    {"type": "resource", "name": "야생 약초 군락", "x": 280, "y": 210, "stock": 40},
-    {"type": "resource", "name": "노천 광맥", "x": 300, "y": 220, "stock": 35},
-]
+DEFAULT_ENTITIES: List[Dict[str, object]] = []
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -321,6 +316,50 @@ def load_monster_templates() -> List[Dict[str, object]]:
     return _seed_if_empty(MONSTERS_FILE, out, DEFAULT_MONSTERS)
 
 
+def load_monster_templates() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    out: List[Dict[str, object]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "name": name,
+                "race": str(it.get("race", "고블린")).strip() or "고블린",
+                "gender": str(it.get("gender", "기타")).strip() or "기타",
+                "age": int(it.get("age", 5)),
+                "job": "모험가",
+            }
+        )
+    return out or list(DEFAULT_MONSTERS)
+
+
+def load_monster_templates() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    out: List[Dict[str, object]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "name": name,
+                "race": str(it.get("race", "고블린")).strip() or "고블린",
+                "gender": str(it.get("gender", "기타")).strip() or "기타",
+                "age": int(it.get("age", 5)),
+                "job": "모험가",
+            }
+        )
+    return out or list(DEFAULT_MONSTERS)
+
+
 def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
     ensure_data_files()
     clean: List[Dict[str, object]] = []
@@ -363,56 +402,6 @@ def save_monster_templates(monsters: List[Dict[str, object]]) -> None:
             }
         )
     _write_json(MONSTERS_FILE, clean)
-
-
-def load_races() -> List[Dict[str, object]]:
-    ensure_data_files()
-    raw = _read_json(RACES_FILE, DEFAULT_RACES)
-    out: List[Dict[str, object]] = []
-    for row in raw if isinstance(raw, list) else []:
-        if not isinstance(row, dict):
-            continue
-        norm = _normalize_race(row)
-        if norm:
-            out.append(norm)
-    return _seed_if_empty(RACES_FILE, out, DEFAULT_RACES)
-
-
-def save_races(races: List[Dict[str, object]]) -> None:
-    ensure_data_files()
-    clean: List[Dict[str, object]] = []
-    for row in races:
-        if not isinstance(row, dict):
-            continue
-        norm = _normalize_race(row)
-        if norm:
-            clean.append(norm)
-    _write_json(RACES_FILE, clean or DEFAULT_RACES)
-
-
-def load_entities() -> List[Dict[str, object]]:
-    ensure_data_files()
-    raw = _read_json(ENTITIES_FILE, DEFAULT_ENTITIES)
-    out: List[Dict[str, object]] = []
-    for row in raw if isinstance(raw, list) else []:
-        if not isinstance(row, dict):
-            continue
-        norm = _normalize_entity(row)
-        if norm:
-            out.append(norm)
-    return _seed_if_empty(ENTITIES_FILE, out, DEFAULT_ENTITIES)
-
-
-def save_entities(entities: List[Dict[str, object]]) -> None:
-    ensure_data_files()
-    clean: List[Dict[str, object]] = []
-    for row in entities:
-        if not isinstance(row, dict):
-            continue
-        norm = _normalize_entity(row)
-        if norm:
-            clean.append(norm)
-    _write_json(ENTITIES_FILE, clean)
 
 
 def load_job_defs() -> List[Dict[str, object]]:
