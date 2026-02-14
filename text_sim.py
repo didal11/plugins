@@ -34,12 +34,6 @@ def _fmt_inventory(inv: Dict[str, int]) -> str:
     return ", ".join(f"{k}:{v}" for k, v in sorted(inv.items()))
 
 
-def _fmt_kv_dict(data: Dict[str, object]) -> str:
-    if not data:
-        return "(없음)"
-    return ", ".join(f"{k}={data[k]}" for k in sorted(data.keys()))
-
-
 def _camera_player_position(game: VillageGame) -> Tuple[float, float, int, int]:
     cam_x, cam_y = game.camera.x, game.camera.y
     center_world_x = cam_x + (SCREEN_W / game.camera.zoom) / 2.0
@@ -56,30 +50,17 @@ def _print_tick_snapshot(game: VillageGame, tick: int) -> None:
 
     print(f"\n=== Tick {tick} | {game.time} ===")
     print("[요약]")
-    print(f"- 생존 NPC: {alive}/{len(game.npcs)}")
-    print(f"- 평균 배고픔: {avg_hunger:.1f}")
-    print(f"- 총 소지금: {total_money}G")
+    print(f"생존 NPC: {alive}/{len(game.npcs)} | 평균 배고픔: {avg_hunger:.1f} | 총 소지금: {total_money}G")
 
     print("\n[시스템 설정]")
     print(f"BASE_TILE_SIZE={BASE_TILE_SIZE}, SCREEN={SCREEN_W}x{SCREEN_H}")
-    print(f"sim_settings: {_fmt_kv_dict(game.sim_settings)}")
-    print(f"combat_settings: {_fmt_kv_dict(game.combat_settings)}")
+    print(f"sim_settings={game.sim_settings}")
+    print(f"combat_settings={game.combat_settings}")
 
     cwx, cwy, ctx, cty = _camera_player_position(game)
     print("\n[플레이어(카메라) 좌표]")
-    print(f"- 카메라 좌상단 월드좌표=({game.camera.x:.1f}, {game.camera.y:.1f}), zoom={game.camera.zoom:.2f}")
-    print(f"- 카메라 중심 월드좌표=({cwx:.1f}, {cwy:.1f}), 타일좌표=({ctx}, {cty})")
-
-    print("\n[엔티티(작업대/자원) 전체 상태]")
-    if not game.entities:
-        print("- (엔티티 없음)")
-    for idx, ent in enumerate(game.entities, start=1):
-        ent_type = str(ent.get("type", ""))
-        name = str(ent.get("name", ""))
-        ex = int(ent.get("x", 0))
-        ey = int(ent.get("y", 0))
-        stock = int(ent.get("stock", 0)) if ent_type == "resource" else "-"
-        print(f"- 엔티티#{idx} type={ent_type} name={name} tile=({ex}, {ey}) stock={stock}")
+    print(f"카메라 좌상단 월드좌표=({game.camera.x:.1f}, {game.camera.y:.1f}), zoom={game.camera.zoom:.2f}")
+    print(f"카메라 중심 월드좌표=({cwx:.1f}, {cwy:.1f}), 타일좌표=({ctx}, {cty})")
 
     print("\n[엔티티(건물) 전체 상태]")
     for idx, building in enumerate(game.buildings, start=1):
@@ -105,12 +86,12 @@ def _print_tick_snapshot(game: VillageGame, tick: int) -> None:
         location_name = npc.location_building.name if npc.location_building is not None else "(마을 밖/이동중)"
         path_preview = npc.path[:5]
         print(f"- NPC#{idx} {npc.traits.name}")
-        print(f"  - 위치: world=({wx:.1f}, {wy:.1f}) tile=({tx}, {ty})")
-        print(f"  - 이동: stage={npc.stage.value}, target_building={target_name}, target_outside_tile={npc.target_outside_tile}, path_len={len(npc.path)}, path_preview={path_preview}")
-        print(f"  - 소속: home={npc.home_building.name}, location={location_name}")
-        print(f"  - traits: {_fmt_kv_dict(traits)}")
-        print(f"  - status: {_fmt_kv_dict(status)}")
-        print(f"  - inventory: {_fmt_inventory(npc.inventory)}")
+        print(f"  위치: world=({wx:.1f}, {wy:.1f}) tile=({tx}, {ty})")
+        print(f"  이동: stage={npc.stage.value}, target_building={target_name}, target_outside_tile={npc.target_outside_tile}, path_len={len(npc.path)}, path_preview={path_preview}")
+        print(f"  소속: home={npc.home_building.name}, location={location_name}")
+        print(f"  traits: {traits}")
+        print(f"  status: {status}")
+        print(f"  inventory: {_fmt_inventory(npc.inventory)}")
 
     if recent_logs:
         print("\n[최근 로그 3개]")
