@@ -50,15 +50,11 @@ from config import (
 from economy import EconomySystem
 from editable_data import (
     ensure_data_files,
-    load_item_defs,
-    load_job_defs,
-    load_monster_templates,
-    load_npc_templates,
-    load_races,
-    load_sim_settings,
+    load_all_data,
 )
 
 from model import (
+    TileRect,
     Building,
     BuildingState,
     BuildingTab,
@@ -121,9 +117,9 @@ def manhattan_path(start: Tuple[int, int], goal: Tuple[int, int]) -> List[Tuple[
     return path
 
 
-def rect_union(rects: List[pygame.Rect]) -> pygame.Rect:
+def rect_union(rects: List[TileRect]) -> TileRect:
     if not rects:
-        return pygame.Rect(0, 0, 0, 0)
+        return TileRect(0, 0, 0, 0)
     r = rects[0].copy()
     for rr in rects[1:]:
         r.union_ip(rr)
@@ -278,7 +274,8 @@ class VillageGame:
         self.rng = random.Random(seed)
         self.time = TimeSystem()
         self.camera = Camera()
-        self.sim_settings = load_sim_settings()
+        data = load_all_data()
+        self.sim_settings = data["sim"] if isinstance(data.get("sim"), dict) else {}
         self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
         combat_path = Path(__file__).parent / "data" / "combat.json"
         if combat_path.exists():
@@ -288,7 +285,8 @@ class VillageGame:
                     self.combat_settings.update(raw)
             except Exception:
                 pass
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
+        jobs_data = data.get("jobs", []) if isinstance(data, dict) else []
+        self.economy = EconomySystem(jobs_data if isinstance(jobs_data, list) else [], self.sim_settings)
         self.last_economy_snapshot = None
 
         # Logs
@@ -303,13 +301,14 @@ class VillageGame:
         self.building_tab: BuildingTab = BuildingTab.PEOPLE
         self.npc_tab: NPCTab = NPCTab.TRAITS
 
-        # Items (editable JSON)
+        # Data (single-source loader)
         ensure_data_files()
-        loaded_items = load_item_defs()
-        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
-        self.races = load_races()
-        self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name", "")): r for r in self.races if isinstance(r, dict)}
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
+        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in data["items"] if isinstance(it, dict) and "key" in it and "display" in it}
+        self.races = [r for r in data["races"] if isinstance(r, dict)]
+        self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name", "")): r for r in self.races}
+        self.entities: List[Dict[str, object]] = [e for e in data["entities"] if isinstance(e, dict)]
+        self.npc_templates: List[Dict[str, object]] = [n for n in data["npcs"] if isinstance(n, dict)]
+        self.monster_templates: List[Dict[str, object]] = [m for m in data["monsters"] if isinstance(m, dict)]
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -324,7 +323,7 @@ class VillageGame:
 
         # Village outline for outside logic
         self.village_rect_tiles = rect_union([z.rect_tiles for z in self.zones]).inflate(4, 4)
-        self.village_rect_tiles.clamp_ip(pygame.Rect(0, 0, GRID_W, GRID_H))
+        self.village_rect_tiles.clamp_ip(TileRect(0, 0, GRID_W, GRID_H))
 
         # Building state
         self.bstate: Dict[str, BuildingState] = {}
@@ -346,7 +345,7 @@ class VillageGame:
     # -----------------------------
     # Worldgen
     # -----------------------------
-    def _create_buildings_grid(self, zone_type: ZoneType, zone_rect: pygame.Rect, names: List[str], cols: int, rows: int, pad: int = 1) -> List[Building]:
+    def _create_buildings_grid(self, zone_type: ZoneType, zone_rect: TileRect, names: List[str], cols: int, rows: int, pad: int = 1) -> List[Building]:
         b_w, b_h = 4, 3
         out: List[Building] = []
         start_x = zone_rect.x + 1
@@ -364,7 +363,7 @@ class VillageGame:
                     continue
                 if by + b_h > zone_rect.y + zone_rect.h - 1:
                     continue
-                out.append(Building(zone_type, names[idx], pygame.Rect(bx, by, b_w, b_h)))
+                out.append(Building(zone_type, names[idx], TileRect(bx, by, b_w, b_h)))
                 idx += 1
         return out
 
@@ -380,10 +379,10 @@ class VillageGame:
         start_x = max(1, min(GRID_W - block_w - 1, (GRID_W // 2) - (block_w // 2)))
         start_y = max(1, min(GRID_H - block_h - 1, (GRID_H // 2) - (block_h // 2)))
 
-        market_rect = pygame.Rect(start_x, start_y, zone_w, zone_h)
-        res_rect = pygame.Rect(start_x + zone_w + gap, start_y, zone_w, zone_h)
-        inter_rect = pygame.Rect(start_x, start_y + zone_h + gap, inter_w, inter_h)
-        job_rect = pygame.Rect(start_x, inter_rect.y + inter_h + gap, job_w, job_h)
+        market_rect = TileRect(start_x, start_y, zone_w, zone_h)
+        res_rect = TileRect(start_x + zone_w + gap, start_y, zone_w, zone_h)
+        inter_rect = TileRect(start_x, start_y + zone_h + gap, inter_w, inter_h)
+        job_rect = TileRect(start_x, inter_rect.y + inter_h + gap, job_w, job_h)
 
         zones: List[Zone] = []
         zones.append(Zone(ZoneType.MARKET, market_rect, self._create_buildings_grid(ZoneType.MARKET, market_rect, self.market_building_names, cols=3, rows=1, pad=1)))
@@ -402,6 +401,44 @@ class VillageGame:
             if self.is_outside_tile(tx, ty):
                 return tx, ty
         return 2, 2
+
+    def _nearest_entity(self, kind: str, tx: int, ty: int) -> Optional[Dict[str, object]]:
+        candidates = [e for e in self.entities if str(e.get("type", "")).strip() == kind]
+        if kind == "resource":
+            candidates = [e for e in candidates if int(e.get("stock", 0)) > 0]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda e: abs(tx - int(e.get("x", 0))) + abs(ty - int(e.get("y", 0))))
+
+    def _gather_from_resource(self, npc: NPC, item_key: str, amount: int) -> Optional[str]:
+        tx, ty = world_px_to_tile(npc.x, npc.y)
+        node = self._nearest_entity("resource", tx, ty)
+        if node is None:
+            return None
+        stock = int(node.get("stock", 0))
+        got = min(max(0, amount), stock)
+        if got <= 0:
+            return None
+        node["stock"] = stock - got
+        npc.inventory[item_key] = int(npc.inventory.get(item_key, 0)) + got
+        return f"{node.get('name', '자원지')}[{int(node.get('x', 0))},{int(node.get('y', 0))}] {item_key}+{got}"
+
+    def _use_workbench(self, npc: NPC, station_keyword: str, src_item: str, dst_item: str, cost: int, out: int) -> Optional[str]:
+        tx, ty = world_px_to_tile(npc.x, npc.y)
+        bench = self._nearest_entity("workbench", tx, ty)
+        if bench is None:
+            return None
+        bench_name = str(bench.get("name", "작업대"))
+        if station_keyword not in bench_name:
+            return None
+        have = int(npc.inventory.get(src_item, 0))
+        if have < cost:
+            return f"{bench_name} 재료부족({src_item})"
+        npc.inventory[src_item] = have - cost
+        if npc.inventory[src_item] <= 0:
+            npc.inventory.pop(src_item, None)
+        npc.inventory[dst_item] = int(npc.inventory.get(dst_item, 0)) + out
+        return f"{bench_name}[{int(bench.get('x', 0))},{int(bench.get('y', 0))}] {src_item}-{cost}->{dst_item}+{out}"
 
     # -----------------------------
     # Building state
@@ -482,7 +519,7 @@ class VillageGame:
         return mapping.get(job_text, JobType.FARMER)
 
     def _create_npcs(self) -> None:
-        templates = list(load_npc_templates()) + list(load_monster_templates())
+        templates = list(self.npc_templates) + list(self.monster_templates)
         res_buildings = [b for b in self.buildings if b.zone == ZoneType.RESIDENTIAL]
         for t in templates:
             nm = str(t.get("name", "이름없음"))
@@ -754,7 +791,14 @@ class VillageGame:
             return f"{npc.traits.name}: (마을 밖) {kind} -> {gained} 획득"
 
         if job == JobType.FARMER:
-            npc.inventory["bread"] = npc.inventory.get("bread", 0) + 2
+            gather_msg = self._gather_from_resource(npc, "wheat", 2)
+            made_bread = 0
+            if npc.inventory.get("wheat", 0) >= 2:
+                npc.inventory["wheat"] -= 2
+                if npc.inventory["wheat"] <= 0:
+                    npc.inventory.pop("wheat", None)
+                npc.inventory["bread"] = npc.inventory.get("bread", 0) + 1
+                made_bread = 1
             s.fatigue += 14
             s.hunger += 8
             s.happiness -= 1
@@ -762,11 +806,15 @@ class VillageGame:
             bst = self.bstate["농장"]
             bst.task = "농사"
             bst.task_progress = min(100, bst.task_progress + self.rng.randint(20, 40))
-            bst.last_event = f"{npc.traits.name} 농사(빵+2)"
-            return f"{npc.traits.name}: 농사(빵+2)"
+            detail = gather_msg or "자원지없음"
+            bst.last_event = f"{npc.traits.name} 농사({detail}, 빵+{made_bread})"
+            return f"{npc.traits.name}: 농사({detail}, 빵+{made_bread})"
 
         if job == JobType.FISHER:
-            npc.inventory["fish"] = npc.inventory.get("fish", 0) + 2
+            gathered = self._gather_from_resource(npc, "fish", 2)
+            if gathered is None:
+                npc.inventory["fish"] = npc.inventory.get("fish", 0) + 1
+                gathered = "기본 어획 fish+1"
             s.fatigue += 14
             s.hunger += 8
             s.happiness -= 1
@@ -774,32 +822,26 @@ class VillageGame:
             bst = self.bstate["낚시터"]
             bst.task = "낚시"
             bst.task_progress = min(100, bst.task_progress + self.rng.randint(20, 40))
-            bst.last_event = f"{npc.traits.name} 낚시(생선+2)"
-            return f"{npc.traits.name}: 낚시(생선+2)"
+            bst.last_event = f"{npc.traits.name} 낚시({gathered})"
+            return f"{npc.traits.name}: 낚시({gathered})"
 
         if job == JobType.BLACKSMITH:
             bst = self.bstate["대장간"]
-            made = False
-            if bst.inventory.get("ore", 0) > 0 and bst.inventory.get("wood", 0) > 0:
-                bst.inventory["ore"] -= 1
-                bst.inventory["wood"] -= 1
-                if bst.inventory["ore"] <= 0:
-                    bst.inventory.pop("ore", None)
-                if bst.inventory["wood"] <= 0:
-                    bst.inventory.pop("wood", None)
-                npc.inventory["ore"] = npc.inventory.get("ore", 0) + 1
-                made = True
+            gather_msg = self._gather_from_resource(npc, "ore", 1)
+            craft_msg = self._use_workbench(npc, "화덕", "ore", "ingot", cost=1, out=1)
             s.fatigue += 12
             s.hunger += 7
             s.happiness -= 1
             self._status_clamp(npc)
             bst.task = "제작"
             bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            bst.last_event = f"{npc.traits.name} 제작({'성공' if made else '재료부족'})"
-            return f"{npc.traits.name}: 제작({'성공' if made else '재료부족'})"
+            detail = craft_msg or gather_msg or "작업대없음"
+            bst.last_event = f"{npc.traits.name} 제작({detail})"
+            return f"{npc.traits.name}: 제작({detail})"
 
         if job == JobType.PHARMACIST:
-            npc.inventory["potion"] = npc.inventory.get("potion", 0) + 1
+            gather_msg = self._gather_from_resource(npc, "herb", 2)
+            craft_msg = self._use_workbench(npc, "약", "herb", "potion", cost=2, out=1)
             s.fatigue += 10
             s.hunger += 6
             s.happiness -= 1
@@ -807,8 +849,9 @@ class VillageGame:
             bst = self.bstate["약국"]
             bst.task = "제약"
             bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            bst.last_event = f"{npc.traits.name} 제약(포션+1)"
-            return f"{npc.traits.name}: 제약(포션+1)"
+            detail = craft_msg or gather_msg or "작업대없음"
+            bst.last_event = f"{npc.traits.name} 제약({detail})"
+            return f"{npc.traits.name}: 제약({detail})"
 
         return f"{npc.traits.name}: 1차행동(대기)"
 
@@ -1298,6 +1341,29 @@ def draw_world(screen: pygame.Surface, game: VillageGame, small: pygame.font.Fon
     wh0 = vr.h * BASE_TILE_SIZE
     sx0, sy0 = cam.world_to_screen(wx0, wy0)
     pygame.draw.rect(screen, (230, 230, 230), pygame.Rect(sx0, sy0, int(ww0 * cam.zoom), int(wh0 * cam.zoom)), max(2, int(3 * cam.zoom)))
+
+    # world entities (workbench/resource)
+    for ent in game.entities:
+        ex = int(ent.get("x", 0)) * BASE_TILE_SIZE + BASE_TILE_SIZE // 2
+        ey = int(ent.get("y", 0)) * BASE_TILE_SIZE + BASE_TILE_SIZE // 2
+        et = str(ent.get("type", ""))
+        sx, sy = cam.world_to_screen(ex, ey)
+        if et == "resource":
+            color = (110, 180, 90)
+            rad = max(2, int(6 * cam.zoom))
+            pygame.draw.circle(screen, color, (sx, sy), rad)
+            pygame.draw.circle(screen, (0, 0, 0), (sx, sy), rad, 1)
+            if cam.zoom >= 1.0:
+                label = f"{ent.get('name', '자원')}({int(ent.get('stock', 0))})"
+                screen.blit(small.render(label, True, (210, 230, 210)), (sx + 6, sy - 8))
+        elif et == "workbench":
+            rw = max(4, int(10 * cam.zoom))
+            rh = max(4, int(8 * cam.zoom))
+            rect = pygame.Rect(sx - rw // 2, sy - rh // 2, rw, rh)
+            pygame.draw.rect(screen, (180, 140, 80), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, 1)
+            if cam.zoom >= 1.0:
+                screen.blit(small.render(str(ent.get("name", "작업대")), True, (230, 210, 180)), (sx + 6, sy - 8))
 
     # NPC
     for i, npc in enumerate(game.npcs):
