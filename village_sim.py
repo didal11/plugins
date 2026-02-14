@@ -54,8 +54,6 @@ from editable_data import (
     load_all_data,
     load_item_defs,
     load_job_defs,
-    load_monster_templates,
-    load_npc_templates,
     load_races,
 )
 
@@ -323,15 +321,17 @@ class VillageGame:
             loaded_entities = load_entities()
         self.entities: List[Dict[str, object]] = [e for e in loaded_entities if isinstance(e, dict)]
 
-        loaded_npcs = data.get("npcs", []) if isinstance(data.get("npcs"), list) else []
-        if not loaded_npcs:
-            loaded_npcs = load_npc_templates()
-        self.npc_templates: List[Dict[str, object]] = [n for n in loaded_npcs if isinstance(n, dict)]
+        if not isinstance(data.get("npcs"), list):
+            raise ValueError("load_all_data()['npcs'] must be a list")
+        if not isinstance(data.get("monsters"), list):
+            raise ValueError("load_all_data()['monsters'] must be a list")
 
-        loaded_monsters = data.get("monsters", []) if isinstance(data.get("monsters"), list) else []
-        if not loaded_monsters:
-            loaded_monsters = load_monster_templates()
-        self.monster_templates: List[Dict[str, object]] = [m for m in loaded_monsters if isinstance(m, dict)]
+        self.npc_templates: List[Dict[str, object]] = [n for n in data["npcs"] if isinstance(n, dict)]
+        self.monster_templates: List[Dict[str, object]] = [m for m in data["monsters"] if isinstance(m, dict)]
+        if not self.npc_templates:
+            raise ValueError("load_all_data()['npcs'] must contain at least one npc template")
+        if not self.monster_templates:
+            raise ValueError("load_all_data()['monsters'] must contain at least one monster template")
 
         jobs_for_economy = data.get("jobs", []) if isinstance(data.get("jobs"), list) else []
         if not jobs_for_economy:
