@@ -8,340 +8,113 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+
 DATA_DIR = Path(__file__).parent / "data"
-
-VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사"]
-VALID_GENDERS = ["남", "여", "기타"]
-ENTITY_TYPES = ["workbench", "resource"]
-
-TAB_SCHEMAS: dict[str, tuple[str, list[tuple[str, str, str, list[str] | None]]]] = {
-    "items.json": ("아이템", [
-        ("key", "아이템 키", "str", None),
-        ("display", "표시 이름", "str", None),
-        ("is_craftable", "제작 가능", "bool", None),
-        ("is_gatherable", "채집 가능", "bool", None),
-        ("craft_time", "제작 시간", "int", None),
-        ("gather_time", "채집 시간", "int", None),
-    ]),
-    "npcs.json": ("NPC", [
-        ("name", "이름", "str", None),
-        ("race", "종족", "str", None),
-        ("gender", "성별", "combo", VALID_GENDERS),
-        ("age", "나이", "int", None),
-        ("job", "직업", "combo", VALID_JOBS),
-    ]),
-    "monsters.json": ("몬스터", [
-        ("name", "이름", "str", None),
-        ("race", "종족", "str", None),
-        ("gender", "성별", "combo", VALID_GENDERS),
-        ("age", "나이", "int", None),
-        ("job", "직업", "combo", VALID_JOBS),
-    ]),
-    "races.json": ("종족", [
-        ("name", "종족명", "str", None),
-        ("is_hostile", "적대 여부", "bool", None),
-        ("str_bonus", "힘 보너스", "int", None),
-        ("agi_bonus", "민첩 보너스", "int", None),
-        ("hp_bonus", "체력 보너스", "int", None),
-        ("speed_bonus", "속도 보너스(정수)", "int", None),
-    ]),
-    "entities.json": ("엔티티", [
-        ("type", "유형", "combo", ENTITY_TYPES),
-        ("name", "이름", "str", None),
-        ("x", "X", "int", None),
-        ("y", "Y", "int", None),
-        ("stock", "재고", "int", None),
-    ]),
-    "jobs.json": ("직업", [
-        ("job", "직업", "combo", VALID_JOBS),
-        ("sell_limit", "판매 한도", "int", None),
-        ("sell_items_csv", "판매 아이템(csv)", "str", None),
-    ]),
-}
-
-DICT_TABS = [("sim_settings.json", "시뮬 설정"), ("combat.json", "전투 설정")]
-
-
-class ListTab:
-    def __init__(self, parent: ttk.Frame, filename: str, schema: list[tuple[str, str, str, list[str] | None]]):
-        self.filename = filename
-        self.path = DATA_DIR / filename
-        self.schema = schema
-        self.rows: list[dict[str, object]] = []
-        self.widgets: dict[str, tk.Widget] = {}
-        self.bool_vars: dict[str, tk.BooleanVar] = {}
-
-        left = ttk.Frame(parent)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(parent)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        self.pick_var = tk.StringVar()
-        self.pick_box = ttk.Combobox(left, textvariable=self.pick_var, state="readonly", width=36)
-        self.pick_box.pack(fill="x", pady=(0, 8))
-        self.pick_box.bind("<<ComboboxSelected>>", self._on_select)
-
-        ttk.Button(left, text="새 항목", command=self._new).pack(fill="x", pady=2)
-        ttk.Button(left, text="추가", command=self._add).pack(fill="x", pady=2)
-        ttk.Button(left, text="수정", command=self._update).pack(fill="x", pady=2)
-        ttk.Button(left, text="삭제", command=self._delete).pack(fill="x", pady=2)
-        ttk.Button(left, text="저장", command=self._save).pack(fill="x", pady=(10, 2))
-
-        for idx, (key, label, kind, options) in enumerate(schema):
-            ttk.Label(right, text=label).grid(row=idx, column=0, sticky="w", pady=3)
-            if kind == "bool":
-                var = tk.BooleanVar(value=False)
-                w = ttk.Checkbutton(right, variable=var)
-                self.bool_vars[key] = var
-            elif kind == "combo":
-                w = ttk.Combobox(right, values=options or [], state="readonly", width=40)
-            else:
-                w = ttk.Entry(right, width=43)
-            w.grid(row=idx, column=1, sticky="w", pady=3)
-            self.widgets[key] = w
-
-        self._load()
-
-    def _read_list(self) -> list[dict[str, object]]:
-        if not self.path.exists():
-            self.path.write_text("[]", encoding="utf-8")
-            return []
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            return [x for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
-        except Exception:
-            return []
-
-    def _write_list(self) -> None:
-        self.path.write_text(json.dumps(self.rows, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    def _display_text(self, row: dict[str, object], idx: int) -> str:
-        if "name" in row:
-            return f"{idx}: {row.get('name', '')}"
-        if "key" in row:
-            return f"{idx}: {row.get('key', '')}"
-        if "job" in row:
-            return f"{idx}: {row.get('job', '')}"
-        return f"{idx}: 항목"
-
-    def _refresh_combo(self) -> None:
-        labels = [self._display_text(r, i) for i, r in enumerate(self.rows)]
-        self.pick_box["values"] = labels
-        if labels:
-            self.pick_box.current(0)
-            self._fill_form(0)
-        else:
-            self.pick_var.set("")
-            self._clear_form()
-
-    def _clear_form(self) -> None:
-        for key, _, kind, _ in self.schema:
-            if kind == "bool":
-                self.bool_vars[key].set(False)
-            elif kind == "combo":
-                cast = self.widgets[key]
-                if isinstance(cast, ttk.Combobox):
-                    cast.set("")
-            else:
-                cast = self.widgets[key]
-                if isinstance(cast, ttk.Entry):
-                    cast.delete(0, "end")
-
-    def _fill_form(self, index: int) -> None:
-        if not (0 <= index < len(self.rows)):
-            return
-        row = self.rows[index]
-        for key, _, kind, _ in self.schema:
-            value = row.get(key, "")
-            if key == "sell_items_csv":
-                value = ",".join([str(v) for v in row.get("sell_items", [])])
-            if kind == "bool":
-                self.bool_vars[key].set(bool(value))
-            elif kind == "combo":
-                cast = self.widgets[key]
-                if isinstance(cast, ttk.Combobox):
-                    cast.set(str(value))
-            else:
-                cast = self.widgets[key]
-                if isinstance(cast, ttk.Entry):
-                    cast.delete(0, "end")
-                    cast.insert(0, str(value))
-
-    def _row_from_form(self) -> dict[str, object] | None:
-        out: dict[str, object] = {}
-        try:
-            for key, _, kind, _ in self.schema:
-                if kind == "bool":
-                    out[key] = bool(self.bool_vars[key].get())
-                elif kind == "combo":
-                    cast = self.widgets[key]
-                    out[key] = cast.get().strip() if isinstance(cast, ttk.Combobox) else ""
-                else:
-                    cast = self.widgets[key]
-                    text = cast.get().strip() if isinstance(cast, ttk.Entry) else ""
-                    if kind == "int":
-                        out[key] = int(text or "0")
-                    else:
-                        out[key] = text
-
-            if "sell_items_csv" in out:
-                csv = str(out.pop("sell_items_csv", ""))
-                out["sell_items"] = [s.strip() for s in csv.split(",") if s.strip()]
-
-            return out
-        except ValueError:
-            messagebox.showwarning("경고", "정수 필드는 숫자만 입력하세요.")
-            return None
-
-    def _selected_index(self) -> int | None:
-        text = self.pick_var.get().strip()
-        if not text:
-            return None
-        head = text.split(":", 1)[0].strip()
-        try:
-            return int(head)
-        except ValueError:
-            return None
-
-    def _on_select(self, _event=None) -> None:
-        idx = self._selected_index()
-        if idx is None:
-            return
-        self._fill_form(idx)
-
-    def _new(self) -> None:
-        self._clear_form()
-
-    def _add(self) -> None:
-        row = self._row_from_form()
-        if row is None:
-            return
-        self.rows.append(row)
-        self._refresh_combo()
-
-    def _update(self) -> None:
-        idx = self._selected_index()
-        if idx is None or not (0 <= idx < len(self.rows)):
-            return
-        row = self._row_from_form()
-        if row is None:
-            return
-        self.rows[idx] = row
-        self._refresh_combo()
-        self.pick_box.current(idx)
-
-    def _delete(self) -> None:
-        idx = self._selected_index()
-        if idx is None or not (0 <= idx < len(self.rows)):
-            return
-        self.rows.pop(idx)
-        self._refresh_combo()
-
-    def _save(self) -> None:
-        self._write_list()
-        messagebox.showinfo("저장 완료", f"{self.filename} 저장 완료")
-
-    def _load(self) -> None:
-        self.rows = self._read_list()
-        self._refresh_combo()
-
-
-class DictTab:
-    def __init__(self, parent: ttk.Frame, filename: str):
-        self.filename = filename
-        self.path = DATA_DIR / filename
-        self.entries: dict[str, ttk.Entry] = {}
-
-        frame = ttk.Frame(parent)
-        frame.pack(fill="both", expand=True, padx=12, pady=12)
-
-        self.inner = ttk.Frame(frame)
-        self.inner.pack(fill="x")
-
-        btns = ttk.Frame(frame)
-        btns.pack(fill="x", pady=8)
-        ttk.Button(btns, text="키 추가", command=self._add_key_row).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=self._save).pack(side="left", padx=3)
-
-        self._load()
-
-    def _add_key_row(self, key: str = "", value: int = 0) -> None:
-        row = len(self.entries)
-        key_entry = ttk.Entry(self.inner, width=26)
-        val_entry = ttk.Entry(self.inner, width=26)
-        key_entry.grid(row=row, column=0, sticky="w", pady=3)
-        val_entry.grid(row=row, column=1, sticky="w", pady=3, padx=8)
-        key_entry.insert(0, key)
-        val_entry.insert(0, str(value))
-        self.entries[f"k{row}"] = key_entry
-        self.entries[f"v{row}"] = val_entry
-
-    def _load(self) -> None:
-        if not self.path.exists():
-            self.path.write_text("{}", encoding="utf-8")
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                data = {}
-        except Exception:
-            data = {}
-        for child in self.inner.winfo_children():
-            child.destroy()
-        self.entries.clear()
-        for k, v in data.items():
-            try:
-                iv = int(v)
-            except Exception:
-                iv = 0
-            self._add_key_row(str(k), iv)
-        if not data:
-            self._add_key_row()
-
-    def _save(self) -> None:
-        out: dict[str, int] = {}
-        row_count = len(self.entries) // 2
-        try:
-            for i in range(row_count):
-                k_entry = self.entries.get(f"k{i}")
-                v_entry = self.entries.get(f"v{i}")
-                if not isinstance(k_entry, ttk.Entry) or not isinstance(v_entry, ttk.Entry):
-                    continue
-                key = k_entry.get().strip()
-                if not key:
-                    continue
-                out[key] = int(v_entry.get().strip() or "0")
-        except ValueError:
-            messagebox.showwarning("경고", "값은 정수만 입력하세요.")
-            return
-
-        self.path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        messagebox.showinfo("저장 완료", f"{self.filename} 저장 완료")
+JSON_FILES = [
+    "items.json",
+    "npcs.json",
+    "monsters.json",
+    "races.json",
+    "entities.json",
+    "jobs.json",
+    "sim_settings.json",
+    "combat.json",
+]
 
 
 class EditorApp(tk.Tk):
-    """data/*.json 파일을 탭 단위로 수정/추가/저장하는 도구."""
+    """JSON 데이터 파일 수정/추가/저장 전용 에디터.
+
+    목적: 실행 전에 data/*.json 파일을 간편하게 바꾸는 것.
+    """
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("데이터 에디터")
+        self.title("데이터 파일 에디터")
         self.geometry("1100x760")
+
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill="both", expand=True, padx=8, pady=8)
-        self._build_tabs()
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=10, pady=10)
 
-    def _build_tabs(self) -> None:
-        """탭 UI를 명시적으로 구성한다."""
-        for filename, (tab_title, schema) in TAB_SCHEMAS.items():
-            tab = ttk.Frame(self.notebook)
-            self.notebook.add(tab, text=tab_title)
-            ListTab(tab, filename, schema)
+        ttk.Label(top, text="파일").pack(side="left")
+        self.file_var = tk.StringVar(value=JSON_FILES[0])
+        self.file_box = ttk.Combobox(top, textvariable=self.file_var, values=JSON_FILES, state="readonly", width=28)
+        self.file_box.pack(side="left", padx=8)
+        self.file_box.bind("<<ComboboxSelected>>", self._open_selected_file)
 
-        for filename, tab_title in DICT_TABS:
-            tab = ttk.Frame(self.notebook)
-            self.notebook.add(tab, text=tab_title)
-            DictTab(tab, filename)
+        ttk.Button(top, text="새 객체 추가", command=self._append_object).pack(side="left", padx=4)
+        ttk.Button(top, text="저장", command=self._save_current_file).pack(side="left", padx=4)
+
+        self.path_label = ttk.Label(self, text="")
+        self.path_label.pack(fill="x", padx=10)
+
+        self.editor = tk.Text(self, wrap="none", font=("Consolas", 11))
+        self.editor.pack(fill="both", expand=True, padx=10, pady=(6, 10))
+
+        self._open_selected_file()
+
+    def _selected_path(self) -> Path:
+        filename = self.file_var.get().strip()
+        if not filename:
+            filename = JSON_FILES[0]
+        return DATA_DIR / filename
+
+    def _open_selected_file(self, _event=None) -> None:
+        path = self._selected_path()
+        if not path.exists():
+            default_data = {} if path.name.endswith("settings.json") or path.name == "combat.json" else []
+            path.write_text(json.dumps(default_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        raw_text = path.read_text(encoding="utf-8")
+        try:
+            parsed = json.loads(raw_text) if raw_text.strip() else []
+            pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
+        except Exception:
+            pretty = raw_text
+
+        self.path_label.configure(text=f"경로: {path}")
+        self.editor.delete("1.0", "end")
+        self.editor.insert("1.0", pretty)
+
+    def _append_object(self) -> None:
+        path = self._selected_path()
+        current = self.editor.get("1.0", "end").strip()
+        try:
+            value = json.loads(current) if current else []
+        except Exception:
+            messagebox.showwarning("경고", "현재 JSON 형식이 올바르지 않습니다. 먼저 JSON 오류를 수정하세요.")
+            return
+
+        if isinstance(value, list):
+            value.append({})
+        elif isinstance(value, dict):
+            value[f"new_key_{len(value) + 1}"] = ""
+        else:
+            messagebox.showwarning("경고", "루트는 객체({}) 또는 배열([])이어야 새 데이터를 추가할 수 있습니다.")
+            return
+
+        self.editor.delete("1.0", "end")
+        self.editor.insert("1.0", json.dumps(value, ensure_ascii=False, indent=2))
+        self.path_label.configure(text=f"경로: {path}")
+
+    def _save_current_file(self) -> None:
+        path = self._selected_path()
+        raw_text = self.editor.get("1.0", "end").strip()
+
+        if not raw_text:
+            messagebox.showwarning("경고", "빈 내용은 저장할 수 없습니다.")
+            return
+
+        try:
+            parsed = json.loads(raw_text)
+        except Exception as exc:
+            messagebox.showerror("저장 실패", f"JSON 형식 오류: {exc}")
+            return
+
+        path.write_text(json.dumps(parsed, ensure_ascii=False, indent=2), encoding="utf-8")
+        messagebox.showinfo("저장 완료", f"{path.name} 파일을 저장했습니다.")
 
 
 if __name__ == "__main__":
