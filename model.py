@@ -114,6 +114,10 @@ class Status:
     happiness: int
     hunger: int
     fatigue: int
+    max_hp: int
+    hp: int
+    strength: int
+    agility: int
 
 
 @dataclass
