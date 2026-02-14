@@ -128,6 +128,14 @@ def _read_json(path: Path, fallback: object) -> object:
         return fallback
 
 
+def _seed_if_empty(path: Path, rows: List[Dict[str, object]], defaults: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    if rows:
+        return rows
+    seeded = list(defaults)
+    _write_json(path, seeded)
+    return seeded
+
+
 def _normalize_item(it: Dict[str, object]) -> Dict[str, object]:
     key = str(it.get("key", "")).strip()
     display = str(it.get("display", "")).strip()
@@ -246,7 +254,7 @@ def load_item_defs() -> List[Dict[str, object]]:
             "gather_fatigue": int(it.get("gather_fatigue", 0)),
             "gather_spot": str(it.get("gather_spot", "")),
         })
-    return out or list(DEFAULT_ITEMS)
+    return _seed_if_empty(ITEMS_FILE, out, DEFAULT_ITEMS)
 
 
 def save_item_defs(items: List[Dict[str, object]]) -> None:
@@ -259,6 +267,7 @@ def load_npc_templates() -> List[Dict[str, object]]:
     try:
         raw = json.loads(NPCS_FILE.read_text(encoding="utf-8"))
     except Exception:
+        _write_json(NPCS_FILE, DEFAULT_NPCS)
         return list(DEFAULT_NPCS)
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
@@ -282,7 +291,29 @@ def load_npc_templates() -> List[Dict[str, object]]:
                 "goal": str(it.get("goal", "돈벌기")).strip() or "돈벌기",
             }
         )
-    return out or list(DEFAULT_NPCS)
+    return _seed_if_empty(NPCS_FILE, out, DEFAULT_NPCS)
+
+
+def load_monster_templates() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    out: List[Dict[str, object]] = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name", "")).strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "name": name,
+                "race": str(it.get("race", "고블린")).strip() or "고블린",
+                "gender": str(it.get("gender", "기타")).strip() or "기타",
+                "age": int(it.get("age", 5)),
+                "job": "모험가",
+            }
+        )
+    return _seed_if_empty(MONSTERS_FILE, out, DEFAULT_MONSTERS)
 
 
 def load_monster_templates() -> List[Dict[str, object]]:
@@ -356,6 +387,7 @@ def load_job_defs() -> List[Dict[str, object]]:
     try:
         raw = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
     except Exception:
+        _write_json(JOBS_FILE, DEFAULT_JOB_DEFS)
         return list(DEFAULT_JOB_DEFS)
     out: List[Dict[str, object]] = []
     for row in raw if isinstance(raw, list) else []:
@@ -374,7 +406,7 @@ def load_job_defs() -> List[Dict[str, object]]:
                 "sell_limit": int(row.get("sell_limit", 3)),
             }
         )
-    return out or list(DEFAULT_JOB_DEFS)
+    return _seed_if_empty(JOBS_FILE, out, DEFAULT_JOB_DEFS)
 
 
 def save_job_defs(job_defs: List[Dict[str, object]]) -> None:
@@ -402,6 +434,7 @@ def load_sim_settings() -> Dict[str, float]:
     try:
         raw = json.loads(SIM_SETTINGS_FILE.read_text(encoding="utf-8"))
     except Exception:
+        _write_json(SIM_SETTINGS_FILE, DEFAULT_SIM_SETTINGS)
         return dict(DEFAULT_SIM_SETTINGS)
     out = dict(DEFAULT_SIM_SETTINGS)
     if isinstance(raw, dict):
@@ -410,6 +443,8 @@ def load_sim_settings() -> Dict[str, float]:
                 out[k] = float(raw.get(k, out[k]))
             except Exception:
                 pass
+    if not isinstance(raw, dict) or not raw:
+        _write_json(SIM_SETTINGS_FILE, out)
     return out
 
 
