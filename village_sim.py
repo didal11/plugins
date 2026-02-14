@@ -299,6 +299,7 @@ class VillageGame:
         ensure_data_files()
         loaded_items = load_item_defs()
         self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
+        self.economy = EconomySystem(load_job_defs(), self.sim_settings, loaded_items, self.entities)
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -440,23 +441,25 @@ class VillageGame:
     # NPC creation
     # -----------------------------
     def _random_traits(self, name: str) -> Traits:
-        races = ["인간", "엘프", "드워프"]
+        races = [str(r.get("name")) for r in self.races if not bool(r.get("is_hostile", False))]
         genders = ["남", "여", "기타"]
         jobs = [JobType.ADVENTURER, JobType.FARMER, JobType.FISHER, JobType.BLACKSMITH, JobType.PHARMACIST]
-        race = self.rng.choice(races)
+        race = self.rng.choice(races or ["인간"])
         gender = self.rng.choice(genders)
         age = self.rng.randint(18, 58)
-        if race == "드워프":
-            height = self.rng.randint(125, 155)
-            weight = self.rng.randint(55, 95)
-        elif race == "엘프":
-            height = self.rng.randint(165, 195)
-            weight = self.rng.randint(50, 85)
-        else:
-            height = self.rng.randint(155, 190)
-            weight = self.rng.randint(50, 100)
-        job = self.rng.choice(jobs)
-        return Traits(name=name, race=race, gender=gender, age=age, height_cm=height, weight_kg=weight, job=job, goal="돈벌기")
+        bonus = self.race_map.get(race, {})
+        return Traits(
+            name=name,
+            race=race,
+            gender=gender,
+            age=age,
+            job=self.rng.choice(jobs),
+            race_str_bonus=int(bonus.get("str_bonus", 0)),
+            race_agi_bonus=int(bonus.get("agi_bonus", 0)),
+            race_hp_bonus=int(bonus.get("hp_bonus", 0)),
+            race_speed_bonus=float(bonus.get("speed_bonus", 0.0)),
+            is_hostile=bool(bonus.get("is_hostile", False)),
+        )
 
     def _job_from_text(self, job_text: str) -> JobType:
         mapping = {
@@ -469,14 +472,21 @@ class VillageGame:
         return mapping.get(job_text, JobType.FARMER)
 
     def _create_npcs(self) -> None:
-        templates = load_npc_templates()
+        templates = list(load_npc_templates()) + list(load_monster_templates())
         res_buildings = [b for b in self.buildings if b.zone == ZoneType.RESIDENTIAL]
         for t in templates:
             nm = str(t.get("name", "이름없음"))
-            home = self.rng.choice(res_buildings)
-            tx, ty = home.random_tile_inside(self.rng)
+            race = str(t.get("race", "인간"))
+            race_cfg = self.race_map.get(race, {})
+            hostile = bool(race_cfg.get("is_hostile", False))
+            if hostile:
+                tx, ty = self.random_outside_tile()
+                home = self.rng.choice(res_buildings)
+            else:
+                home = self.rng.choice(res_buildings)
+                tx, ty = home.random_tile_inside(self.rng)
             wx, wy = tile_to_world_px_center(tx, ty)
-            max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))))
+            max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))) + int(race_cfg.get("hp_bonus", 0)))
             hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
             st = Status(
                 money=int(t.get("money", self.rng.randint(60, 180))),
@@ -485,18 +495,8 @@ class VillageGame:
                 fatigue=self.rng.randint(15, 55),
                 max_hp=max_hp,
                 hp=hp,
-                strength=max(1, int(t.get("strength", self.rng.randint(8, 16)))),
-                agility=max(1, int(t.get("agility", self.rng.randint(8, 16)))),
-            )
-            tr = Traits(
-                name=nm,
-                race=str(t.get("race", "인간")),
-                gender=str(t.get("gender", "기타")),
-                age=int(t.get("age", 25)),
-                height_cm=int(t.get("height_cm", 170)),
-                weight_kg=int(t.get("weight_kg", 65)),
-                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
-                goal=str(t.get("goal", "돈벌기")),
+                strength=max(1, int(t.get("strength", self.rng.randint(8, 16))) + int(race_cfg.get("str_bonus", 0))),
+                agility=max(1, int(t.get("agility", self.rng.randint(8, 16))) + int(race_cfg.get("agi_bonus", 0))),
             )
             npc = NPC(
                 traits=tr,
@@ -506,7 +506,7 @@ class VillageGame:
                 path=[],
                 home_building=home,
                 target_building=None,
-                location_building=home,
+                location_building=home if not hostile else None,
                 inventory={},
                 stage=PlanStage.PRIMARY,
                 target_outside_tile=None,
@@ -624,7 +624,7 @@ class VillageGame:
 
 
     def _is_hostile(self, npc: NPC) -> bool:
-        return npc.traits.race == str(self.combat_settings.get("hostile_race", "적대"))
+        return bool(getattr(npc.traits, "is_hostile", False))
 
     def _nearest_hostile(self, npc: NPC) -> Optional[NPC]:
         candidates = [x for x in self.npcs if x is not npc and self._is_hostile(x) and x.status.hp > 0]
@@ -1141,10 +1141,9 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
             f"종족: {t.race}",
             f"성별: {t.gender}",
             f"나이: {t.age}",
-            f"키: {t.height_cm}cm",
-            f"몸무게: {t.weight_kg}kg",
             f"직업: {t.job.value}",
-            f"목표: {t.goal}",
+            f"종족 보너스(힘/민첩/체력/이속): {t.race_str_bonus}/{t.race_agi_bonus}/{t.race_hp_bonus}/{t.race_speed_bonus}",
+            f"적대 여부: {'예' if t.is_hostile else '아니오'}",
         ]
         draw_text_lines(screen, small, body.x + 12, body.y + 12, lines)
 

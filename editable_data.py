@@ -115,35 +115,57 @@ def ensure_data_files() -> None:
         _write_json(SIM_SETTINGS_FILE, DEFAULT_SIM_SETTINGS)
 
 
-def load_item_defs() -> List[Dict[str, str]]:
+def ensure_data_files() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    defaults = {
+        ITEMS_FILE: DEFAULT_ITEMS,
+        NPCS_FILE: DEFAULT_NPCS,
+        MONSTERS_FILE: DEFAULT_MONSTERS,
+        RACES_FILE: DEFAULT_RACES,
+        ENTITIES_FILE: DEFAULT_ENTITIES,
+        JOBS_FILE: DEFAULT_JOB_DEFS,
+        SIM_SETTINGS_FILE: DEFAULT_SIM_SETTINGS,
+    }
+    for path, value in defaults.items():
+        if not path.exists():
+            _write_json(path, value)
+
+
+def load_item_defs() -> List[Dict[str, object]]:
     ensure_data_files()
-    try:
-        raw = json.loads(ITEMS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return list(DEFAULT_ITEMS)
-    out: List[Dict[str, str]] = []
+    raw = _read_json(ITEMS_FILE, DEFAULT_ITEMS)
+    out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
             continue
         key = str(it.get("key", "")).strip()
         display = str(it.get("display", "")).strip()
-        if key and display:
-            out.append({"key": key, "display": display})
+        if not key or not display:
+            continue
+        out.append({
+            "key": key,
+            "display": display,
+            "is_craftable": bool(it.get("is_craftable", False)),
+            "is_gatherable": bool(it.get("is_gatherable", False)),
+            "craft_inputs": it.get("craft_inputs", {}) if isinstance(it.get("craft_inputs", {}), dict) else {},
+            "craft_time": int(it.get("craft_time", 0)),
+            "craft_fatigue": int(it.get("craft_fatigue", 0)),
+            "craft_station": str(it.get("craft_station", "")),
+            "craft_amount": int(it.get("craft_amount", 0)),
+            "gather_time": int(it.get("gather_time", 0)),
+            "gather_amount": int(it.get("gather_amount", 0)),
+            "gather_fatigue": int(it.get("gather_fatigue", 0)),
+            "gather_spot": str(it.get("gather_spot", "")),
+        })
     return out or list(DEFAULT_ITEMS)
 
 
-def save_item_defs(items: List[Dict[str, str]]) -> None:
+def save_item_defs(items: List[Dict[str, object]]) -> None:
     ensure_data_files()
-    clean: List[Dict[str, str]] = []
-    for it in items:
-        key = str(it.get("key", "")).strip()
-        display = str(it.get("display", "")).strip()
-        if key and display:
-            clean.append({"key": key, "display": display})
-    _write_json(ITEMS_FILE, clean)
+    _write_json(ITEMS_FILE, items)
 
 
-def load_npc_templates() -> List[Dict[str, object]]:
+def load_races() -> List[Dict[str, object]]:
     ensure_data_files()
     try:
         raw = json.loads(NPCS_FILE.read_text(encoding="utf-8"))
