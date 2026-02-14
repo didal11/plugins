@@ -1,7 +1,14 @@
 [
-  {"name": "엘린", "race": "인간", "gender": "여", "age": 24, "job": "모험가"},
-  {"name": "보른", "race": "드워프", "gender": "남", "age": 39, "job": "대장장이"},
-  {"name": "마라", "race": "엘프", "gender": "여", "age": 31, "job": "약사"},
-  {"name": "레오", "race": "인간", "gender": "남", "age": 28, "job": "농부"},
-  {"name": "시안", "race": "엘프", "gender": "기타", "age": 26, "job": "어부"}
+  {"name": "엘린", "race": "인간", "gender": "여", "age": 24, "height_cm": 167, "weight_kg": 56, "job": "모험가", "goal": "돈벌기"},
+  {"name": "보른", "race": "드워프", "gender": "남", "age": 39, "height_cm": 146, "weight_kg": 76, "job": "대장장이", "goal": "명품 제작"},
+  {"name": "마라", "race": "엘프", "gender": "여", "age": 31, "height_cm": 178, "weight_kg": 60, "job": "약사", "goal": "치유 연구"},
+  {"name": "레오", "race": "인간", "gender": "남", "age": 28, "height_cm": 175, "weight_kg": 69, "job": "농부", "goal": "풍작"},
+  {"name": "시안", "race": "엘프", "gender": "기타", "age": 26, "height_cm": 182, "weight_kg": 64, "job": "어부", "goal": "대어 잡기"},
+  {"name": "밀라", "race": "인간", "gender": "여", "age": 22, "height_cm": 164, "weight_kg": 54, "job": "농부", "goal": "가계 안정"},
+  {"name": "도르", "race": "드워프", "gender": "남", "age": 41, "height_cm": 149, "weight_kg": 81, "job": "대장장이", "goal": "대량 생산"},
+  {"name": "이리스", "race": "엘프", "gender": "여", "age": 29, "height_cm": 176, "weight_kg": 59, "job": "약사", "goal": "치유 보급"},
+  {"name": "카이", "race": "인간", "gender": "남", "age": 27, "height_cm": 173, "weight_kg": 67, "job": "어부", "goal": "상단 납품"},
+  {"name": "란", "race": "인간", "gender": "기타", "age": 25, "height_cm": 170, "weight_kg": 63, "job": "모험가", "goal": "유물 수집"},
+  {"name": "노아", "race": "인간", "gender": "남", "age": 33, "height_cm": 171, "weight_kg": 70, "job": "농부", "goal": "곡물 상인"},
+  {"name": "세라", "race": "엘프", "gender": "여", "age": 34, "height_cm": 179, "weight_kg": 62, "job": "약사", "goal": "특효약 개발"}
 ]
