@@ -7,11 +7,7 @@
     "height_cm": 167,
     "weight_kg": 56,
     "job": "모험가",
-    "goal": "적대 사냥",
-    "max_hp": 120,
-    "hp": 120,
-    "strength": 16,
-    "agility": 13
+    "goal": "돈벌기"
   },
   {
     "name": "보른",
@@ -21,11 +17,7 @@
     "height_cm": 146,
     "weight_kg": 76,
     "job": "대장장이",
-    "goal": "명품 제작",
-    "max_hp": 110,
-    "hp": 110,
-    "strength": 13,
-    "agility": 8
+    "goal": "명품 제작"
   },
   {
     "name": "마라",
@@ -35,11 +27,7 @@
     "height_cm": 178,
     "weight_kg": 60,
     "job": "약사",
-    "goal": "치유 연구",
-    "max_hp": 95,
-    "hp": 95,
-    "strength": 8,
-    "agility": 12
+    "goal": "치유 연구"
   },
   {
     "name": "레오",
@@ -49,11 +37,7 @@
     "height_cm": 175,
     "weight_kg": 69,
     "job": "농부",
-    "goal": "풍작",
-    "max_hp": 105,
-    "hp": 105,
-    "strength": 10,
-    "agility": 9
+    "goal": "풍작"
   },
   {
     "name": "시안",
@@ -63,24 +47,6 @@
     "height_cm": 182,
     "weight_kg": 64,
     "job": "어부",
-    "goal": "대어 잡기",
-    "max_hp": 100,
-    "hp": 100,
-    "strength": 9,
-    "agility": 11
-  },
-  {
-    "name": "그림자",
-    "race": "적대",
-    "gender": "기타",
-    "age": 22,
-    "height_cm": 180,
-    "weight_kg": 70,
-    "job": "모험가",
-    "goal": "배회",
-    "max_hp": 90,
-    "hp": 90,
-    "strength": 12,
-    "agility": 10
+    "goal": "대어 잡기"
   }
 ]
