@@ -20,7 +20,9 @@
 
 from __future__ import annotations
 
+import json
 import random
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pygame
@@ -34,7 +36,6 @@ from config import (
     SCREEN_H,
     FPS,
     SIM_TICK_MS,
-    NPC_SPEED,
     CAMERA_SPEED,
     ZOOM_MIN,
     ZOOM_MAX,
@@ -46,7 +47,8 @@ from config import (
     MODAL_H,
 )
 
-from editable_data import ensure_data_files, load_item_defs, load_npc_templates
+from economy import EconomySystem
+from editable_data import ensure_data_files, load_item_defs, load_job_defs, load_npc_templates, load_sim_settings
 
 from model import (
     Building,
@@ -268,8 +270,18 @@ class VillageGame:
         self.rng = random.Random(seed)
         self.time = TimeSystem()
         self.camera = Camera()
-        # Defensive default so merged/older call paths never fail before JSON load.
+        self.sim_settings = load_sim_settings()
         self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
+        combat_path = Path(__file__).parent / "data" / "combat.json"
+        if combat_path.exists():
+            try:
+                raw = json.loads(combat_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    self.combat_settings.update(raw)
+            except Exception:
+                pass
+        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
+        self.last_economy_snapshot = None
 
         # Logs
         self.logs: List[str] = []
@@ -390,30 +402,30 @@ class VillageGame:
             prog = 0
             if b.zone == ZoneType.MARKET:
                 if b.name == "식당":
-                    inv = {"bread": 8, "meat": 4, "fish": 4}
+                    inv = {"bread": 16, "meat": 8, "fish": 8, "wheat": 10}
                     task = "조리/서빙"
                 elif b.name == "잡화점":
-                    inv = {"bread": 10, "wood": 8, "ore": 4, "fish": 6, "meat": 3}
+                    inv = {"bread": 20, "wheat": 30, "wood": 16, "ore": 12, "fish": 16, "meat": 10, "herb": 10, "potion": 6, "ingot": 4}
                     task = "매매"
                 elif b.name == "사치상점":
-                    inv = {"potion": 6, "meat": 4}
+                    inv = {"potion": 10, "meat": 6, "artifact": 2, "leather": 4}
                     task = "매매"
             elif b.zone == ZoneType.JOB:
                 if b.name == "농장":
-                    inv = {"bread": 3}
+                    inv = {"wheat": 20, "bread": 8}
                     task = "농사"
                 elif b.name == "목장":
-                    inv = {"meat": 2}
+                    inv = {"meat": 8, "hide": 6}
                     task = "사육"
                 elif b.name == "낚시터":
-                    inv = {"fish": 2}
+                    inv = {"fish": 10}
                     task = "낚시"
             elif b.zone == ZoneType.INTERACTION:
                 if b.name == "대장간":
-                    inv = {"ore": 2, "wood": 2}
+                    inv = {"ore": 10, "wood": 10, "ingot": 4, "lumber": 4}
                     task = "제작/판매"
                 elif b.name == "약국":
-                    inv = {"potion": 4}
+                    inv = {"potion": 10, "herb": 12}
                     task = "제약/판매"
                 elif b.name == "모험가 길드":
                     inv = {}
@@ -467,7 +479,7 @@ class VillageGame:
             max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))))
             hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
             st = Status(
-                money=self.rng.randint(15, 55),
+                money=int(t.get("money", self.rng.randint(60, 180))),
                 happiness=self.rng.randint(45, 75),
                 hunger=self.rng.randint(15, 55),
                 fatigue=self.rng.randint(15, 55),
@@ -475,16 +487,6 @@ class VillageGame:
                 hp=hp,
                 strength=max(1, int(t.get("strength", self.rng.randint(8, 16)))),
                 agility=max(1, int(t.get("agility", self.rng.randint(8, 16)))),
-            )
-            tr = Traits(
-                name=nm,
-                race=str(t.get("race", "인간")),
-                gender=str(t.get("gender", "기타")),
-                age=int(t.get("age", 25)),
-                height_cm=int(t.get("height_cm", 170)),
-                weight_kg=int(t.get("weight_kg", 65)),
-                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
-                goal=str(t.get("goal", "돈벌기")),
             )
             tr = Traits(
                 name=nm,
@@ -511,10 +513,14 @@ class VillageGame:
             )
             if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
+            if self.rng.random() < 0.45 and "wheat" in self.items:
+                npc.inventory["wheat"] = self.rng.randint(0, 3)
             if self.rng.random() < 0.30 and "wood" in self.items:
                 npc.inventory["wood"] = 1
-            if self.rng.random() < 0.20 and "ore" in self.items:
+            if self.rng.random() < 0.25 and "ore" in self.items:
                 npc.inventory["ore"] = 1
+            if self.rng.random() < 0.20 and "herb" in self.items:
+                npc.inventory["herb"] = 1
             self.npcs.append(npc)
 
     # -----------------------------
@@ -566,8 +572,8 @@ class VillageGame:
 
     def npc_passive_1h(self, npc: NPC) -> None:
         s = npc.status
-        s.hunger += 5
-        s.fatigue += 4
+        s.hunger += int(self.sim_settings.get("hunger_gain_per_hour", 5.0))
+        s.fatigue += int(self.sim_settings.get("fatigue_gain_per_hour", 4.0))
         if s.hunger >= 80:
             s.happiness -= 3
         if s.fatigue >= 80:
@@ -674,7 +680,7 @@ class VillageGame:
             return f"{npc.traits.name}: 식당(돈없음)"
         s.money -= fee
         before = s.hunger
-        s.hunger -= 38
+        s.hunger -= int(self.sim_settings.get("meal_hunger_restore", 38.0))
         s.happiness += 3
         s.fatigue += 1
         self._status_clamp(npc)
@@ -693,7 +699,7 @@ class VillageGame:
     def _do_rest_at_home(self, npc: NPC) -> str:
         s = npc.status
         before = s.fatigue
-        s.fatigue -= 28
+        s.fatigue -= int(self.sim_settings.get("rest_fatigue_restore", 28.0))
         s.hunger += 6
         s.happiness += 2
         self._status_clamp(npc)
@@ -897,6 +903,9 @@ class VillageGame:
                 self.npc_passive_1h(npc)
 
         self.logs.extend(resolve_combat_round(self.npcs, self.combat_settings, self.rng))
+        eco_logs: List[str] = []
+        self.last_economy_snapshot = self.economy.run_hour(self.npcs, self.bstate, eco_logs)
+        self.logs.extend(eco_logs[-4:])
 
         for npc in self.npcs:
             if npc.status.hp <= 0:
@@ -958,7 +967,7 @@ class VillageGame:
                 npc.x, npc.y = float(gx), float(gy)
                 npc.path.pop(0)
                 continue
-            step = NPC_SPEED * dt
+            step = float(self.sim_settings.get("npc_speed", 220.0)) * dt
             if step >= dist:
                 npc.x, npc.y = float(gx), float(gy)
                 npc.path.pop(0)
@@ -1289,6 +1298,11 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
     screen.blit(font.render(str(game.time), True, (240, 240, 240)), (panel.x + 10, panel.y + 8))
 
     y = panel.y + 46
+    econ_line = "경제: 집계 대기"
+    if game.last_economy_snapshot is not None:
+        snap = game.last_economy_snapshot
+        econ_line = f"경제: 유동자금 {snap.total_money}G | 식량재고 {snap.market_food_stock} | 가공품 {snap.crafted_stock}"
+
     if game.selection_type == SelectionType.NPC and game.selected_npc is not None:
         npc = game.npcs[game.selected_npc]
         s = npc.status
@@ -1298,6 +1312,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
             f"돈 {s.money} | 행복 {s.happiness} | 허기 {s.hunger} | 피로 {s.fatigue}",
             f"HP {s.hp}/{s.max_hp} | 힘 {s.strength} | 민첩 {s.agility}",
             f"스테이지: {npc.stage.value}",
+            econ_line,
             "I: 모달 | 휠: 줌 | 미니맵 클릭: 이동",
         ]
     elif game.selection_type == SelectionType.BUILDING and game.selected_building is not None:
@@ -1307,6 +1322,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
             f"선택(건물): {b.zone.value} / {b.name}",
             f"작업: {st.task} ({st.task_progress}%)",
             f"최근: {st.last_event if st.last_event else '(없음)'}",
+            econ_line,
             "I: 모달 | 휠: 줌 | 미니맵 클릭: 이동",
         ]
     else:
@@ -1314,7 +1330,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
             "NPC 또는 건물을 클릭하세요.",
             "I: 선택 대상 모달 열기",
             "WASD/화살표: 카메라 이동 | 휠: 줌",
-            "", 
+            econ_line,
         ]
     for ln in lines:
         screen.blit(small.render(ln, True, (230, 230, 230)), (panel.x + 10, y))
