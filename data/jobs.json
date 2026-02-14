@@ -1,0 +1,42 @@
+[
+  {
+    "job": "모험가",
+    "primary_output": {"ore": 1, "wood": 1, "hide": 1},
+    "input_need": {},
+    "craft_output": {},
+    "sell_items": ["ore", "wood", "hide", "artifact"],
+    "sell_limit": 3
+  },
+  {
+    "job": "농부",
+    "primary_output": {"wheat": 3},
+    "input_need": {"wheat": 2},
+    "craft_output": {"bread": 1},
+    "sell_items": ["wheat", "bread"],
+    "sell_limit": 4
+  },
+  {
+    "job": "어부",
+    "primary_output": {"fish": 2},
+    "input_need": {},
+    "craft_output": {},
+    "sell_items": ["fish"],
+    "sell_limit": 3
+  },
+  {
+    "job": "대장장이",
+    "primary_output": {"ore": 1},
+    "input_need": {"ore": 2, "wood": 1},
+    "craft_output": {"ingot": 1},
+    "sell_items": ["ingot", "ore"],
+    "sell_limit": 2
+  },
+  {
+    "job": "약사",
+    "primary_output": {"herb": 2},
+    "input_need": {"herb": 2},
+    "craft_output": {"potion": 1},
+    "sell_items": ["potion", "herb"],
+    "sell_limit": 2
+  }
+]

@@ -1,0 +1,9 @@
+[
+  {"name": "인간", "is_hostile": false, "str_bonus": 0, "agi_bonus": 0, "hp_bonus": 0, "speed_bonus": 0.0},
+  {"name": "엘프", "is_hostile": false, "str_bonus": -1, "agi_bonus": 2, "hp_bonus": -5, "speed_bonus": 12.0},
+  {"name": "드워프", "is_hostile": false, "str_bonus": 2, "agi_bonus": -1, "hp_bonus": 10, "speed_bonus": -10.0},
+  {"name": "거인", "is_hostile": true, "str_bonus": 4, "agi_bonus": -2, "hp_bonus": 35, "speed_bonus": -25.0},
+  {"name": "고블린", "is_hostile": true, "str_bonus": -1, "agi_bonus": 3, "hp_bonus": -8, "speed_bonus": 18.0},
+  {"name": "코볼트", "is_hostile": true, "str_bonus": 0, "agi_bonus": 2, "hp_bonus": -2, "speed_bonus": 10.0},
+  {"name": "슬라임", "is_hostile": true, "str_bonus": 1, "agi_bonus": -2, "hp_bonus": 20, "speed_bonus": -20.0}
+]

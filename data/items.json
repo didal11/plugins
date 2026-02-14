@@ -1,26 +1,92 @@
 [
   {
-    "key": "bread",
-    "display": "빵"
+    "key": "wheat",
+    "display": "밀",
+    "is_craftable": false,
+    "is_gatherable": true,
+    "craft_inputs": {},
+    "craft_time": 0,
+    "craft_fatigue": 0,
+    "craft_station": "",
+    "craft_amount": 0,
+    "gather_time": 1,
+    "gather_amount": 3,
+    "gather_fatigue": 4,
+    "gather_spot": "농장"
   },
   {
-    "key": "meat",
-    "display": "고기"
+    "key": "bread",
+    "display": "빵",
+    "is_craftable": true,
+    "is_gatherable": false,
+    "craft_inputs": {"wheat": 2},
+    "craft_time": 1,
+    "craft_fatigue": 3,
+    "craft_station": "화덕",
+    "craft_amount": 1,
+    "gather_time": 0,
+    "gather_amount": 0,
+    "gather_fatigue": 0,
+    "gather_spot": ""
   },
   {
     "key": "fish",
-    "display": "생선"
+    "display": "생선",
+    "is_craftable": false,
+    "is_gatherable": true,
+    "craft_inputs": {},
+    "craft_time": 0,
+    "craft_fatigue": 0,
+    "craft_station": "",
+    "craft_amount": 0,
+    "gather_time": 1,
+    "gather_amount": 2,
+    "gather_fatigue": 4,
+    "gather_spot": "낚시터"
+  },
+  {
+    "key": "herb",
+    "display": "약초",
+    "is_craftable": false,
+    "is_gatherable": true,
+    "craft_inputs": {},
+    "craft_time": 0,
+    "craft_fatigue": 0,
+    "craft_station": "",
+    "craft_amount": 0,
+    "gather_time": 1,
+    "gather_amount": 2,
+    "gather_fatigue": 3,
+    "gather_spot": "야생 약초 군락"
   },
   {
     "key": "potion",
-    "display": "포션"
-  },
-  {
-    "key": "wood",
-    "display": "목재"
+    "display": "포션",
+    "is_craftable": true,
+    "is_gatherable": false,
+    "craft_inputs": {"herb": 2},
+    "craft_time": 2,
+    "craft_fatigue": 5,
+    "craft_station": "약제작대",
+    "craft_amount": 1,
+    "gather_time": 0,
+    "gather_amount": 0,
+    "gather_fatigue": 0,
+    "gather_spot": ""
   },
   {
     "key": "ore",
-    "display": "광석"
+    "display": "광석",
+    "is_craftable": false,
+    "is_gatherable": true,
+    "craft_inputs": {},
+    "craft_time": 0,
+    "craft_fatigue": 0,
+    "craft_station": "",
+    "craft_amount": 0,
+    "gather_time": 2,
+    "gather_amount": 2,
+    "gather_fatigue": 6,
+    "gather_spot": "노천 광맥"
   }
 ]
