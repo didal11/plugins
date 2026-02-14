@@ -64,6 +64,11 @@ class EditorApp(tk.Tk):
         self._build_job_tab()
         self._build_sim_tab()
 
+    def _race_names(self) -> list[str]:
+        names = [str(r.get("name", "")).strip() for r in self.races if isinstance(r, dict)]
+        names = [n for n in names if n]
+        return names or ["인간"]
+
     def _build_npc_tab(self):
         left = ttk.Frame(self.npc_tab)
         left.pack(side="left", fill="y", padx=8, pady=8)
