@@ -54,6 +54,8 @@ from editable_data import (
     load_all_data,
     load_item_defs,
     load_job_defs,
+    load_monster_templates,
+    load_npc_templates,
     load_races,
 )
 
@@ -320,6 +322,16 @@ class VillageGame:
         if not loaded_entities:
             loaded_entities = load_entities()
         self.entities: List[Dict[str, object]] = [e for e in loaded_entities if isinstance(e, dict)]
+
+        loaded_npcs = data.get("npcs", []) if isinstance(data.get("npcs"), list) else []
+        if not loaded_npcs:
+            loaded_npcs = load_npc_templates()
+        self.npc_templates: List[Dict[str, object]] = [n for n in loaded_npcs if isinstance(n, dict)]
+
+        loaded_monsters = data.get("monsters", []) if isinstance(data.get("monsters"), list) else []
+        if not loaded_monsters:
+            loaded_monsters = load_monster_templates()
+        self.monster_templates: List[Dict[str, object]] = [m for m in loaded_monsters if isinstance(m, dict)]
 
         jobs_for_economy = data.get("jobs", []) if isinstance(data.get("jobs"), list) else []
         if not jobs_for_economy:
