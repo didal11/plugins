@@ -129,7 +129,7 @@ class EditorApp(tk.Tk):
         right = ttk.Frame(self.item_tab)
         right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
-        self.item_list = tk.Listbox(left, width=34, height=30)
+        self.item_list = tk.Listbox(left, width=34, height=30, exportselection=False)
         self.item_list.pack(fill="y")
         self.item_list.bind("<<ListboxSelect>>", self._on_item_select)
         for row in self.items:
@@ -385,7 +385,7 @@ class EditorApp(tk.Tk):
         right = ttk.Frame(self.race_tab)
         right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
-        self.race_list = tk.Listbox(left, width=30, height=28)
+        self.race_list = tk.Listbox(left, width=30, height=28, exportselection=False)
         self.race_list.pack(fill="y")
         self.race_list.bind("<<ListboxSelect>>", self._on_race_select)
         for row in self.races:
@@ -482,7 +482,7 @@ class EditorApp(tk.Tk):
         right = ttk.Frame(self.entity_tab)
         right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
-        self.entity_list = tk.Listbox(left, width=36, height=30)
+        self.entity_list = tk.Listbox(left, width=36, height=30, exportselection=False)
         self.entity_list.pack(fill="y")
         self.entity_list.bind("<<ListboxSelect>>", self._on_entity_select)
         for row in self.entities:
@@ -579,7 +579,7 @@ class EditorApp(tk.Tk):
         right = ttk.Frame(self.job_tab)
         right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
 
-        self.job_list = tk.Listbox(left, width=28, height=25)
+        self.job_list = tk.Listbox(left, width=28, height=25, exportselection=False)
         self.job_list.pack(fill="y")
         self.job_list.bind("<<ListboxSelect>>", self._on_job_select)
         for row in self.jobs:
