@@ -51,8 +51,10 @@ from economy import EconomySystem
 from editable_data import (
     ensure_data_files,
     load_entities,
+    load_all_data,
     load_item_defs,
     load_job_defs,
+    load_races,
 )
 
 from model import (
@@ -276,6 +278,7 @@ class VillageGame:
         self.rng = random.Random(seed)
         self.time = TimeSystem()
         self.camera = Camera()
+        ensure_data_files()
         data = load_all_data()
         self.sim_settings = data["sim"] if isinstance(data.get("sim"), dict) else {}
         self.combat_settings: Dict[str, object] = {"hostile_race": "적대"}
@@ -287,8 +290,6 @@ class VillageGame:
                     self.combat_settings.update(raw)
             except Exception:
                 pass
-        jobs_data = data.get("jobs", []) if isinstance(data, dict) else []
-        self.economy = EconomySystem(jobs_data if isinstance(jobs_data, list) else [], self.sim_settings)
         self.last_economy_snapshot = None
 
         # Logs
@@ -304,13 +305,26 @@ class VillageGame:
         self.npc_tab: NPCTab = NPCTab.TRAITS
 
         # Data (single-source loader)
-        ensure_data_files()
-        loaded_items = load_item_defs()
-        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
-        self.races = load_races()
+        loaded_items = data.get("items", []) if isinstance(data.get("items"), list) else []
+        if not loaded_items:
+            loaded_items = load_item_defs()
+        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items if isinstance(it, dict) and "key" in it and "display" in it}
+
+        loaded_races = data.get("races", []) if isinstance(data.get("races"), list) else []
+        if not loaded_races:
+            loaded_races = load_races()
+        self.races = loaded_races
         self.race_map: Dict[str, Dict[str, object]] = {str(r.get("name", "")): r for r in self.races if isinstance(r, dict)}
-        self.entities: List[Dict[str, object]] = [e for e in load_entities() if isinstance(e, dict)]
-        self.economy = EconomySystem(load_job_defs(), self.sim_settings)
+
+        loaded_entities = data.get("entities", []) if isinstance(data.get("entities"), list) else []
+        if not loaded_entities:
+            loaded_entities = load_entities()
+        self.entities: List[Dict[str, object]] = [e for e in loaded_entities if isinstance(e, dict)]
+
+        jobs_for_economy = data.get("jobs", []) if isinstance(data.get("jobs"), list) else []
+        if not jobs_for_economy:
+            jobs_for_economy = load_job_defs()
+        self.economy = EconomySystem(jobs_for_economy, self.sim_settings)
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
