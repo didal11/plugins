@@ -60,7 +60,44 @@ class EditorApp(tk.Tk):
         self._build_job_tab()
         self._build_sim_tab()
 
-    def _save_list(self, rows, save_fn, label: str):
+    def _race_names(self) -> list[str]:
+        names = [str(r.get("name", "")).strip() for r in self.races if isinstance(r, dict)]
+        names = [n for n in names if n]
+        return names or ["인간"]
+
+    def _build_npc_tab(self):
+        left = ttk.Frame(self.npc_tab)
+        left.pack(side="left", fill="y", padx=8, pady=8)
+        right = ttk.Frame(self.npc_tab)
+        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+
+        self.npc_list = tk.Listbox(left, width=30, height=28)
+        self.npc_list.pack(fill="y")
+        self.npc_list.bind("<<ListboxSelect>>", self._on_npc_select)
+        for row in self.npcs:
+            self.npc_list.insert("end", f"{row['name']} ({row['race']}/{row['job']})")
+
+        self.npc_entries = {}
+        labels = [("name", "이름"), ("race", "종족"), ("gender", "성별"), ("age", "나이"), ("job", "직업")]
+        for idx, (key, label) in enumerate(labels):
+            ttk.Label(right, text=label).grid(row=idx, column=0, sticky="w", pady=2)
+            if key == "job":
+                widget = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=39)
+            elif key == "gender":
+                widget = ttk.Combobox(right, values=VALID_GENDERS, state="readonly", width=39)
+            else:
+                widget = ttk.Entry(right, width=42)
+            widget.grid(row=idx, column=1, sticky="w", pady=2)
+            self.npc_entries[key] = widget
+
+        btns = ttk.Frame(right)
+        btns.grid(row=len(labels), column=0, columnspan=2, sticky="w", pady=8)
+        ttk.Button(btns, text="추가", command=self._add_npc).pack(side="left", padx=3)
+        ttk.Button(btns, text="수정", command=self._update_npc).pack(side="left", padx=3)
+        ttk.Button(btns, text="삭제", command=self._delete_npc).pack(side="left", padx=3)
+        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.npcs, save_npc_templates, "NPC")).pack(side="left", padx=3)
+
+    def _npc_from_form(self):
         try:
             save_fn(rows)
         except Exception as e:
@@ -91,6 +128,7 @@ class EditorApp(tk.Tk):
         self.item_key.grid(row=0, column=1, sticky="w", pady=4)
         self.item_display.grid(row=1, column=1, sticky="w", pady=4)
 
+        self.item_entries = {"key": self.item_key, "display": self.item_display}
         self.item_vars = {"is_craftable": tk.BooleanVar(value=False), "is_gatherable": tk.BooleanVar(value=False)}
         ttk.Checkbutton(right, text="제작 가능", variable=self.item_vars["is_craftable"]).grid(row=2, column=1, sticky="w")
         ttk.Checkbutton(right, text="채집 가능", variable=self.item_vars["is_gatherable"]).grid(row=3, column=1, sticky="w")
@@ -379,7 +417,7 @@ class EditorApp(tk.Tk):
         ttk.Button(btns, text="추가", command=self._add_job).pack(side="left", padx=4)
         ttk.Button(btns, text="수정", command=self._update_job).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=self._delete_job).pack(side="left", padx=4)
-        ttk.Button(btns, text="저장", command=partial(self._save_list, self.jobs, save_job_defs, "직업")).pack(side="left", padx=4)
+        ttk.Button(btns, text="저장", command=lambda: self._save_list(self.jobs, save_job_defs, "직업")).pack(side="left", padx=4)
 
     def _on_job_select(self, _ev=None):
         sel = self.job_list.curselection()
