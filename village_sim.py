@@ -765,6 +765,7 @@ class VillageGame:
         job = npc.traits.job
         activity = self.planner.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
+            npc.status.current_action = "업무"
             if job == JobType.ADVENTURER:
                 hostile = self._nearest_hostile(npc)
                 if hostile is not None:
@@ -777,20 +778,6 @@ class VillageGame:
             return
 
         self._set_target_building(npc, npc.home_building)
-
-    def _required_tool_keys(self, action: Dict[str, object]) -> List[str]:
-        raw = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
-        keys: List[str] = []
-        for t in raw:
-            txt = str(t).strip()
-            if not txt:
-                continue
-            if txt in self.items:
-                keys.append(txt)
-                continue
-            if txt in self.item_display_to_key:
-                keys.append(self.item_display_to_key[txt])
-        return keys
 
     def _do_eat_at_restaurant(self, npc: NPC) -> str:
         s = npc.status
@@ -839,43 +826,9 @@ class VillageGame:
         if not actions:
             return f"{npc.traits.name}: 작업(정의 없음)"
 
-        s = npc.status
-        if s.active_work_action and s.action_hours_left > 0 and s.active_work_action in actions:
-            action_name = s.active_work_action
-        else:
-            action_name = self.rng.choice(actions)
+        action_name = self.rng.choice(actions)
         action = self.action_defs.get(action_name, {})
-        if not isinstance(action, dict):
-            return f"{npc.traits.name}: 작업 정의 오류({action_name})"
-
-        duration = max(1, int(action.get("duration_hours", 1)))
-        if s.active_work_action != action_name or s.action_hours_left <= 0:
-            s.active_work_action = action_name
-            s.action_total_hours = duration
-            s.action_hours_left = duration
-
-        tool_keys = self._required_tool_keys(action)
-        missing = [k for k in tool_keys if int(npc.inventory.get(k, 0)) <= 0]
-        if missing:
-            s.current_action = f"{action_name}(도구없음)"
-            s.active_work_action = ""
-            s.action_hours_left = 0
-            s.action_total_hours = 0
-            display_missing = [self.items[k].display if k in self.items else k for k in missing]
-            return f"{npc.traits.name}: {action_name} 실패(필요 도구 없음: {', '.join(display_missing)})"
-
         outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
-
-        s.fatigue += int(action.get("fatigue", 12))
-        s.hunger += int(action.get("hunger", 8))
-        s.happiness -= 1
-        self._status_clamp(npc)
-
-        s.current_action = action_name
-        s.action_hours_left = max(0, s.action_hours_left - 1)
-        if s.action_hours_left > 0:
-            done = s.action_total_hours - s.action_hours_left
-            return f"{npc.traits.name}: {action_name} 진행중({done}/{s.action_total_hours}h)"
 
         gained_parts: List[str] = []
         valid_items = set(self.items.keys())
@@ -896,9 +849,11 @@ class VillageGame:
             npc.inventory[str(item)] = int(npc.inventory.get(str(item), 0)) + qty
             gained_parts.append(f"{item}+{qty}")
 
-        s.active_work_action = ""
-        s.action_hours_left = 0
-        s.action_total_hours = 0
+        s = npc.status
+        s.fatigue += int(action.get("fatigue", 12))
+        s.hunger += int(action.get("hunger", 8))
+        s.happiness -= 1
+        self._status_clamp(npc)
 
         worksite = self._workplace_for_job(npc.traits.job)
         if worksite is not None and worksite.name in self.bstate:
@@ -907,8 +862,8 @@ class VillageGame:
             bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
             bst.last_event = f"{npc.traits.name} {action_name}"
 
-        tools = [self.items[k].display if k in self.items else k for k in tool_keys]
-        tool_text = f" 도구:{', '.join(tools)}" if tools else ""
+        tools = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
+        tool_text = f" 도구:{', '.join([str(x) for x in tools])}" if tools else ""
         gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
         npc.status.current_action = action_name
         return f"{npc.traits.name}: {action_name}({gained_text}){tool_text}"

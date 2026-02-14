@@ -162,9 +162,6 @@ class Status:
     strength: int
     agility: int
     current_action: str = "대기"
-    active_work_action: str = ""
-    action_hours_left: int = 0
-    action_total_hours: int = 0
 
 
 @dataclass
