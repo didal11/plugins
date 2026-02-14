@@ -14,6 +14,7 @@ MONSTERS_FILE = DATA_DIR / "monsters.json"
 RACES_FILE = DATA_DIR / "races.json"
 ENTITIES_FILE = DATA_DIR / "entities.json"
 JOBS_FILE = DATA_DIR / "jobs.json"
+ACTIONS_FILE = DATA_DIR / "actions.json"
 SIM_SETTINGS_FILE = DATA_DIR / "sim_settings.json"
 
 VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사"]
@@ -36,11 +37,24 @@ DEFAULT_ITEMS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
-    {"job": "모험가", "primary_output": {"ore": 1, "wood": 1, "hide": 1}, "input_need": {}, "craft_output": {}, "sell_items": ["ore", "wood", "hide", "artifact"], "sell_limit": 3},
-    {"job": "농부", "primary_output": {"wheat": 3}, "input_need": {"wheat": 2}, "craft_output": {"bread": 1}, "sell_items": ["wheat", "bread"], "sell_limit": 4},
-    {"job": "어부", "primary_output": {"fish": 2}, "input_need": {}, "craft_output": {}, "sell_items": ["fish"], "sell_limit": 3},
-    {"job": "대장장이", "primary_output": {"ore": 1}, "input_need": {"ore": 2, "wood": 1}, "craft_output": {"ingot": 1}, "sell_items": ["ingot", "ore"], "sell_limit": 2},
-    {"job": "약사", "primary_output": {"herb": 2}, "input_need": {"herb": 2}, "craft_output": {"potion": 1}, "sell_items": ["potion", "herb"], "sell_limit": 2},
+    {"job": "모험가", "work_actions": ["약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"]},
+    {"job": "농부", "work_actions": ["농사"]},
+    {"job": "어부", "work_actions": ["낚시"]},
+    {"job": "대장장이", "work_actions": ["제련", "도구제작"]},
+    {"job": "약사", "work_actions": ["약 제조"]},
+]
+
+DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
+    {"name": "농사", "duration_hours": 1, "required_tools": ["호미"], "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
+    {"name": "낚시", "duration_hours": 1, "required_tools": ["낚싯대"], "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
+    {"name": "제련", "duration_hours": 1, "required_tools": ["화덕", "망치"], "outputs": {"ingot": {"min": 1, "max": 2}}, "fatigue": 12, "hunger": 7},
+    {"name": "도구제작", "duration_hours": 1, "required_tools": ["망치", "모루"], "outputs": {"wood": {"min": 1, "max": 2}}, "fatigue": 11, "hunger": 6},
+    {"name": "약 제조", "duration_hours": 1, "required_tools": ["약절구"], "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
+    {"name": "약초채집", "duration_hours": 1, "required_tools": ["채집가방"], "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
+    {"name": "벌목", "duration_hours": 1, "required_tools": ["도끼"], "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
+    {"name": "채광", "duration_hours": 1, "required_tools": ["곡괭이"], "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
+    {"name": "동물사냥", "duration_hours": 1, "required_tools": ["활", "사냥칼"], "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
+    {"name": "몬스터사냥", "duration_hours": 1, "required_tools": ["무기"], "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -119,6 +133,7 @@ def ensure_data_files() -> None:
         RACES_FILE: DEFAULT_RACES,
         ENTITIES_FILE: DEFAULT_ENTITIES,
         JOBS_FILE: DEFAULT_JOB_DEFS,
+        ACTIONS_FILE: DEFAULT_ACTION_DEFS,
         SIM_SETTINGS_FILE: DEFAULT_SIM_SETTINGS,
     }
     for path, value in defaults.items():
@@ -268,8 +283,31 @@ def load_job_defs() -> List[Dict[str, object]]:
         job = str(row.get("job", "")).strip()
         if not job:
             continue
-        out.append({"job": job, "primary_output": row.get("primary_output", {}), "input_need": row.get("input_need", {}), "craft_output": row.get("craft_output", {}), "sell_items": row.get("sell_items", []), "sell_limit": int(row.get("sell_limit", 3))})
+        actions = row.get("work_actions", []) if isinstance(row.get("work_actions", []), list) else []
+        out.append({"job": job, "work_actions": [str(x).strip() for x in actions if str(x).strip()]})
     return _seed_if_empty(JOBS_FILE, out, DEFAULT_JOB_DEFS)
+
+
+def load_action_defs() -> List[Dict[str, object]]:
+    ensure_data_files()
+    raw = _read_json(ACTIONS_FILE, DEFAULT_ACTION_DEFS)
+    out: List[Dict[str, object]] = []
+    for row in raw if isinstance(raw, list) else []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue
+        outputs = row.get("outputs", {}) if isinstance(row.get("outputs", {}), dict) else {}
+        out.append({
+            "name": name,
+            "duration_hours": max(1, int(row.get("duration_hours", 1))),
+            "required_tools": [str(x).strip() for x in row.get("required_tools", []) if str(x).strip()] if isinstance(row.get("required_tools", []), list) else [],
+            "outputs": outputs,
+            "fatigue": int(row.get("fatigue", 12)),
+            "hunger": int(row.get("hunger", 8)),
+        })
+    return _seed_if_empty(ACTIONS_FILE, out, DEFAULT_ACTION_DEFS)
 
 
 def save_job_defs(job_defs: List[Dict[str, object]]) -> None:
@@ -310,5 +348,6 @@ def load_all_data() -> Dict[str, object]:
         "races": load_races(),
         "entities": load_entities(),
         "jobs": load_job_defs(),
+        "actions": load_action_defs(),
         "sim": load_sim_settings(),
     }

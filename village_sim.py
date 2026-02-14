@@ -55,6 +55,7 @@ from editable_data import (
     load_all_data,
     load_item_defs,
     load_job_defs,
+    load_action_defs,
     load_races,
 )
 
@@ -339,6 +340,17 @@ class VillageGame:
         if not jobs_for_economy:
             jobs_for_economy = load_job_defs()
         self.economy = EconomySystem(jobs_for_economy, self.sim_settings)
+
+        action_rows = data.get("actions", []) if isinstance(data.get("actions"), list) else []
+        if not action_rows:
+            action_rows = load_action_defs()
+        self.action_defs: Dict[str, Dict[str, object]] = {
+            str(row.get("name", "")).strip(): row for row in action_rows if isinstance(row, dict) and str(row.get("name", "")).strip()
+        }
+        self.job_work_actions: Dict[str, List[str]] = {
+            str(row.get("job", "")).strip(): [str(x).strip() for x in row.get("work_actions", []) if str(x).strip()]
+            for row in jobs_for_economy if isinstance(row, dict)
+        }
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -744,7 +756,8 @@ class VillageGame:
                 return
 
         job = npc.traits.job
-        if npc.stage == PlanStage.PRIMARY:
+        activity = self.planner.activity_for_hour(self.time.hour)
+        if activity == ScheduledActivity.WORK:
             if job == JobType.ADVENTURER:
                 hostile = self._nearest_hostile(npc)
                 if hostile is not None:
@@ -754,6 +767,10 @@ class VillageGame:
             else:
                 wp = self._workplace_for_job(job)
                 self._set_target_building(npc, wp if wp is not None else npc.home_building)
+            return
+
+        if npc.stage == PlanStage.PRIMARY:
+            self._set_target_building(npc, npc.home_building)
         else:
             self._set_target_building(npc, self._profit_place_for_job(job))
 
@@ -797,93 +814,48 @@ class VillageGame:
         return f"{npc.traits.name}: 휴식 피로 {before}->{s.fatigue}"
 
     def _primary_action(self, npc: NPC) -> str:
-        job = npc.traits.job
+        job_name = npc.traits.job.value
+        actions = self.job_work_actions.get(job_name, [])
+        if not actions:
+            return f"{npc.traits.name}: 작업(정의 없음)"
+
+        action_name = self.rng.choice(actions)
+        action = self.action_defs.get(action_name, {})
+        outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
+
+        gained_parts: List[str] = []
+        for item, spec in outputs.items():
+            qty = 0
+            if isinstance(spec, int):
+                qty = max(0, int(spec))
+            elif isinstance(spec, dict):
+                lo = int(spec.get("min", 0))
+                hi = int(spec.get("max", lo))
+                if hi < lo:
+                    lo, hi = hi, lo
+                qty = self.rng.randint(max(0, lo), max(0, hi))
+            if qty <= 0:
+                continue
+            npc.inventory[str(item)] = int(npc.inventory.get(str(item), 0)) + qty
+            gained_parts.append(f"{item}+{qty}")
+
         s = npc.status
+        s.fatigue += int(action.get("fatigue", 12))
+        s.hunger += int(action.get("hunger", 8))
+        s.happiness -= 1
+        self._status_clamp(npc)
 
-        if job == JobType.ADVENTURER:
-            kind = self.rng.choice(["사냥", "채집", "채벌", "채광"])
-            if kind == "사냥":
-                npc.inventory["meat"] = npc.inventory.get("meat", 0) + 1
-                gained = "고기"
-            elif kind == "채집":
-                npc.inventory["potion"] = npc.inventory.get("potion", 0) + 1
-                gained = "포션"
-            elif kind == "채벌":
-                npc.inventory["wood"] = npc.inventory.get("wood", 0) + 1
-                gained = "목재"
-            else:
-                npc.inventory["ore"] = npc.inventory.get("ore", 0) + 1
-                gained = "광석"
-            s.fatigue += 18
-            s.hunger += 10
-            s.happiness -= 1
-            self._status_clamp(npc)
-            return f"{npc.traits.name}: (마을 밖) {kind} -> {gained} 획득"
-
-        if job == JobType.FARMER:
-            gather_msg = self._gather_from_resource(npc, "wheat", 2)
-            made_bread = 0
-            if npc.inventory.get("wheat", 0) >= 2:
-                npc.inventory["wheat"] -= 2
-                if npc.inventory["wheat"] <= 0:
-                    npc.inventory.pop("wheat", None)
-                npc.inventory["bread"] = npc.inventory.get("bread", 0) + 1
-                made_bread = 1
-            s.fatigue += 14
-            s.hunger += 8
-            s.happiness -= 1
-            self._status_clamp(npc)
-            bst = self.bstate["농장"]
-            bst.task = "농사"
-            bst.task_progress = min(100, bst.task_progress + self.rng.randint(20, 40))
-            detail = gather_msg or "자원지없음"
-            bst.last_event = f"{npc.traits.name} 농사({detail}, 빵+{made_bread})"
-            return f"{npc.traits.name}: 농사({detail}, 빵+{made_bread})"
-
-        if job == JobType.FISHER:
-            gathered = self._gather_from_resource(npc, "fish", 2)
-            if gathered is None:
-                npc.inventory["fish"] = npc.inventory.get("fish", 0) + 1
-                gathered = "기본 어획 fish+1"
-            s.fatigue += 14
-            s.hunger += 8
-            s.happiness -= 1
-            self._status_clamp(npc)
-            bst = self.bstate["낚시터"]
-            bst.task = "낚시"
-            bst.task_progress = min(100, bst.task_progress + self.rng.randint(20, 40))
-            bst.last_event = f"{npc.traits.name} 낚시({gathered})"
-            return f"{npc.traits.name}: 낚시({gathered})"
-
-        if job == JobType.BLACKSMITH:
-            bst = self.bstate["대장간"]
-            gather_msg = self._gather_from_resource(npc, "ore", 1)
-            craft_msg = self._use_workbench(npc, "화덕", "ore", "ingot", cost=1, out=1)
-            s.fatigue += 12
-            s.hunger += 7
-            s.happiness -= 1
-            self._status_clamp(npc)
-            bst.task = "제작"
+        worksite = self._workplace_for_job(npc.traits.job)
+        if worksite is not None and worksite.name in self.bstate:
+            bst = self.bstate[worksite.name]
+            bst.task = action_name
             bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            detail = craft_msg or gather_msg or "작업대없음"
-            bst.last_event = f"{npc.traits.name} 제작({detail})"
-            return f"{npc.traits.name}: 제작({detail})"
+            bst.last_event = f"{npc.traits.name} {action_name}"
 
-        if job == JobType.PHARMACIST:
-            gather_msg = self._gather_from_resource(npc, "herb", 2)
-            craft_msg = self._use_workbench(npc, "약", "herb", "potion", cost=2, out=1)
-            s.fatigue += 10
-            s.hunger += 6
-            s.happiness -= 1
-            self._status_clamp(npc)
-            bst = self.bstate["약국"]
-            bst.task = "제약"
-            bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            detail = craft_msg or gather_msg or "작업대없음"
-            bst.last_event = f"{npc.traits.name} 제약({detail})"
-            return f"{npc.traits.name}: 제약({detail})"
-
-        return f"{npc.traits.name}: 1차행동(대기)"
+        tools = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
+        tool_text = f" 도구:{', '.join([str(x) for x in tools])}" if tools else ""
+        gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
+        return f"{npc.traits.name}: {action_name}({gained_text}){tool_text}"
 
     def _profit_action(self, npc: NPC) -> str:
         job = npc.traits.job
@@ -1028,15 +1000,16 @@ class VillageGame:
                         continue
 
                 # adventurer outside arrival
-                if npc.traits.job == JobType.ADVENTURER and npc.stage == PlanStage.PRIMARY and npc.target_outside_tile is not None:
+                if npc.traits.job == JobType.ADVENTURER and self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_outside_tile is not None:
                     if (tx, ty) == npc.target_outside_tile or (abs(tx - npc.target_outside_tile[0]) + abs(ty - npc.target_outside_tile[1]) <= 1):
                         self.logs.append(self._primary_action(npc))
-                        npc.stage = PlanStage.PROFIT
                         self._plan_next_target(npc)
                         continue
 
                 if npc.target_building is not None and npc.location_building is not None and npc.location_building == npc.target_building:
-                    if npc.stage == PlanStage.PRIMARY:
+                    if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK:
+                        self.logs.append(self._primary_action(npc))
+                    elif npc.stage == PlanStage.PRIMARY:
                         self.logs.append(self._primary_action(npc))
                         npc.stage = PlanStage.PROFIT
                     else:
