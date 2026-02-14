@@ -45,6 +45,8 @@ from config import (
     MODAL_H,
 )
 
+from editable_data import ensure_data_files, load_item_defs, load_npc_templates
+
 from model import (
     Building,
     BuildingState,
@@ -278,15 +280,10 @@ class VillageGame:
         self.building_tab: BuildingTab = BuildingTab.PEOPLE
         self.npc_tab: NPCTab = NPCTab.TRAITS
 
-        # Items
-        self.items: Dict[str, ItemDef] = {
-            "bread": ItemDef("bread", "빵"),
-            "meat": ItemDef("meat", "고기"),
-            "fish": ItemDef("fish", "생선"),
-            "potion": ItemDef("potion", "포션"),
-            "wood": ItemDef("wood", "목재"),
-            "ore": ItemDef("ore", "광석"),
-        }
+        # Items (editable JSON)
+        ensure_data_files()
+        loaded_items = load_item_defs()
+        self.items: Dict[str, ItemDef] = {it["key"]: ItemDef(it["key"], it["display"]) for it in loaded_items}
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -446,10 +443,21 @@ class VillageGame:
         job = self.rng.choice(jobs)
         return Traits(name=name, race=race, gender=gender, age=age, height_cm=height, weight_kg=weight, job=job, goal="돈벌기")
 
+    def _job_from_text(self, job_text: str) -> JobType:
+        mapping = {
+            JobType.ADVENTURER.value: JobType.ADVENTURER,
+            JobType.FARMER.value: JobType.FARMER,
+            JobType.FISHER.value: JobType.FISHER,
+            JobType.BLACKSMITH.value: JobType.BLACKSMITH,
+            JobType.PHARMACIST.value: JobType.PHARMACIST,
+        }
+        return mapping.get(job_text, JobType.FARMER)
+
     def _create_npcs(self) -> None:
-        names = ["엘린", "보른", "마라", "레오", "시안", "누라", "토린", "하벨"]
+        templates = load_npc_templates()
         res_buildings = [b for b in self.buildings if b.zone == ZoneType.RESIDENTIAL]
-        for nm in names:
+        for t in templates:
+            nm = str(t.get("name", "이름없음"))
             home = self.rng.choice(res_buildings)
             tx, ty = home.random_tile_inside(self.rng)
             wx, wy = tile_to_world_px_center(tx, ty)
@@ -459,7 +467,16 @@ class VillageGame:
                 hunger=self.rng.randint(15, 55),
                 fatigue=self.rng.randint(15, 55),
             )
-            tr = self._random_traits(nm)
+            tr = Traits(
+                name=nm,
+                race=str(t.get("race", "인간")),
+                gender=str(t.get("gender", "기타")),
+                age=int(t.get("age", 25)),
+                height_cm=int(t.get("height_cm", 170)),
+                weight_kg=int(t.get("weight_kg", 65)),
+                job=self._job_from_text(str(t.get("job", JobType.FARMER.value))),
+                goal=str(t.get("goal", "돈벌기")),
+            )
             npc = NPC(
                 traits=tr,
                 status=st,
@@ -473,11 +490,11 @@ class VillageGame:
                 stage=PlanStage.PRIMARY,
                 target_outside_tile=None,
             )
-            if self.rng.random() < 0.6:
+            if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
-            if self.rng.random() < 0.30:
+            if self.rng.random() < 0.30 and "wood" in self.items:
                 npc.inventory["wood"] = 1
-            if self.rng.random() < 0.20:
+            if self.rng.random() < 0.20 and "ore" in self.items:
                 npc.inventory["ore"] = 1
             self.npcs.append(npc)
 
