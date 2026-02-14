@@ -321,6 +321,18 @@ class VillageGame:
             loaded_entities = load_entities()
         self.entities: List[Dict[str, object]] = [e for e in loaded_entities if isinstance(e, dict)]
 
+        if not isinstance(data.get("npcs"), list):
+            raise ValueError("load_all_data()['npcs'] must be a list")
+        if not isinstance(data.get("monsters"), list):
+            raise ValueError("load_all_data()['monsters'] must be a list")
+
+        self.npc_templates: List[Dict[str, object]] = [n for n in data["npcs"] if isinstance(n, dict)]
+        self.monster_templates: List[Dict[str, object]] = [m for m in data["monsters"] if isinstance(m, dict)]
+        if not self.npc_templates:
+            raise ValueError("load_all_data()['npcs'] must contain at least one npc template")
+        if not self.monster_templates:
+            raise ValueError("load_all_data()['monsters'] must contain at least one monster template")
+
         jobs_for_economy = data.get("jobs", []) if isinstance(data.get("jobs"), list) else []
         if not jobs_for_economy:
             jobs_for_economy = load_job_defs()
@@ -1384,7 +1396,13 @@ def draw_world(screen: pygame.Surface, game: VillageGame, small: pygame.font.Fon
     # NPC
     for i, npc in enumerate(game.npcs):
         sel = (game.selection_type == SelectionType.NPC and game.selected_npc == i)
-        color = (255, 210, 120) if sel else (230, 230, 230)
+        hostile = game._is_hostile(npc)
+        if sel:
+            color = (255, 210, 120)
+        elif hostile:
+            color = (220, 60, 60)
+        else:
+            color = (230, 230, 230)
         sx, sy = cam.world_to_screen(npc.x, npc.y)
         rad = max(3, int(9 * cam.zoom))
         pygame.draw.circle(screen, color, (sx, sy), rad)
