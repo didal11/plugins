@@ -10,10 +10,10 @@ from tkinter import messagebox, ttk
 
 from editable_data import (
     VALID_GENDERS,
-    VALID_JOBS,
     load_entities,
     load_item_defs,
     load_job_defs,
+    load_job_names,
     load_monster_templates,
     load_npc_templates,
     load_races,
@@ -43,8 +43,10 @@ class EditorApp(tk.Tk):
         self.races = load_races()
         self.entities = load_entities()
         self.jobs = load_job_defs()
+        self.job_names = load_job_names()
         self.sim = load_sim_settings()
         self.combat = self._load_combat_settings()
+        self.person_job_boxes: list[ttk.Combobox] = []
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
@@ -75,6 +77,25 @@ class EditorApp(tk.Tk):
         self._build_job_tab()
         self._build_sim_tab()
         self._build_combat_tab()
+        self._refresh_job_choices()
+
+    def _default_job_for_mode(self, mode: str) -> str:
+        if self.job_names:
+            return self.job_names[0]
+        return "농부" if mode == "npc" else "모험가"
+
+    def _refresh_job_choices(self) -> None:
+        self.job_names = load_job_names()
+        for box in self.person_job_boxes:
+            box.configure(values=self.job_names)
+            if box.get().strip() and box.get().strip() in self.job_names:
+                continue
+            box.set("")
+        if hasattr(self, "job_name"):
+            self.job_name.configure(values=self.job_names)
+            if self.job_name.get().strip() and self.job_name.get().strip() in self.job_names:
+                return
+            self.job_name.set(self.job_names[0] if self.job_names else "")
 
     def _race_names(self) -> list[str]:
         names = [str(r.get("name", "")).strip() for r in self.races]
@@ -262,7 +283,8 @@ class EditorApp(tk.Tk):
             if key == "gender":
                 widget = ttk.Combobox(right, values=VALID_GENDERS, state="readonly", width=40)
             elif key == "job":
-                widget = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=40)
+                widget = ttk.Combobox(right, values=self.job_names, state="readonly", width=40)
+                self.person_job_boxes.append(widget)
             elif key == "race":
                 widget = ttk.Combobox(right, values=self._race_names(), state="readonly", width=40)
             else:
@@ -292,7 +314,7 @@ class EditorApp(tk.Tk):
                     "race": entries["race"].get().strip() or ("인간" if mode == "npc" else "고블린"),
                     "gender": entries["gender"].get().strip() or "기타",
                     "age": int(entries["age"].get().strip() or "20"),
-                    "job": entries["job"].get().strip() or ("농부" if mode == "npc" else "모험가"),
+                    "job": entries["job"].get().strip() or self._default_job_for_mode(mode),
                 }
                 if mode == "npc":
                     row["height_cm"] = int(entries["height_cm"].get().strip() or "170")
@@ -331,6 +353,17 @@ class EditorApp(tk.Tk):
             data.pop(idx)
 
         def save_rows() -> None:
+            sel = lb.curselection()
+            if sel:
+                row = from_form()
+                if not row or not row.get("name"):
+                    return
+                idx = sel[0]
+                data[idx] = row
+                lb.delete(idx)
+                lb.insert(idx, f"{row['name']} ({row['race']}/{row['job']})")
+                lb.selection_set(idx)
+                lb.activate(idx)
             if mode == "npc":
                 save_npc_templates(data)
                 messagebox.showinfo("저장 완료", "NPC 데이터를 저장했습니다.")
@@ -553,7 +586,7 @@ class EditorApp(tk.Tk):
             self.job_list.insert("end", str(row.get("job", "")))
 
         ttk.Label(right, text="직업").grid(row=0, column=0, sticky="w", pady=2)
-        self.job_name = ttk.Combobox(right, values=VALID_JOBS, state="readonly", width=40)
+        self.job_name = ttk.Combobox(right, values=self.job_names, state="readonly", width=40)
         self.job_name.grid(row=0, column=1, sticky="w", pady=2)
 
         ttk.Label(right, text="생산(JSON)").grid(row=1, column=0, sticky="nw", pady=2)
@@ -620,6 +653,7 @@ class EditorApp(tk.Tk):
             return
         self.jobs.append(row)
         self.job_list.insert("end", str(row["job"]))
+        self._refresh_job_choices()
 
     def _update_job(self) -> None:
         sel = self.job_list.curselection()
@@ -632,6 +666,7 @@ class EditorApp(tk.Tk):
         self.jobs[idx] = row
         self.job_list.delete(idx)
         self.job_list.insert(idx, str(row["job"]))
+        self._refresh_job_choices()
 
     def _delete_job(self) -> None:
         sel = self.job_list.curselection()
@@ -640,9 +675,11 @@ class EditorApp(tk.Tk):
         idx = sel[0]
         self.job_list.delete(idx)
         self.jobs.pop(idx)
+        self._refresh_job_choices()
 
     def _save_jobs(self) -> None:
         save_job_defs(self.jobs)
+        self._refresh_job_choices()
         messagebox.showinfo("저장 완료", "직업 데이터를 저장했습니다.")
 
     # ---------- Sim tab ----------
