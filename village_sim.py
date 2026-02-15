@@ -654,9 +654,12 @@ class VillageGame:
 
     def _init_guild_board_state(self) -> None:
         known = self.guild_board_state.setdefault("known_entities", {})
+        known_cells = self.guild_board_state.setdefault("known_cells", {})
         if not isinstance(known, dict):
             known = {}
             self.guild_board_state["known_entities"] = known
+        if not isinstance(known_cells, dict):
+            self.guild_board_state["known_cells"] = {}
         for ent in self.entities:
             if bool(ent.get("is_workbench", False)):
                 continue
@@ -669,6 +672,101 @@ class VillageGame:
                         "qty": int(ent.get("current_quantity", 0)),
                         "name": str(ent.get("name", key)),
                     }
+                    self.guild_board_state["known_cells"][self._tile_key(int(ent.get("x", 0)), int(ent.get("y", 0)))] = {
+                        "entities": [{"key": key, "name": str(ent.get("name", key)), "qty": int(ent.get("current_quantity", 0))}],
+                        "monsters": [],
+                        "updated_at": self.time.total_hours,
+                    }
+
+    def _tile_key(self, tx: int, ty: int) -> str:
+        return f"{int(tx)},{int(ty)}"
+
+    def _tile_from_key(self, key: str) -> Optional[Tuple[int, int]]:
+        parts = str(key).split(",")
+        if len(parts) != 2:
+            return None
+        try:
+            return int(parts[0]), int(parts[1])
+        except ValueError:
+            return None
+
+    def _snapshot_known_cell(self, tx: int, ty: int) -> Dict[str, object]:
+        entities_info: List[Dict[str, object]] = []
+        for ent in self.entities:
+            if bool(ent.get("is_workbench", False)):
+                continue
+            if int(ent.get("current_quantity", 0)) <= 0:
+                continue
+            ex = int(ent.get("x", 0))
+            ey = int(ent.get("y", 0))
+            if (ex, ey) != (tx, ty):
+                continue
+            ent["is_discovered"] = True
+            entities_info.append({
+                "key": str(ent.get("key", "")),
+                "name": str(ent.get("name", ent.get("key", "미상"))),
+                "qty": int(ent.get("current_quantity", 0)),
+            })
+
+        monsters_info: List[Dict[str, object]] = []
+        for npc in self.npcs:
+            if npc.status.hp <= 0 or not self._is_hostile(npc):
+                continue
+            ntx, nty = world_px_to_tile(npc.x, npc.y)
+            if (ntx, nty) != (tx, ty):
+                continue
+            monsters_info.append({"name": npc.traits.name, "hp": npc.status.hp})
+
+        return {
+            "entities": entities_info,
+            "monsters": monsters_info,
+            "updated_at": self.time.total_hours,
+        }
+
+    def _record_known_area_to_buffer(self, npc: NPC, center_tile: Tuple[int, int]) -> None:
+        cx, cy = center_tile
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                tx = max(0, min(GRID_W - 1, cx + dx))
+                ty = max(0, min(GRID_H - 1, cy + dy))
+                npc.explore_known_buffer[self._tile_key(tx, ty)] = self._snapshot_known_cell(tx, ty)
+
+    def _flush_explore_buffer_to_board(self, npc: NPC) -> int:
+        known_cells = self.guild_board_state.setdefault("known_cells", {})
+        if not isinstance(known_cells, dict):
+            known_cells = {}
+            self.guild_board_state["known_cells"] = known_cells
+        known_entities = self.guild_board_state.setdefault("known_entities", {})
+        if not isinstance(known_entities, dict):
+            known_entities = {}
+            self.guild_board_state["known_entities"] = known_entities
+
+        merged = 0
+        for key, info in npc.explore_known_buffer.items():
+            if not isinstance(info, dict):
+                continue
+            known_cells[key] = info
+            merged += 1
+            tile = self._tile_from_key(key)
+            if tile is None:
+                continue
+            tx, ty = tile
+            for entity in info.get("entities", []):
+                if not isinstance(entity, dict):
+                    continue
+                ekey = str(entity.get("key", "")).strip()
+                if not ekey:
+                    continue
+                known_entities[ekey] = {
+                    "x": tx,
+                    "y": ty,
+                    "qty": int(entity.get("qty", 0)),
+                    "name": str(entity.get("name", ekey)),
+                    "updated_at": int(info.get("updated_at", self.time.total_hours)),
+                }
+
+        npc.explore_known_buffer.clear()
+        return merged
 
     def _sync_guild_board_quantities(self) -> None:
         known = self.guild_board_state.get("known_entities", {})
@@ -685,22 +783,6 @@ class VillageGame:
             known[key]["y"] = int(ent.get("y", 0))
         for key in remove_keys:
             known.pop(key, None)
-
-    def _register_discovered_entity(self, ent: Dict[str, object]) -> None:
-        if bool(ent.get("is_workbench", False)):
-            return
-        key = str(ent.get("key", "")).strip()
-        if not key:
-            return
-        known = self.guild_board_state.setdefault("known_entities", {})
-        if not isinstance(known, dict):
-            return
-        known[key] = {
-            "x": int(ent.get("x", 0)),
-            "y": int(ent.get("y", 0)),
-            "qty": int(ent.get("current_quantity", 0)),
-            "name": str(ent.get("name", key)),
-        }
 
     def _guild_board_known_keys(self) -> Set[str]:
         known = self.guild_board_state.get("known_entities", {})
@@ -728,51 +810,55 @@ class VillageGame:
             return None
         return self.rng.choice(candidates)
 
-    def _adventurer_scan_tiles(self, npc: NPC) -> List[Tuple[int, int]]:
-        if npc.explore_anchor_tile is None:
-            npc.explore_anchor_tile = world_px_to_tile(npc.x, npc.y)
-            npc.explore_scan_index = 0
-        ax, ay = npc.explore_anchor_tile
-        pattern = [
-            (-1, -1), (0, -1), (1, -1),
-            (1, 0), (-1, 0),
-            (-1, 1), (0, 1), (1, 1),
-        ]
-        out: List[Tuple[int, int]] = []
-        for dx, dy in pattern:
-            tx = max(0, min(GRID_W - 1, ax + dx))
-            ty = max(0, min(GRID_H - 1, ay + dy))
-            out.append((tx, ty))
-        return out
+    def _pick_frontier_explore_tile(self, npc: NPC) -> Tuple[int, int]:
+        known_cells = self.guild_board_state.get("known_cells", {})
+        known_keys = set(known_cells.keys()) if isinstance(known_cells, dict) else set()
+        if not known_keys:
+            return self.random_outside_tile()
 
-    def _next_explore_tile(self, npc: NPC) -> Tuple[int, int]:
-        tiles = self._adventurer_scan_tiles(npc)
-        idx = max(0, min(npc.explore_scan_index, len(tiles) - 1))
-        return tiles[idx]
+        frontier: Set[Tuple[int, int]] = set()
+        for key in known_keys:
+            tile = self._tile_from_key(key)
+            if tile is None:
+                continue
+            tx, ty = tile
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx = max(0, min(GRID_W - 1, tx + dx))
+                ny = max(0, min(GRID_H - 1, ty + dy))
+                nkey = self._tile_key(nx, ny)
+                if nkey not in known_keys:
+                    frontier.add((nx, ny))
+
+        if not frontier:
+            return self.random_outside_tile()
+
+        desired = max(1, int(self.sim_settings.get("explore_target_distance_ticks", 2)))
+        ntx, nty = world_px_to_tile(npc.x, npc.y)
+        by_dist: Dict[int, List[Tuple[int, int]]] = {}
+        for fx, fy in frontier:
+            dist = abs(fx - ntx) + abs(fy - nty)
+            by_dist.setdefault(dist, []).append((fx, fy))
+        if desired in by_dist:
+            return self.rng.choice(by_dist[desired])
+        closest = min(by_dist.keys())
+        return self.rng.choice(by_dist[closest])
 
     def _do_board_check(self, npc: NPC) -> str:
         npc.adventurer_board_visited = True
-        npc.explore_anchor_tile = None
-        npc.explore_scan_index = 0
+        npc.explore_target_tile = None
+        merged = self._flush_explore_buffer_to_board(npc)
         self._sync_guild_board_quantities()
         known = self.guild_board_state.get("known_entities", {})
         known_count = len(known) if isinstance(known, dict) else 0
-        return f"{npc.traits.name}: 길드 게시판 확인(등록 {known_count})"
+        return f"{npc.traits.name}: 길드 게시판 확인(등록 {known_count}, 셀갱신 {merged})"
 
     def _do_explore_action(self, npc: NPC) -> str:
         tx, ty = world_px_to_tile(npc.x, npc.y)
-        found = self.entity_manager.discover_near((tx, ty), radius=1)
-        npc.explore_scan_index += 1
-        if npc.explore_scan_index >= 8:
-            npc.explore_anchor_tile = (tx, ty)
-            npc.explore_scan_index = 0
-        if found is not None:
-            self._register_discovered_entity(found)
-            npc.adventurer_board_visited = False
-            npc.current_work_action = "게시판확인"
-            npc.work_hours_remaining = 0
-            return f"{npc.traits.name}: 탐색 성공({found.get('name', '자원')} @ {found.get('x')},{found.get('y')})"
-        return f"{npc.traits.name}: 탐색 진행(미발견)"
+        npc.adventurer_board_visited = False
+        npc.explore_target_tile = None
+        npc.current_work_action = "게시판확인"
+        npc.work_hours_remaining = 0
+        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀"
 
     def _pick_adventurer_work_action(self, npc: NPC) -> Optional[str]:
         if not npc.adventurer_board_visited:
@@ -920,7 +1006,9 @@ class VillageGame:
                 return
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
-                self._set_target_outside(npc, self._next_explore_tile(npc))
+                if npc.explore_target_tile is None:
+                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc)
+                self._set_target_outside(npc, npc.explore_target_tile)
                 return
 
             if npc.traits.job == JobType.ADVENTURER and (npc.current_work_action or "") in ADVENTURER_GATHER_ACTIONS:
@@ -932,7 +1020,8 @@ class VillageGame:
                 else:
                     npc.current_work_action = "탐색"
                     npc.work_hours_remaining = 0
-                    self._set_target_outside(npc, self._next_explore_tile(npc))
+                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc)
+                    self._set_target_outside(npc, npc.explore_target_tile)
                 return
 
             target_entity, target_outside = self.action_executor.resolve_work_destination(npc, self.random_outside_tile)
@@ -1092,11 +1181,15 @@ class VillageGame:
             if dist < 1e-6:
                 npc.x, npc.y = float(gx), float(gy)
                 npc.path.pop(0)
+                if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
+                    self._record_known_area_to_buffer(npc, (tx, ty))
                 continue
             step = float(self.sim_settings.get("npc_speed", 220.0)) * dt
             if step >= dist:
                 npc.x, npc.y = float(gx), float(gy)
                 npc.path.pop(0)
+                if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
+                    self._record_known_area_to_buffer(npc, (tx, ty))
             else:
                 npc.x += dx / dist * step
                 npc.y += dy / dist * step
