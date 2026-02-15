@@ -1045,6 +1045,7 @@ class VillageGame:
                 if self._try_execute_arrived_work(npc, tx, ty):
                     continue
 
+                current_activity = self.planner.activity_for_hour(self.time.hour)
                 if current_activity == ScheduledActivity.MEAL and npc.target_entity_tile is not None:
                     if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
                         self.logs.append(self._do_eat_at_restaurant(npc))
