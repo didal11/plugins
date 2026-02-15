@@ -840,7 +840,11 @@ class VillageGame:
             by_dist.setdefault(dist, []).append((fx, fy))
         if desired in by_dist:
             return self.rng.choice(by_dist[desired])
-        closest = min(by_dist.keys())
+
+        # 정확히 원하는 거리 버킷이 없으면 "가장 가까운 거리"를 선택한다.
+        # 기존의 단순 min(distance) 선택은 2번째 탐색 이후에 지나치게 가까운 프론티어로
+        # 되돌아가는 현상을 만들 수 있어, 목표 거리와의 차이를 우선으로 비교한다.
+        closest = min(by_dist.keys(), key=lambda d: (abs(d - desired), -d))
         return self.rng.choice(by_dist[closest])
 
     def _do_board_check(self, npc: NPC) -> str:
