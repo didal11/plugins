@@ -683,7 +683,22 @@ class VillageGame:
             known = {}
             self.guild_board_state["known_entities"] = known
         if not isinstance(known_cells, dict):
-            self.guild_board_state["known_cells"] = {}
+            known_cells = {}
+            self.guild_board_state["known_cells"] = known_cells
+
+        # 시작 시 길드 게시판에 마을 범위 셀 정보를 기본 등록한다.
+        vr = self.village_rect_tiles
+        for tx in range(vr.left, vr.right):
+            for ty in range(vr.top, vr.bottom):
+                cell_key = self._tile_key(tx, ty)
+                if cell_key in known_cells:
+                    continue
+                known_cells[cell_key] = {
+                    "entities": [],
+                    "monsters": [],
+                    "updated_at": self.time.total_minutes,
+                }
+
         for ent in self.entities:
             if bool(ent.get("is_workbench", False)):
                 continue
