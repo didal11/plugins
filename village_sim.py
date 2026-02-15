@@ -577,6 +577,7 @@ class VillageGame:
             else:
                 home = self.rng.choice(res_buildings)
                 tx, ty = home.random_tile_inside(self.rng)
+            home_sleep_tile = home.random_tile_inside(self.rng)
             wx, wy = tile_to_world_px_center(tx, ty)
             max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))) + int(race_cfg.get("hp_bonus", 0)))
             hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
@@ -613,6 +614,7 @@ class VillageGame:
                 inventory={},
                 target_outside_tile=None,
                 target_entity_tile=None,
+                home_sleep_tile=home_sleep_tile,
             )
             if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
@@ -683,24 +685,59 @@ class VillageGame:
             known = {}
             self.guild_board_state["known_entities"] = known
         if not isinstance(known_cells, dict):
-            self.guild_board_state["known_cells"] = {}
+            known_cells = {}
+            self.guild_board_state["known_cells"] = known_cells
+
+        # 시작 시 길드 게시판에 마을 범위 셀 정보를 기본 등록한다.
+        vr = self.village_rect_tiles
+        for tx in range(vr.x, vr.x + vr.w):
+            for ty in range(vr.y, vr.y + vr.h):
+                cell_key = self._tile_key(tx, ty)
+                if cell_key in known_cells:
+                    continue
+                known_cells[cell_key] = {
+                    "entities": [],
+                    "monsters": [],
+                    "updated_at": self.time.total_minutes,
+                }
+
         for ent in self.entities:
             if bool(ent.get("is_workbench", False)):
                 continue
-            if bool(ent.get("is_discovered", False)):
-                key = str(ent.get("key", "")).strip()
-                if key:
-                    known[key] = {
-                        "x": int(ent.get("x", 0)),
-                        "y": int(ent.get("y", 0)),
-                        "qty": int(ent.get("current_quantity", 0)),
-                        "name": str(ent.get("name", key)),
-                    }
-                    self.guild_board_state["known_cells"][self._tile_key(int(ent.get("x", 0)), int(ent.get("y", 0)))] = {
-                        "entities": [{"key": key, "name": str(ent.get("name", key)), "qty": int(ent.get("current_quantity", 0))}],
-                        "monsters": [],
-                        "updated_at": self.time.total_minutes,
-                    }
+            key = str(ent.get("key", "")).strip()
+            if not key:
+                continue
+            ex = int(ent.get("x", 0))
+            ey = int(ent.get("y", 0))
+            in_village = vr.collidepoint(ex, ey)
+            if not bool(ent.get("is_discovered", False)) and not in_village:
+                continue
+
+            qty = int(ent.get("current_quantity", 0))
+            name = str(ent.get("name", key))
+            known[key] = {
+                "x": ex,
+                "y": ey,
+                "qty": qty,
+                "name": name,
+            }
+
+            cell_key = self._tile_key(ex, ey)
+            cell = known_cells.setdefault(cell_key, {
+                "entities": [],
+                "monsters": [],
+                "updated_at": self.time.total_minutes,
+            })
+            if not isinstance(cell, dict):
+                cell = {"entities": [], "monsters": [], "updated_at": self.time.total_minutes}
+                known_cells[cell_key] = cell
+            entities = cell.setdefault("entities", [])
+            if not isinstance(entities, list):
+                entities = []
+                cell["entities"] = entities
+            entities.append({"key": key, "name": name, "qty": qty})
+            cell.setdefault("monsters", [])
+            cell["updated_at"] = self.time.total_minutes
 
     def _tile_key(self, tx: int, ty: int) -> str:
         return f"{int(tx)},{int(ty)}"
@@ -868,14 +905,49 @@ class VillageGame:
         npc.explore_target_tile = tile
         return True
 
+    def _submit_adventurer_loot_to_board(self, npc: NPC) -> int:
+        guild = self.bstate.get("모험가 길드")
+        if guild is None:
+            return 0
+        gathered_keys: Set[str] = set()
+        for action_name in ADVENTURER_GATHER_ACTIONS:
+            action = self.action_defs.get(action_name, {})
+            if not isinstance(action, dict):
+                continue
+            outputs = action.get("outputs", {})
+            if not isinstance(outputs, dict):
+                continue
+            for item_key in outputs.keys():
+                key = str(item_key).strip()
+                if key:
+                    gathered_keys.add(key)
+
+        moved = 0
+        for key in sorted(gathered_keys):
+            qty = int(npc.inventory.get(key, 0))
+            if qty <= 0:
+                continue
+            npc.inventory.pop(key, None)
+            guild.inventory[key] = int(guild.inventory.get(key, 0)) + qty
+            moved += qty
+
+        if moved > 0:
+            guild.last_event = f"{npc.traits.name} 채집물 제출({moved})"
+            npc.status.happiness += 1
+            self._status_clamp(npc)
+        return moved
+
     def _do_board_check(self, npc: NPC) -> str:
         npc.adventurer_board_visited = True
         npc.explore_target_tile = None
         npc.explore_chain_remaining = 0
         merged = self._flush_explore_buffer_to_board(npc)
+        submitted = self._submit_adventurer_loot_to_board(npc) if npc.traits.job == JobType.ADVENTURER else 0
         self._sync_guild_board_quantities()
         known = self.guild_board_state.get("known_entities", {})
         known_count = len(known) if isinstance(known, dict) else 0
+        if submitted > 0:
+            return f"{npc.traits.name}: 길드 게시판 확인(등록 {known_count}, 셀갱신 {merged}, 제출 {submitted})"
         return f"{npc.traits.name}: 길드 게시판 확인(등록 {known_count}, 셀갱신 {merged})"
 
     def _do_explore_action(self, npc: NPC) -> str:
@@ -933,7 +1005,6 @@ class VillageGame:
             npc.current_work_action = None
             npc.work_ticks_remaining = 0
         if npc.traits.job == JobType.ADVENTURER and prev_action in ADVENTURER_GATHER_ACTIONS and npc.current_work_action is None:
-            result = f"{result} | {self._profit_action(npc)}"
             npc.adventurer_board_visited = False
         return result
 
@@ -976,9 +1047,6 @@ class VillageGame:
         if activity == ScheduledActivity.MEAL:
             self.behavior.set_meal_state(npc)
             return "dining_table"
-        if activity == ScheduledActivity.SLEEP:
-            self.behavior.set_sleep_state(npc)
-            return "bed"
         return None
 
     def _set_target_outside(self, npc: NPC, tile: Tuple[int, int]) -> None:
@@ -1033,6 +1101,16 @@ class VillageGame:
         if self._is_hostile(npc):
             self.behavior.set_wander_state(npc)
             self._set_target_outside(npc, self.random_outside_tile())
+            return
+
+        activity_now = self.planner.activity_for_hour(self.time.hour)
+        if activity_now == ScheduledActivity.SLEEP:
+            self.behavior.set_sleep_state(npc)
+            sleep_tile = npc.home_sleep_tile
+            if sleep_tile is None or not npc.home_building.contains_tile(*sleep_tile):
+                sleep_tile = npc.home_building.random_tile_inside(self.rng)
+                npc.home_sleep_tile = sleep_tile
+            self._set_target_entity(npc, sleep_tile)
             return
 
         override_entity_key = self._scheduled_destination_entity_key(npc)
@@ -1492,7 +1570,7 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
 
 def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, small: pygame.font.Font):
     rect = draw_modal_frame(screen, "길드 게시판", font)
-    tabs = [(BoardTab.ENTITIES.value, BoardTab.ENTITIES), (BoardTab.CELLS.value, BoardTab.CELLS), (BoardTab.EXPLORE.value, BoardTab.EXPLORE)]
+    tabs = [(BoardTab.ENTITIES.value, BoardTab.ENTITIES), (BoardTab.CELLS.value, BoardTab.CELLS), (BoardTab.INVENTORY.value, BoardTab.INVENTORY), (BoardTab.EXPLORE.value, BoardTab.EXPLORE)]
     tab_rects = draw_tabs(screen, rect, tabs, game.board_tab, small)
 
     body = pygame.Rect(rect.x + 16, rect.y + 90, rect.w - 32, rect.h - 110)
@@ -1548,13 +1626,27 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
                     py = origin_y + (ty - min_y) * cell_px
                     pygame.draw.rect(screen, (82, 134, 212), pygame.Rect(px, py, cell_px, cell_px))
 
+                for key, info in rows:
+                    tile = game._tile_from_key(str(key))
+                    if tile is None or not isinstance(info, dict):
+                        continue
+                    tx, ty = tile
+                    cx = origin_x + (tx - min_x) * cell_px + cell_px // 2
+                    cy = origin_y + (ty - min_y) * cell_px + cell_px // 2
+                    entities = info.get("entities", [])
+                    monsters = info.get("monsters", [])
+                    if isinstance(entities, list) and len(entities) > 0:
+                        pygame.draw.circle(screen, (60, 220, 110), (cx - 2, cy), max(2, cell_px // 4))
+                    if isinstance(monsters, list) and len(monsters) > 0:
+                        pygame.draw.circle(screen, (235, 70, 70), (cx + 2, cy), max(2, cell_px // 4))
+
                 latest_tile = game._tile_from_key(str(rows[-1][0]))
                 if latest_tile is not None:
                     lx, ly = latest_tile
                     lpx = origin_x + (lx - min_x) * cell_px
                     lpy = origin_y + (ly - min_y) * cell_px
                     pygame.draw.rect(screen, (255, 224, 80), pygame.Rect(lpx, lpy, cell_px, cell_px), 2)
-            screen.blit(small.render("파랑=기록 셀 / 노랑=최근 갱신", True, (200, 200, 200)), (map_rect.x + 8, map_rect.bottom - 22))
+            screen.blit(small.render("파랑=기록 셀 / 초록=자원 / 빨강=몬스터", True, (200, 200, 200)), (map_rect.x + 8, map_rect.bottom - 22))
         else:
             screen.blit(small.render("기록 없음", True, (170, 170, 170)), (map_rect.x + 86, map_rect.y + 112))
 
@@ -1578,6 +1670,25 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
                 screen.blit(small.render(line, True, (230, 230, 230)), (body.x + 12, y))
                 y += 20
 
+    elif game.board_tab == BoardTab.INVENTORY:
+        guild = game.bstate.get("모험가 길드")
+        inv = guild.inventory if guild is not None else {}
+        draw_text_lines(screen, small, body.x + 12, body.y + 12, ["길드 인벤토리", ""])
+        y = body.y + 52
+        if not isinstance(inv, dict) or not inv:
+            draw_text_lines(screen, small, body.x + 12, y, ["(보관된 물품이 없습니다.)"])
+        else:
+            screen.blit(small.render("아이템            수량", True, (200, 200, 200)), (body.x + 12, y))
+            y += 24
+            for k, q in sorted(inv.items(), key=lambda kv: str(kv[0])):
+                if int(q) <= 0:
+                    continue
+                disp = game.items[k].display if k in game.items else k
+                screen.blit(small.render(f"{disp:12s}   {int(q):>4d}", True, (230, 230, 230)), (body.x + 12, y))
+                y += 20
+        if guild is not None and str(guild.last_event).strip():
+            screen.blit(small.render(f"최근 제출: {guild.last_event}", True, (180, 210, 180)), (body.x + 12, body.bottom - 28))
+
     else:
         draw_text_lines(screen, small, body.x + 12, body.y + 12, [
             "탐색은 선택한 지속 틱 동안 연속으로 진행됩니다.",
@@ -1599,7 +1710,7 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
             if active:
                 screen.blit(small.render("선택됨", True, (210, 255, 210)), (r.x + 52, r.y + 24))
 
-    screen.blit(small.render("I/ESC: 닫기 | 1/2/3: 탭 | (탐색 설정 탭) 버튼 클릭으로 틱 선택", True, (200, 200, 200)), (rect.x + 16, rect.bottom - 26))
+    screen.blit(small.render("I/ESC: 닫기 | 1/2/3/4: 탭 | (탐색 설정 탭) 버튼 클릭으로 틱 선택", True, (200, 200, 200)), (rect.x + 16, rect.bottom - 26))
     return rect, tab_rects
 
 
@@ -1837,7 +1948,7 @@ def main():
                         tab_w = 190
                         tab_h = 34
                         gap = 10
-                        tab_count = 3
+                        tab_count = 4 if game.modal_kind == ModalKind.BOARD else 3
                         for idx in range(tab_count):
                             r = pygame.Rect(tab_x + idx * (tab_w + gap), tab_y, tab_w, tab_h)
                             if r.collidepoint(mx, my):
@@ -1846,7 +1957,7 @@ def main():
                                 elif game.modal_kind == ModalKind.NPC:
                                     game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][idx]
                                 elif game.modal_kind == ModalKind.BOARD:
-                                    game.board_tab = [BoardTab.ENTITIES, BoardTab.CELLS, BoardTab.EXPLORE][idx]
+                                    game.board_tab = [BoardTab.ENTITIES, BoardTab.CELLS, BoardTab.INVENTORY, BoardTab.EXPLORE][idx]
                                 break
 
                         if game.modal_kind == ModalKind.BOARD and game.board_tab == BoardTab.EXPLORE:
@@ -1905,13 +2016,13 @@ def main():
                         game.modal_kind = ModalKind.BOARD if game.modal_open else ModalKind.NONE
 
                 # tab hotkeys
-                elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3) and game.modal_open:
+                elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4) and game.modal_open:
                     if game.modal_kind == ModalKind.BUILDING:
                         game.building_tab = [BuildingTab.PEOPLE, BuildingTab.STOCK, BuildingTab.TASK][int(ev.unicode) - 1]
                     elif game.modal_kind == ModalKind.NPC:
                         game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][int(ev.unicode) - 1]
                     elif game.modal_kind == ModalKind.BOARD:
-                        game.board_tab = [BoardTab.ENTITIES, BoardTab.CELLS, BoardTab.EXPLORE][int(ev.unicode) - 1]
+                        game.board_tab = [BoardTab.ENTITIES, BoardTab.CELLS, BoardTab.INVENTORY, BoardTab.EXPLORE][int(ev.unicode) - 1]
 
 
         # camera movement (disabled while modal open? keep enabled)
