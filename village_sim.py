@@ -597,6 +597,7 @@ class VillageGame:
                 location_building=home if not hostile else None,
                 inventory={},
                 target_outside_tile=None,
+                target_entity_tile=None,
             )
             if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
@@ -706,11 +707,19 @@ class VillageGame:
     def _set_target_building(self, npc: NPC, b: Building) -> None:
         npc.target_building = b
         npc.target_outside_tile = None
+        npc.target_entity_tile = None
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), b.random_tile_inside(self.rng))
 
     def _set_target_outside(self, npc: NPC, tile: Tuple[int, int]) -> None:
         npc.target_building = None
         npc.target_outside_tile = tile
+        npc.target_entity_tile = None
+        npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
+
+    def _set_target_entity(self, npc: NPC, tile: Tuple[int, int]) -> None:
+        npc.target_building = None
+        npc.target_outside_tile = None
+        npc.target_entity_tile = tile
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
 
 
@@ -729,6 +738,7 @@ class VillageGame:
             npc.path = []
             npc.target_building = None
             npc.target_outside_tile = None
+            npc.target_entity_tile = None
             self.behavior.set_dead_state(npc)
             return
 
@@ -747,21 +757,19 @@ class VillageGame:
                 self._set_target_outside(npc, out_tile)
                 return
 
-        job = npc.traits.job
         activity = self.behavior.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
                 npc.work_hours_remaining = 0
             npc.status.current_action = npc.current_work_action or "업무"
-            fallback_wp = self._workplace_for_job(job) or npc.home_building
-            target_building, target_outside = self.action_executor.resolve_work_destination(npc, fallback_wp, self.random_outside_tile)
-            if target_building is not None:
-                self._set_target_building(npc, target_building)
+            target_entity, target_outside = self.action_executor.resolve_work_destination(npc, self.random_outside_tile)
+            if target_entity is not None:
+                self._set_target_entity(npc, target_entity)
             elif target_outside is not None:
                 self._set_target_outside(npc, target_outside)
             else:
-                self._set_target_building(npc, fallback_wp)
+                self._set_target_outside(npc, self.random_outside_tile())
             return
 
         self._set_target_building(npc, npc.home_building)
@@ -827,9 +835,8 @@ class VillageGame:
                         self._plan_next_target(npc)
                         continue
 
-                # adventurer outside arrival
-                if npc.traits.job == JobType.ADVENTURER and self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_outside_tile is not None:
-                    if (tx, ty) == npc.target_outside_tile or (abs(tx - npc.target_outside_tile[0]) + abs(ty - npc.target_outside_tile[1]) <= 1):
+                if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_entity_tile is not None:
+                    if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
                         self.logs.append(self._primary_action(npc))
                         self._plan_next_target(npc)
                         continue
@@ -1046,6 +1053,8 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
         tgt = "(없음)"
         if npc.target_building is not None:
             tgt = f"{npc.target_building.zone.value}/{npc.target_building.name}"
+        elif npc.target_entity_tile is not None:
+            tgt = f"엔티티 타일 {npc.target_entity_tile}"
         elif npc.target_outside_tile is not None:
             tgt = f"{RegionType.OUTSIDE.value} 타일 {npc.target_outside_tile}"
         lines = [
