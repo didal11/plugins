@@ -113,9 +113,10 @@ class ActionExecutor:
         if action_name is None:
             return f"{npc.traits.name}: 작업(정의 없음)"
         action = self.action_defs.get(action_name, {})
-        duration_hours = max(1, int(action.get("duration_hours", 1)))
-        if npc.work_hours_remaining <= 0:
-            npc.work_hours_remaining = duration_hours
+        duration_minutes = max(10, int(action.get("duration_minutes", int(action.get("duration_hours", 1)) * 60)))
+        duration_ticks = max(1, duration_minutes // 10)
+        if npc.work_ticks_remaining <= 0:
+            npc.work_ticks_remaining = duration_ticks
 
         tool_names = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
         required_keys = self._required_tool_keys(tool_names)
@@ -125,17 +126,17 @@ class ActionExecutor:
             npc.status.current_action = f"{action_name}(도구부족)"
             return f"{npc.traits.name}: {action_name} 실패(도구 부족: {', '.join(display_names)})"
 
-        npc.work_hours_remaining = max(0, npc.work_hours_remaining - 1)
-        done_hours = duration_hours - npc.work_hours_remaining
+        npc.work_ticks_remaining = max(0, npc.work_ticks_remaining - 1)
+        done_ticks = duration_ticks - npc.work_ticks_remaining
 
         fatigue_cost = int(action.get("fatigue", 12))
         hunger_cost = int(action.get("hunger", 8))
-        per_hour_fatigue = max(0, round(fatigue_cost / duration_hours))
-        per_hour_hunger = max(0, round(hunger_cost / duration_hours))
+        per_tick_fatigue = max(0, round(fatigue_cost / duration_ticks))
+        per_tick_hunger = max(0, round(hunger_cost / duration_ticks))
 
         s = npc.status
-        s.fatigue += per_hour_fatigue
-        s.hunger += per_hour_hunger
+        s.fatigue += per_tick_fatigue
+        s.hunger += per_tick_hunger
         s.happiness -= 1
         self.status_clamp(npc)
 
@@ -157,11 +158,11 @@ class ActionExecutor:
             bst = self.bstate[target_bstate_name]
             bst.task = action_name
             bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            bst.last_event = f"{npc.traits.name} {action_name} {done_hours}/{duration_hours}"
+            bst.last_event = f"{npc.traits.name} {action_name} {done_ticks}/{duration_ticks}"
 
-        if npc.work_hours_remaining > 0:
-            npc.status.current_action = f"{action_name}({done_hours}/{duration_hours})"
-            return f"{npc.traits.name}: {action_name} 진행 {done_hours}/{duration_hours}h"
+        if npc.work_ticks_remaining > 0:
+            npc.status.current_action = f"{action_name}({done_ticks}/{duration_ticks})"
+            return f"{npc.traits.name}: {action_name} 진행 {done_ticks}/{duration_ticks}틱"
 
         outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
         gained_parts: List[str] = []
@@ -187,7 +188,7 @@ class ActionExecutor:
         gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
         npc.status.current_action = action_name
         npc.current_work_action = None
-        npc.work_hours_remaining = 0
+        npc.work_ticks_remaining = 0
         return f"{npc.traits.name}: {action_name} 완료({gained_text}){tool_text}"
 
     def profit_action(self, npc: NPC) -> str:

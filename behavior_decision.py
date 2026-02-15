@@ -52,7 +52,7 @@ class BehaviorDecisionEngine:
                 continue
             if npc.current_work_action is None:
                 npc.current_work_action = self.pick_work_action(npc)
-                npc.work_hours_remaining = 0
+                npc.work_ticks_remaining = 0
             detail = npc.current_work_action or "업무선택실패"
             self.set_activity(npc, "업무", detail)
 

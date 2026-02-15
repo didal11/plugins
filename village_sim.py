@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import json
-import math
 import random
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -37,6 +36,7 @@ from config import (
     SCREEN_H,
     FPS,
     SIM_TICK_MS,
+    SIM_TICK_MINUTES,
     CAMERA_SPEED,
     ZOOM_MIN,
     ZOOM_MAX,
@@ -144,23 +144,27 @@ ADVENTURER_GATHER_ACTIONS: Set[str] = {"약초채집", "벌목", "채광", "동�
 # Time
 # ============================================================
 class TimeSystem:
-    HOURS_PER_DAY = 24
+    MINUTES_PER_DAY = 24 * 60
     DAYS_PER_MONTH = 30
     MONTHS_PER_YEAR = 12
 
     def __init__(self):
-        self.total_hours = 0
+        self.total_minutes = 0
 
-    def advance(self, hours: int = 1) -> None:
-        self.total_hours += hours
+    def advance(self, minutes: int = SIM_TICK_MINUTES) -> None:
+        self.total_minutes += int(minutes)
 
     @property
     def hour(self) -> int:
-        return self.total_hours % self.HOURS_PER_DAY
+        return (self.total_minutes // 60) % 24
+
+    @property
+    def minute(self) -> int:
+        return self.total_minutes % 60
 
     @property
     def _total_days(self) -> int:
-        return self.total_hours // self.HOURS_PER_DAY
+        return self.total_minutes // self.MINUTES_PER_DAY
 
     @property
     def day(self) -> int:
@@ -177,7 +181,7 @@ class TimeSystem:
         return total_months // self.MONTHS_PER_YEAR
 
     def __str__(self) -> str:
-        return f"{self.year}년 {self.month}월 {self.day}일 {self.hour:02d}:00"
+        return f"{self.year}년 {self.month}월 {self.day}일 {self.hour:02d}:{self.minute:02d}"
 
 
 # ============================================================
@@ -391,8 +395,8 @@ class VillageGame:
         self.entity_manager = EntityManager(self.entities, self.rng)
         self.guild_board_state: Dict[str, object] = {"known_entities": {}, "quests": []}
         self.guild_board_tile: Optional[Tuple[int, int]] = self.entity_manager.resolve_target_tile("guild_board")
-        configured_ticks = self.sim_settings.get("explore_roundtrip_ticks", self.sim_settings.get("explore_target_distance_ticks", 2))
-        self.explore_roundtrip_ticks: int = max(1, min(3, int(configured_ticks)))
+        configured_ticks = int(self.sim_settings.get("explore_duration_ticks", 6))
+        self.explore_duration_ticks: int = configured_ticks if configured_ticks in (6, 12, 18) else 6
         self._init_guild_board_state()
         self.action_executor = ActionExecutor(
             self.rng,
@@ -667,8 +671,10 @@ class VillageGame:
         dy = wy - gy
         return (dx * dx + dy * dy) <= (BASE_TILE_SIZE * BASE_TILE_SIZE)
 
-    def set_explore_roundtrip_ticks(self, ticks: int) -> None:
-        self.explore_roundtrip_ticks = max(1, min(3, int(ticks)))
+    def set_explore_duration_ticks(self, ticks: int) -> None:
+        ticks = int(ticks)
+        if ticks in (6, 12, 18):
+            self.explore_duration_ticks = ticks
 
     def _init_guild_board_state(self) -> None:
         known = self.guild_board_state.setdefault("known_entities", {})
@@ -693,7 +699,7 @@ class VillageGame:
                     self.guild_board_state["known_cells"][self._tile_key(int(ent.get("x", 0)), int(ent.get("y", 0)))] = {
                         "entities": [{"key": key, "name": str(ent.get("name", key)), "qty": int(ent.get("current_quantity", 0))}],
                         "monsters": [],
-                        "updated_at": self.time.total_hours,
+                        "updated_at": self.time.total_minutes,
                     }
 
     def _tile_key(self, tx: int, ty: int) -> str:
@@ -738,7 +744,7 @@ class VillageGame:
         return {
             "entities": entities_info,
             "monsters": monsters_info,
-            "updated_at": self.time.total_hours,
+            "updated_at": self.time.total_minutes,
         }
 
     def _record_known_area_to_buffer(self, npc: NPC, center_tile: Tuple[int, int]) -> None:
@@ -780,7 +786,7 @@ class VillageGame:
                     "y": ty,
                     "qty": int(entity.get("qty", 0)),
                     "name": str(entity.get("name", ekey)),
-                    "updated_at": int(info.get("updated_at", self.time.total_hours)),
+                    "updated_at": int(info.get("updated_at", self.time.total_minutes)),
                 }
 
         npc.explore_known_buffer.clear()
@@ -834,18 +840,7 @@ class VillageGame:
             return None
         return self.rng.choice(candidates)
 
-    def _estimate_roundtrip_ticks(self, start: Tuple[int, int], target: Tuple[int, int]) -> int:
-        dist_tiles = abs(target[0] - start[0]) + abs(target[1] - start[1])
-        if dist_tiles <= 0:
-            return 1
-        speed_px_s = float(self.sim_settings.get("npc_speed", 220.0))
-        if speed_px_s <= 1e-6:
-            return 3
-        tick_seconds = max(0.001, SIM_TICK_MS / 1000.0)
-        one_way_seconds = (dist_tiles * BASE_TILE_SIZE) / speed_px_s
-        return max(1, int(math.ceil((one_way_seconds * 2.0) / tick_seconds)))
-
-    def _pick_frontier_explore_tile(self, npc: NPC, desired_roundtrip: int) -> Optional[Tuple[int, int]]:
+    def _pick_frontier_explore_tile(self, npc: NPC) -> Optional[Tuple[int, int]]:
         known_keys = self._known_cell_keys_for_explore(npc)
 
         frontier: Set[Tuple[int, int]] = set()
@@ -861,58 +856,17 @@ class VillageGame:
                 if nkey not in known_keys and self.is_outside_tile(nx, ny):
                     frontier.add((nx, ny))
 
-        if not frontier:
-            return None
+        if frontier:
+            return self.rng.choice(list(frontier))
+        return self.random_outside_tile()
 
-        base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
-        desired_roundtrip = max(1, min(3, int(desired_roundtrip)))
-        exact = [tile for tile in frontier if self._estimate_roundtrip_ticks(base_tile, tile) == desired_roundtrip]
-        if exact:
-            return self.rng.choice(exact)
-        return None
-    def _pick_frontier_explore_tile_closest(self, npc: NPC, desired_roundtrip: int) -> Optional[Tuple[Tuple[int, int], int]]:
-        known_keys = self._known_cell_keys_for_explore(npc)
-
-        frontier: Set[Tuple[int, int]] = set()
-        for key in known_keys:
-            tile = self._tile_from_key(key)
-            if tile is None:
-                continue
-            tx, ty = tile
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                nx = max(0, min(GRID_W - 1, tx + dx))
-                ny = max(0, min(GRID_H - 1, ty + dy))
-                nkey = self._tile_key(nx, ny)
-                if nkey not in known_keys and self.is_outside_tile(nx, ny):
-                    frontier.add((nx, ny))
-
-        if not frontier:
-            return None
-
-        base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
-        desired = max(1, min(3, int(desired_roundtrip)))
-        scored: List[Tuple[int, int, Tuple[int, int]]] = []
-        for tile in frontier:
-            tick = self._estimate_roundtrip_ticks(base_tile, tile)
-            scored.append((abs(tick - desired), tick, tile))
-        if not scored:
-            return None
-        best_gap = min(x[0] for x in scored)
-        best = [x for x in scored if x[0] == best_gap]
-        _, tick, tile = self.rng.choice(best)
-        return tile, tick
-
-    def _assign_exact_explore_target(self, npc: NPC) -> bool:
-        # UI에서 설정한 왕복 틱과 정확히 일치하는 목표만 배정한다.
-        desired = max(1, min(3, int(self.explore_roundtrip_ticks)))
-        tile = self._pick_frontier_explore_tile(npc, desired)
-        if tile is not None:
-            npc.explore_roundtrip_ticks = desired
-            npc.explore_target_tile = tile
-            return True
-        npc.explore_roundtrip_ticks = 0
-        npc.explore_target_tile = None
-        return False
+    def _assign_next_explore_target(self, npc: NPC) -> bool:
+        tile = self._pick_frontier_explore_tile(npc)
+        if tile is None:
+            npc.explore_target_tile = None
+            return False
+        npc.explore_target_tile = tile
+        return True
 
     def _do_board_check(self, npc: NPC) -> str:
         npc.adventurer_board_visited = True
@@ -932,24 +886,23 @@ class VillageGame:
         if npc.explore_chain_remaining > 0:
             npc.explore_chain_remaining -= 1
 
-        if npc.explore_chain_remaining > 0 and self._assign_exact_explore_target(npc):
+        if npc.explore_chain_remaining > 0 and self._assign_next_explore_target(npc):
             self._set_target_outside(npc, npc.explore_target_tile)
             ntx, nty = npc.explore_target_tile or (tx, ty)
             npc.current_action_detail = f"탐색연속({ntx},{nty})/잔여 {npc.explore_chain_remaining}틱"
             npc.status.current_action = npc.current_action_detail
             return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) -> 다음 탐색({ntx},{nty}), 잔여 {npc.explore_chain_remaining}틱"
 
-        planned_ticks = max(1, int(npc.explore_roundtrip_ticks or 1))
+        planned_ticks = int(self.explore_duration_ticks)
         npc.current_work_action = "게시판확인"
-        npc.work_hours_remaining = 0
-        npc.explore_roundtrip_ticks = 0
+        npc.work_ticks_remaining = 0
         npc.explore_chain_remaining = 0
         board_tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
         if board_tile is not None:
             self._set_target_entity(npc, board_tile)
         else:
             self._set_target_outside(npc, self.random_outside_tile())
-        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀(계획 왕복 {planned_ticks}틱)"
+        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀(계획 지속 {planned_ticks}틱)"
 
     def _pick_adventurer_work_action(self, npc: NPC) -> Optional[str]:
         if not npc.adventurer_board_visited:
@@ -978,7 +931,7 @@ class VillageGame:
         if prev_action == "게시판확인":
             result = self._do_board_check(npc)
             npc.current_work_action = None
-            npc.work_hours_remaining = 0
+            npc.work_ticks_remaining = 0
         if npc.traits.job == JobType.ADVENTURER and prev_action in ADVENTURER_GATHER_ACTIONS and npc.current_work_action is None:
             result = f"{result} | {self._profit_action(npc)}"
             npc.adventurer_board_visited = False
@@ -998,10 +951,20 @@ class VillageGame:
         s.strength = max(1, s.strength)
         s.agility = max(1, s.agility)
 
-    def npc_passive_1h(self, npc: NPC) -> None:
+    def npc_passive_tick(self, npc: NPC) -> None:
         s = npc.status
-        s.hunger += int(self.sim_settings.get("hunger_gain_per_hour", 5.0))
-        s.fatigue += int(self.sim_settings.get("fatigue_gain_per_hour", 4.0))
+        npc.hunger_tick_buffer += float(self.sim_settings.get("hunger_gain_per_tick", 1.0))
+        npc.fatigue_tick_buffer += float(self.sim_settings.get("fatigue_gain_per_tick", 1.0))
+
+        hunger_inc = int(npc.hunger_tick_buffer)
+        fatigue_inc = int(npc.fatigue_tick_buffer)
+        if hunger_inc > 0:
+            s.hunger += hunger_inc
+            npc.hunger_tick_buffer -= hunger_inc
+        if fatigue_inc > 0:
+            s.fatigue += fatigue_inc
+            npc.fatigue_tick_buffer -= fatigue_inc
+
         if s.hunger >= 80:
             s.happiness -= 3
         if s.fatigue >= 80:
@@ -1085,7 +1048,7 @@ class VillageGame:
         if activity == ScheduledActivity.WORK:
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
-                npc.work_hours_remaining = 0
+                npc.work_ticks_remaining = 0
             npc.current_action_detail = npc.current_work_action or "업무"
             npc.status.current_action = npc.current_work_action or "업무"
 
@@ -1099,9 +1062,9 @@ class VillageGame:
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
                 if npc.explore_chain_remaining <= 0:
-                    npc.explore_chain_remaining = max(1, int(self.explore_roundtrip_ticks))
+                    npc.explore_chain_remaining = int(self.explore_duration_ticks)
                 if npc.explore_target_tile is None:
-                    if not self._assign_exact_explore_target(npc):
+                    if not self._assign_next_explore_target(npc):
                         npc.current_work_action = "게시판확인"
                         board_tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
                         if board_tile is not None:
@@ -1124,9 +1087,9 @@ class VillageGame:
                     self._set_target_entity(npc, known_tile)
                 else:
                     npc.current_work_action = "탐색"
-                    npc.work_hours_remaining = 0
-                    npc.explore_chain_remaining = max(1, int(self.explore_roundtrip_ticks))
-                    if self._assign_exact_explore_target(npc):
+                    npc.work_ticks_remaining = 0
+                    npc.explore_chain_remaining = int(self.explore_duration_ticks)
+                    if self._assign_next_explore_target(npc):
                         self._set_target_outside(npc, npc.explore_target_tile)
                     else:
                         npc.current_work_action = "게시판확인"
@@ -1214,22 +1177,23 @@ class VillageGame:
                 continue
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
-                npc.work_hours_remaining = 0
+                npc.work_ticks_remaining = 0
             detail = npc.current_work_action or "업무선택실패"
             self.behavior.set_activity(npc, "업무", detail)
 
-    def sim_tick_1hour(self) -> None:
-        self.time.advance(1)
+    def sim_tick(self) -> None:
+        self.time.advance(SIM_TICK_MINUTES)
         self._ensure_work_actions_selected()
         for npc in self.npcs:
             if npc.status.hp > 0:
-                self.npc_passive_1h(npc)
+                self.npc_passive_tick(npc)
 
-        self.logs.extend(resolve_combat_round(self.npcs, self.combat_settings, self.rng))
-        eco_logs: List[str] = []
-        self.last_economy_snapshot = self.economy.run_hour(self.npcs, self.bstate, eco_logs)
-        self.logs.extend(eco_logs[-4:])
-        self._sync_guild_board_quantities()
+        if self.time.total_minutes % 60 == 0:
+            self.logs.extend(resolve_combat_round(self.npcs, self.combat_settings, self.rng))
+            eco_logs: List[str] = []
+            self.last_economy_snapshot = self.economy.run_hour(self.npcs, self.bstate, eco_logs)
+            self.logs.extend(eco_logs[-4:])
+            self._sync_guild_board_quantities()
 
         for npc in self.npcs:
             if npc.status.hp <= 0:
@@ -1605,7 +1569,7 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
                 entities = info.get("entities", [])
                 monsters = info.get("monsters", [])
                 updated = int(info.get("updated_at", 0))
-                line = f"{tkey} | 자원 {len(entities)} | 몬스터 {len(monsters)} | 갱신 {updated}h"
+                line = f"{tkey} | 자원 {len(entities)} | 몬스터 {len(monsters)} | 갱신 {updated}분"
                 if body.x + 12 + small.size(line)[0] > text_limit_x:
                     clipped = line
                     while clipped and body.x + 12 + small.size(clipped + "...")[0] > text_limit_x:
@@ -1616,21 +1580,21 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
 
     else:
         draw_text_lines(screen, small, body.x + 12, body.y + 12, [
-            "탐색은 왕복 기준(출발+복귀)으로 계산합니다.",
-            "아래 버튼으로 목표 왕복 틱을 선택하세요.",
+            "탐색은 선택한 지속 틱 동안 연속으로 진행됩니다.",
+            "아래 버튼으로 탐색 지속 시간(틱)을 선택하세요.",
             "",
         ])
         btn_y = body.y + 90
         btn_w = 160
         btn_h = 42
         gap = 14
-        for idx, ticks in enumerate((1, 2, 3)):
+        for idx, ticks in enumerate((6, 12, 18)):
             bx = body.x + 12 + idx * (btn_w + gap)
             r = pygame.Rect(bx, btn_y, btn_w, btn_h)
-            active = (game.explore_roundtrip_ticks == ticks)
+            active = (game.explore_duration_ticks == ticks)
             pygame.draw.rect(screen, (75, 95, 85) if active else (40, 40, 48), r)
             pygame.draw.rect(screen, (0, 0, 0), r, 2)
-            label = f"왕복 {ticks}틱"
+            label = f"지속 {ticks}틱"
             screen.blit(small.render(label, True, (240, 240, 240)), (r.x + 42, r.y + 12))
             if active:
                 screen.blit(small.render("선택됨", True, (210, 255, 210)), (r.x + 52, r.y + 24))
@@ -1806,7 +1770,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
     elif game.selection_type == SelectionType.BOARD:
         lines = [
             "선택(게시판): 길드 게시판",
-            f"탐색 왕복 목표: {game.explore_roundtrip_ticks}틱",
+            f"탐색 지속 목표: {game.explore_duration_ticks}틱",
             "I: 게시판 모달 열기",
             econ_line,
         ]
@@ -1891,11 +1855,11 @@ def main():
                             btn_w = 160
                             btn_h = 42
                             gap = 14
-                            for idx, ticks in enumerate((1, 2, 3)):
+                            for idx, ticks in enumerate((6, 12, 18)):
                                 bx = body.x + 12 + idx * (btn_w + gap)
                                 r = pygame.Rect(bx, btn_y, btn_w, btn_h)
                                 if r.collidepoint(mx, my):
-                                    game.set_explore_roundtrip_ticks(ticks)
+                                    game.set_explore_duration_ticks(ticks)
                                     break
                         continue
 
@@ -1972,7 +1936,7 @@ def main():
         # --- sim ---
         while sim_acc_ms >= SIM_TICK_MS:
             sim_acc_ms -= SIM_TICK_MS
-            game.sim_tick_1hour()
+            game.sim_tick()
 
         game.update_movement(dt)
 

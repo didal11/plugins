@@ -672,7 +672,7 @@ class EditorApp(tk.Tk):
             self.action_list.insert("end", str(row.get("name", "")))
 
         ttk.Label(right, text="행동명").grid(row=0, column=0, sticky="w", pady=2)
-        ttk.Label(right, text="소요 시간(시간)").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Label(right, text="소요 시간(분, 10분 단위)").grid(row=1, column=0, sticky="w", pady=2)
         ttk.Label(right, text="산출물(JSON)").grid(row=2, column=0, sticky="nw", pady=2)
         ttk.Label(right, text="피로").grid(row=3, column=0, sticky="w", pady=2)
         ttk.Label(right, text="허기").grid(row=4, column=0, sticky="w", pady=2)
@@ -705,7 +705,7 @@ class EditorApp(tk.Tk):
         self.action_name.delete(0, "end")
         self.action_name.insert(0, str(row.get("name", "")))
         self.action_duration.delete(0, "end")
-        self.action_duration.insert(0, str(row.get("duration_hours", 1)))
+        self.action_duration.insert(0, str(row.get("duration_minutes", int(row.get("duration_hours", 1)) * 60)))
         self.action_outputs.delete("1.0", "end")
         self.action_outputs.insert("1.0", json.dumps(row.get("outputs", {}), ensure_ascii=False, indent=2))
         self.action_fatigue.delete(0, "end")
@@ -720,7 +720,7 @@ class EditorApp(tk.Tk):
                 return None
             return {
                 "name": name,
-                "duration_hours": int(self.action_duration.get().strip() or "1"),
+                "duration_minutes": max(10, (int(self.action_duration.get().strip() or "10") // 10) * 10),
                 "required_tools": ["도구"],
                 "outputs": json.loads(self.action_outputs.get("1.0", "end").strip() or "{}"),
                 "fatigue": int(self.action_fatigue.get().strip() or "12"),
@@ -772,11 +772,12 @@ class EditorApp(tk.Tk):
 
         labels = {
             "npc_speed": "NPC 이동속도(px/s)",
-            "hunger_gain_per_hour": "시간당 배고픔 증가",
-            "fatigue_gain_per_hour": "시간당 피로 증가",
+            "hunger_gain_per_tick": "틱당 배고픔 증가",
+            "fatigue_gain_per_tick": "틱당 피로 증가",
             "meal_hunger_restore": "식사 시 배고픔 회복",
             "rest_fatigue_restore": "휴식 시 피로 회복",
             "potion_heal": "포션 회복량",
+            "explore_duration_ticks": "탐색 지속 틱(6/12/18)",
         }
 
         self.sim_entries: dict[str, ttk.Entry] = {}
@@ -793,7 +794,14 @@ class EditorApp(tk.Tk):
         out: dict[str, float] = {}
         try:
             for key, widget in self.sim_entries.items():
-                out[key] = float(widget.get().strip())
+                if key == "explore_duration_ticks":
+                    val = int(float(widget.get().strip()))
+                    if val not in (6, 12, 18):
+                        messagebox.showwarning("경고", "탐색 지속 틱은 6, 12, 18 중 하나여야 합니다.")
+                        return
+                    out[key] = float(val)
+                else:
+                    out[key] = float(widget.get().strip())
         except ValueError:
             messagebox.showwarning("경고", "시뮬레이션 설정은 숫자로 입력하세요.")
             return

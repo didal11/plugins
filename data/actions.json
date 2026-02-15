@@ -1,7 +1,7 @@
 [
   {
     "name": "게시판확인",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [],
     "required_entity": "guild_board",
     "outputs": {},
@@ -10,7 +10,7 @@
   },
   {
     "name": "탐색",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [
       "도구"
     ],
@@ -21,7 +21,7 @@
   },
   {
     "name": "농사",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [
       "도구"
     ],
@@ -37,7 +37,7 @@
   },
   {
     "name": "낚시",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [
       "도구"
     ],
@@ -53,7 +53,7 @@
   },
   {
     "name": "제련",
-    "duration_hours": 2,
+    "duration_minutes": 120,
     "required_tools": [
       "도구"
     ],
@@ -69,7 +69,7 @@
   },
   {
     "name": "도구제작",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [
       "도구"
     ],
@@ -85,7 +85,7 @@
   },
   {
     "name": "약 제조",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [
       "도구"
     ],
@@ -101,7 +101,7 @@
   },
   {
     "name": "약초채집",
-    "duration_hours": 1,
+    "duration_minutes": 60,
     "required_tools": [
       "도구"
     ],
@@ -117,7 +117,7 @@
   },
   {
     "name": "벌목",
-    "duration_hours": 2,
+    "duration_minutes": 120,
     "required_tools": [
       "도구"
     ],
@@ -133,7 +133,7 @@
   },
   {
     "name": "채광",
-    "duration_hours": 2,
+    "duration_minutes": 120,
     "required_tools": [
       "도구"
     ],
@@ -149,7 +149,7 @@
   },
   {
     "name": "동물사냥",
-    "duration_hours": 3,
+    "duration_minutes": 180,
     "required_tools": [
       "도구"
     ],
@@ -169,7 +169,7 @@
   },
   {
     "name": "몬스터사냥",
-    "duration_hours": 3,
+    "duration_minutes": 180,
     "required_tools": [
       "도구"
     ],
