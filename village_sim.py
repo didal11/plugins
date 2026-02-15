@@ -852,6 +852,26 @@ class VillageGame:
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
 
 
+    def _is_matching_entity_target(self, entity_key: str, tile: Tuple[int, int]) -> bool:
+        tx, ty = tile
+        candidates = self.entity_manager.candidates_by_key(entity_key, discovered_only=False)
+        return any(int(ent.get("x", -1)) == tx and int(ent.get("y", -1)) == ty for ent in candidates)
+
+    def _has_valid_work_target(self, npc: NPC) -> bool:
+        action_name = npc.current_work_action or ""
+        if not action_name:
+            return True
+        if action_name == "탐색":
+            return npc.target_outside_tile is not None
+        action = self.action_defs.get(action_name, {})
+        required_entity = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
+        if not required_entity:
+            return True
+        if npc.target_entity_tile is None:
+            return False
+        return self._is_matching_entity_target(required_entity, npc.target_entity_tile)
+
+
     def _is_hostile(self, npc: NPC) -> bool:
         return bool(getattr(npc.traits, "is_hostile", False))
 
@@ -964,14 +984,15 @@ class VillageGame:
             return False
 
         if npc.current_work_action == "게시판확인" and npc.target_entity_tile is not None:
-            ex, ey = npc.target_entity_tile
-            if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
-                self.logs.append(self._execute_primary_action(npc))
-                self._plan_next_target(npc)
-                return True
+            if self._is_matching_entity_target("guild_board", npc.target_entity_tile):
+                ex, ey = npc.target_entity_tile
+                if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
+                    self.logs.append(self._execute_primary_action(npc))
+                    self._plan_next_target(npc)
+                    return True
             return False
 
-        if npc.target_entity_tile is not None:
+        if npc.target_entity_tile is not None and self._has_valid_work_target(npc):
             ex, ey = npc.target_entity_tile
             if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
                 self.logs.append(self._execute_primary_action(npc))
@@ -1015,6 +1036,12 @@ class VillageGame:
             npc.location_building = self.find_building_by_tile(tx, ty)
 
             if len(npc.path) == 0:
+                current_activity = self.planner.activity_for_hour(self.time.hour)
+                if current_activity == ScheduledActivity.WORK and not self._has_valid_work_target(npc):
+                    self._plan_next_target(npc)
+                    if npc.path:
+                        continue
+
                 if self._try_execute_arrived_work(npc, tx, ty):
                     continue
 
