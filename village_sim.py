@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -65,6 +66,7 @@ from editable_data import (
 from model import (
     TileRect,
     Building,
+    BoardTab,
     BuildingState,
     BuildingTab,
     ItemDef,
@@ -312,6 +314,7 @@ class VillageGame:
         self.modal_kind: ModalKind = ModalKind.NONE
         self.building_tab: BuildingTab = BuildingTab.PEOPLE
         self.npc_tab: NPCTab = NPCTab.TRAITS
+        self.board_tab: BoardTab = BoardTab.ENTITIES
 
         # Data (single-source loader)
         loaded_items = data.get("items", []) if isinstance(data.get("items"), list) else []
@@ -652,6 +655,17 @@ class VillageGame:
                 return b.name
         return None
 
+    def pick_guild_board_at_screen(self, sx: int, sy: int) -> bool:
+        tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
+        if tile is None:
+            return False
+        wx, wy = self.camera.screen_to_world(sx, sy)
+        gx, gy = tile_to_world_px_center(tile[0], tile[1])
+        dx = wx - gx
+        dy = wy - gy
+        return (dx * dx + dy * dy) <= (BASE_TILE_SIZE * BASE_TILE_SIZE)
+
+
     def _init_guild_board_state(self) -> None:
         known = self.guild_board_state.setdefault("known_entities", {})
         known_cells = self.guild_board_state.setdefault("known_cells", {})
@@ -810,11 +824,20 @@ class VillageGame:
             return None
         return self.rng.choice(candidates)
 
-    def _pick_frontier_explore_tile(self, npc: NPC) -> Tuple[int, int]:
+    def _estimate_roundtrip_ticks(self, start: Tuple[int, int], target: Tuple[int, int]) -> int:
+        dist_tiles = abs(target[0] - start[0]) + abs(target[1] - start[1])
+        if dist_tiles <= 0:
+            return 1
+        speed_px_s = float(self.sim_settings.get("npc_speed", 220.0))
+        if speed_px_s <= 1e-6:
+            return 3
+        tick_seconds = max(0.001, SIM_TICK_MS / 1000.0)
+        one_way_seconds = (dist_tiles * BASE_TILE_SIZE) / speed_px_s
+        return max(1, int(math.ceil((one_way_seconds * 2.0) / tick_seconds)))
+
+    def _pick_frontier_explore_tile(self, npc: NPC, desired_roundtrip: int) -> Tuple[int, int]:
         known_cells = self.guild_board_state.get("known_cells", {})
         known_keys = set(known_cells.keys()) if isinstance(known_cells, dict) else set()
-        if not known_keys:
-            return self.random_outside_tile()
 
         frontier: Set[Tuple[int, int]] = set()
         for key in known_keys:
@@ -826,22 +849,23 @@ class VillageGame:
                 nx = max(0, min(GRID_W - 1, tx + dx))
                 ny = max(0, min(GRID_H - 1, ty + dy))
                 nkey = self._tile_key(nx, ny)
-                if nkey not in known_keys:
+                if nkey not in known_keys and self.is_outside_tile(nx, ny):
                     frontier.add((nx, ny))
 
         if not frontier:
             return self.random_outside_tile()
 
-        desired = max(1, int(self.sim_settings.get("explore_target_distance_ticks", 2)))
-        ntx, nty = world_px_to_tile(npc.x, npc.y)
-        by_dist: Dict[int, List[Tuple[int, int]]] = {}
-        for fx, fy in frontier:
-            dist = abs(fx - ntx) + abs(fy - nty)
-            by_dist.setdefault(dist, []).append((fx, fy))
-        if desired in by_dist:
-            return self.rng.choice(by_dist[desired])
-        closest = min(by_dist.keys())
-        return self.rng.choice(by_dist[closest])
+        base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
+        desired_roundtrip = max(1, min(3, int(desired_roundtrip)))
+        exact = [tile for tile in frontier if self._estimate_roundtrip_ticks(base_tile, tile) == desired_roundtrip]
+        if exact:
+            return self.rng.choice(exact)
+
+        not_farther = [tile for tile in frontier if self._estimate_roundtrip_ticks(base_tile, tile) <= desired_roundtrip]
+        if not_farther:
+            return max(not_farther, key=lambda tile: self._estimate_roundtrip_ticks(base_tile, tile))
+        nearest = min(frontier, key=lambda tile: self._estimate_roundtrip_ticks(base_tile, tile))
+        return nearest
 
     def _do_board_check(self, npc: NPC) -> str:
         npc.adventurer_board_visited = True
@@ -856,9 +880,11 @@ class VillageGame:
         tx, ty = world_px_to_tile(npc.x, npc.y)
         npc.adventurer_board_visited = False
         npc.explore_target_tile = None
+        planned_ticks = max(1, int(npc.explore_roundtrip_ticks or 1))
         npc.current_work_action = "게시판확인"
         npc.work_hours_remaining = 0
-        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀"
+        npc.explore_roundtrip_ticks = 0
+        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀(계획 왕복 {planned_ticks}틱)"
 
     def _pick_adventurer_work_action(self, npc: NPC) -> Optional[str]:
         if not npc.adventurer_board_visited:
@@ -1006,8 +1032,10 @@ class VillageGame:
                 return
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
+                if npc.explore_roundtrip_ticks <= 0:
+                    npc.explore_roundtrip_ticks = self.rng.randint(1, 3)
                 if npc.explore_target_tile is None:
-                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc)
+                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc, npc.explore_roundtrip_ticks)
                 self._set_target_outside(npc, npc.explore_target_tile)
                 return
 
@@ -1020,7 +1048,8 @@ class VillageGame:
                 else:
                     npc.current_work_action = "탐색"
                     npc.work_hours_remaining = 0
-                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc)
+                    npc.explore_roundtrip_ticks = self.rng.randint(1, 3)
+                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc, npc.explore_roundtrip_ticks)
                     self._set_target_outside(npc, npc.explore_target_tile)
                 return
 
@@ -1413,6 +1442,58 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
     return rect, tab_rects
 
 
+def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, small: pygame.font.Font):
+    rect = draw_modal_frame(screen, "길드 게시판", font)
+    tabs = [(BoardTab.ENTITIES.value, BoardTab.ENTITIES), (BoardTab.CELLS.value, BoardTab.CELLS)]
+    tab_rects = draw_tabs(screen, rect, tabs, game.board_tab, small)
+
+    body = pygame.Rect(rect.x + 16, rect.y + 90, rect.w - 32, rect.h - 110)
+    pygame.draw.rect(screen, (14, 14, 18), body)
+    pygame.draw.rect(screen, (0, 0, 0), body, 2)
+
+    if game.board_tab == BoardTab.ENTITIES:
+        known = game.guild_board_state.get("known_entities", {})
+        rows = sorted(known.items(), key=lambda kv: str(kv[0])) if isinstance(known, dict) else []
+        draw_text_lines(screen, small, body.x + 12, body.y + 12, [f"등록 자원 수: {len(rows)}", ""])
+        y = body.y + 52
+        if not rows:
+            draw_text_lines(screen, small, body.x + 12, y, ["(등록된 자원이 없습니다.)"])
+        else:
+            for key, info in rows[:12]:
+                if not isinstance(info, dict):
+                    continue
+                name = str(info.get("name", key))
+                x = int(info.get("x", 0))
+                yv = int(info.get("y", 0))
+                qty = int(info.get("qty", 0))
+                screen.blit(small.render(f"{name}({key}) @({x},{yv}) 수량:{qty}", True, (230, 230, 230)), (body.x + 12, y))
+                y += 20
+
+    elif game.board_tab == BoardTab.CELLS:
+        known_cells = game.guild_board_state.get("known_cells", {})
+        rows = sorted(known_cells.items(), key=lambda kv: str(kv[0])) if isinstance(known_cells, dict) else []
+        draw_text_lines(screen, small, body.x + 12, body.y + 12, [
+            f"탐색 기록 셀: {len(rows)}",
+            "탐색 왕복 틱은 모험가별로 1~3틱 랜덤 선택",
+            "",
+        ])
+        y = body.y + 72
+        if not rows:
+            draw_text_lines(screen, small, body.x + 12, y, ["(탐색 기록이 없습니다.)"])
+        else:
+            for tkey, info in rows[-10:]:
+                if not isinstance(info, dict):
+                    continue
+                entities = info.get("entities", [])
+                monsters = info.get("monsters", [])
+                updated = int(info.get("updated_at", 0))
+                screen.blit(small.render(f"{tkey} | 자원 {len(entities)} | 몬스터 {len(monsters)} | 갱신 {updated}h", True, (230, 230, 230)), (body.x + 12, y))
+                y += 20
+
+    screen.blit(small.render("I/ESC: 닫기 | 1/2: 탭", True, (200, 200, 200)), (rect.x + 16, rect.bottom - 26))
+    return rect, tab_rects
+
+
 # ============================================================
 # Rendering
 # ============================================================
@@ -1577,9 +1658,16 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
             econ_line,
             "I: 모달 | 휠: 줌 | 미니맵 클릭: 이동",
         ]
+    elif game.selection_type == SelectionType.BOARD:
+        lines = [
+            "선택(게시판): 길드 게시판",
+            "탐색 왕복 틱은 모험가별로 1~3틱 랜덤 설정",
+            "I: 게시판 모달 열기",
+            econ_line,
+        ]
     else:
         lines = [
-            "NPC 또는 건물을 클릭하세요.",
+            "NPC/건물/게시판을 클릭하세요.",
             "I: 선택 대상 모달 열기",
             "WASD/화살표: 카메라 이동 | 휠: 줌",
             econ_line,
@@ -1640,13 +1728,16 @@ def main():
                         tab_w = 190
                         tab_h = 34
                         gap = 10
-                        for idx in range(3):
+                        tab_count = 2 if game.modal_kind == ModalKind.BOARD else 3
+                        for idx in range(tab_count):
                             r = pygame.Rect(tab_x + idx * (tab_w + gap), tab_y, tab_w, tab_h)
                             if r.collidepoint(mx, my):
                                 if game.modal_kind == ModalKind.BUILDING:
                                     game.building_tab = [BuildingTab.PEOPLE, BuildingTab.STOCK, BuildingTab.TASK][idx]
                                 elif game.modal_kind == ModalKind.NPC:
                                     game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][idx]
+                                elif game.modal_kind == ModalKind.BOARD:
+                                    game.board_tab = [BoardTab.ENTITIES, BoardTab.CELLS][idx]
                                 break
                         continue
 
@@ -1658,6 +1749,11 @@ def main():
                     if ni is not None:
                         game.selection_type = SelectionType.NPC
                         game.selected_npc = ni
+                        game.selected_building = None
+                        continue
+                    if game.pick_guild_board_at_screen(mx, my):
+                        game.selection_type = SelectionType.BOARD
+                        game.selected_npc = None
                         game.selected_building = None
                         continue
                     bn = game.pick_building_at_screen(mx, my)
@@ -1682,6 +1778,9 @@ def main():
                     elif game.selection_type == SelectionType.BUILDING and game.selected_building is not None:
                         game.modal_open = not game.modal_open
                         game.modal_kind = ModalKind.BUILDING if game.modal_open else ModalKind.NONE
+                    elif game.selection_type == SelectionType.BOARD:
+                        game.modal_open = not game.modal_open
+                        game.modal_kind = ModalKind.BOARD if game.modal_open else ModalKind.NONE
 
                 # tab hotkeys
                 elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3) and game.modal_open:
@@ -1689,6 +1788,8 @@ def main():
                         game.building_tab = [BuildingTab.PEOPLE, BuildingTab.STOCK, BuildingTab.TASK][int(ev.unicode) - 1]
                     elif game.modal_kind == ModalKind.NPC:
                         game.npc_tab = [NPCTab.TRAITS, NPCTab.STATUS, NPCTab.INVENTORY][int(ev.unicode) - 1]
+                    elif game.modal_kind == ModalKind.BOARD and ev.key in (pygame.K_1, pygame.K_2):
+                        game.board_tab = [BoardTab.ENTITIES, BoardTab.CELLS][int(ev.unicode) - 1]
 
 
         # camera movement (disabled while modal open? keep enabled)
@@ -1728,6 +1829,8 @@ def main():
                 draw_building_modal(screen, game, font, small)
             elif game.modal_kind == ModalKind.NPC:
                 draw_npc_modal(screen, game, font, small)
+            elif game.modal_kind == ModalKind.BOARD:
+                draw_board_modal(screen, game, font, small)
 
         pygame.display.flip()
 
