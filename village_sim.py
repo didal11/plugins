@@ -688,8 +688,8 @@ class VillageGame:
 
         # 시작 시 길드 게시판에 마을 범위 셀 정보를 기본 등록한다.
         vr = self.village_rect_tiles
-        for tx in range(vr.left, vr.right):
-            for ty in range(vr.top, vr.bottom):
+        for tx in range(vr.x, vr.x + vr.w):
+            for ty in range(vr.y, vr.y + vr.h):
                 cell_key = self._tile_key(tx, ty)
                 if cell_key in known_cells:
                     continue
