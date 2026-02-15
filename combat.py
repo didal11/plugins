@@ -39,7 +39,6 @@ def _attack_once(attacker: NPC, defender: NPC, cfg: Dict[str, object], rng: rand
     defender.status.hp = max(0, defender.status.hp - dmg)
     if defender.status.hp <= 0:
         defender.path = []
-        defender.target_building = None
         defender.target_outside_tile = None
         return f"{attacker.traits.name} -> {defender.traits.name} {before}->{defender.status.hp} (쓰러짐)"
     return f"{attacker.traits.name} -> {defender.traits.name} {before}->{defender.status.hp}"

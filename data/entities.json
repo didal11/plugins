@@ -968,5 +968,75 @@
     "current_quantity": 87,
     "is_workbench": false,
     "is_discovered": false
+  },
+  {
+    "key": "dining_table",
+    "name": "식탁",
+    "x": 184,
+    "y": 140,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "bed_a",
+    "name": "침대",
+    "x": 204,
+    "y": 137,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "bed_b",
+    "name": "침대",
+    "x": 210,
+    "y": 137,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "bed_c",
+    "name": "침대",
+    "x": 216,
+    "y": 137,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "bed_d",
+    "name": "침대",
+    "x": 204,
+    "y": 142,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "bed_e",
+    "name": "침대",
+    "x": 210,
+    "y": 142,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "bed_f",
+    "name": "침대",
+    "x": 216,
+    "y": 142,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
   }
 ]
