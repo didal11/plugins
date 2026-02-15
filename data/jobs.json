@@ -1,22 +1,39 @@
 [
   {
     "job": "모험가",
-    "work_actions": ["약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"]
+    "work_actions": [
+      "게시판확인",
+      "탐색",
+      "약초채집",
+      "벌목",
+      "채광",
+      "동물사냥",
+      "몬스터사냥"
+    ]
   },
   {
     "job": "농부",
-    "work_actions": ["농사"]
+    "work_actions": [
+      "농사"
+    ]
   },
   {
     "job": "어부",
-    "work_actions": ["낚시"]
+    "work_actions": [
+      "낚시"
+    ]
   },
   {
     "job": "대장장이",
-    "work_actions": ["제련", "도구제작"]
+    "work_actions": [
+      "제련",
+      "도구제작"
+    ]
   },
   {
     "job": "약사",
-    "work_actions": ["약 제조"]
+    "work_actions": [
+      "약 제조"
+    ]
   }
 ]

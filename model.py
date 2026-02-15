@@ -193,3 +193,6 @@ class NPC:
     target_entity_tile: Optional[Tuple[int, int]] = None
     current_work_action: Optional[str] = None
     work_hours_remaining: int = 0
+    adventurer_board_visited: bool = False
+    explore_anchor_tile: Optional[Tuple[int, int]] = None
+    explore_scan_index: int = 0
