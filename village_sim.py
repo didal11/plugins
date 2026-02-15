@@ -865,9 +865,9 @@ class VillageGame:
             return self.rng.choice(exact)
         return None
     def _assign_exact_explore_target(self, npc: NPC) -> bool:
-        # 1~3틱 중에서 모험가가 랜덤으로 고른 틱에 "정확히 일치"하는 목표만 선택한다.
-        choices = [1, 2, 3]
-        self.rng.shuffle(choices)
+        # 설정한 왕복 틱을 우선 적용하고, 없을 때만 인접한 틱으로 완화한다.
+        desired = max(1, min(3, int(self.explore_roundtrip_ticks)))
+        choices = sorted((1, 2, 3), key=lambda ticks: abs(ticks - desired))
         for ticks in choices:
             tile = self._pick_frontier_explore_tile(npc, ticks)
             if tile is not None:
@@ -877,19 +877,6 @@ class VillageGame:
         npc.explore_roundtrip_ticks = 0
         npc.explore_target_tile = None
         return False
-
-        base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
-        ntx, nty = base_tile
-        desired_roundtrip = max(1, self.explore_roundtrip_ticks)
-        by_roundtrip: Dict[int, List[Tuple[int, int]]] = {}
-        for fx, fy in frontier:
-            dist = abs(fx - ntx) + abs(fy - nty)
-            roundtrip_ticks = max(1, dist * 2)
-            by_roundtrip.setdefault(roundtrip_ticks, []).append((fx, fy))
-        if desired_roundtrip in by_roundtrip:
-            return self.rng.choice(by_roundtrip[desired_roundtrip])
-        closest = min(by_roundtrip.keys(), key=lambda t: abs(t - desired_roundtrip))
-        return self.rng.choice(by_roundtrip[closest])
 
     def _do_board_check(self, npc: NPC) -> str:
         npc.adventurer_board_visited = True
@@ -1508,7 +1495,45 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
         known_cells = game.guild_board_state.get("known_cells", {})
         rows = sorted(known_cells.items(), key=lambda kv: str(kv[0])) if isinstance(known_cells, dict) else []
         draw_text_lines(screen, small, body.x + 12, body.y + 12, [f"탐색 기록 셀: {len(rows)}", ""])
+        map_rect = pygame.Rect(body.right - 260, body.y + 12, 248, 248)
+        pygame.draw.rect(screen, (20, 20, 25), map_rect)
+        pygame.draw.rect(screen, (0, 0, 0), map_rect, 2)
+
+        if rows:
+            points: List[Tuple[int, int]] = []
+            for key, _ in rows:
+                tile = game._tile_from_key(str(key))
+                if tile is not None:
+                    points.append(tile)
+
+            if points:
+                min_x = min(x for x, _ in points)
+                max_x = max(x for x, _ in points)
+                min_y = min(y for _, y in points)
+                max_y = max(y for _, y in points)
+                span_x = max(1, max_x - min_x + 1)
+                span_y = max(1, max_y - min_y + 1)
+                cell_px = int(max(2, min((map_rect.w - 16) / span_x, (map_rect.h - 16) / span_y)))
+                origin_x = map_rect.x + (map_rect.w - span_x * cell_px) // 2
+                origin_y = map_rect.y + (map_rect.h - span_y * cell_px) // 2
+
+                for tx, ty in points:
+                    px = origin_x + (tx - min_x) * cell_px
+                    py = origin_y + (ty - min_y) * cell_px
+                    pygame.draw.rect(screen, (82, 134, 212), pygame.Rect(px, py, cell_px, cell_px))
+
+                latest_tile = game._tile_from_key(str(rows[-1][0]))
+                if latest_tile is not None:
+                    lx, ly = latest_tile
+                    lpx = origin_x + (lx - min_x) * cell_px
+                    lpy = origin_y + (ly - min_y) * cell_px
+                    pygame.draw.rect(screen, (255, 224, 80), pygame.Rect(lpx, lpy, cell_px, cell_px), 2)
+            screen.blit(small.render("파랑=기록 셀 / 노랑=최근 갱신", True, (200, 200, 200)), (map_rect.x + 8, map_rect.bottom - 22))
+        else:
+            screen.blit(small.render("기록 없음", True, (170, 170, 170)), (map_rect.x + 86, map_rect.y + 112))
+
         y = body.y + 52
+        text_limit_x = map_rect.x - 16
         if not rows:
             draw_text_lines(screen, small, body.x + 12, y, ["(탐색 기록이 없습니다.)"])
         else:
@@ -1518,7 +1543,13 @@ def draw_board_modal(screen: pygame.Surface, game: VillageGame, font: pygame.fon
                 entities = info.get("entities", [])
                 monsters = info.get("monsters", [])
                 updated = int(info.get("updated_at", 0))
-                screen.blit(small.render(f"{tkey} | 자원 {len(entities)} | 몬스터 {len(monsters)} | 갱신 {updated}h", True, (230, 230, 230)), (body.x + 12, y))
+                line = f"{tkey} | 자원 {len(entities)} | 몬스터 {len(monsters)} | 갱신 {updated}h"
+                if body.x + 12 + small.size(line)[0] > text_limit_x:
+                    clipped = line
+                    while clipped and body.x + 12 + small.size(clipped + "...")[0] > text_limit_x:
+                        clipped = clipped[:-1]
+                    line = (clipped + "...") if clipped else "..."
+                screen.blit(small.render(line, True, (230, 230, 230)), (body.x + 12, y))
                 y += 20
 
     else:
@@ -1780,7 +1811,7 @@ def main():
                         tab_w = 190
                         tab_h = 34
                         gap = 10
-                        tab_count = 2 if game.modal_kind == ModalKind.BOARD else 3
+                        tab_count = 3
                         for idx in range(tab_count):
                             r = pygame.Rect(tab_x + idx * (tab_w + gap), tab_y, tab_w, tab_h)
                             if r.collidepoint(mx, my):
