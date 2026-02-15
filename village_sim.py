@@ -773,7 +773,7 @@ class VillageGame:
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
                 npc.work_hours_remaining = 0
-            npc.status.current_action = npc.current_work_action or "업무선택실패"
+            npc.status.current_action = npc.current_work_action or "업무"
             if job == JobType.ADVENTURER:
                 hostile = self._nearest_hostile(npc)
                 if hostile is not None:
@@ -788,33 +788,10 @@ class VillageGame:
         self._set_target_building(npc, npc.home_building)
 
     def _pick_work_action(self, npc: NPC) -> Optional[str]:
-        action_defs = self.job_action_defs.get(npc.traits.job.value, [])
-        if not action_defs:
+        actions = self.job_work_actions.get(npc.traits.job.value, [])
+        if not actions:
             return None
-        chosen = self.rng.choice(action_defs)
-        action_name = str(chosen.get("name", "")).strip()
-        if not action_name:
-            return None
-        return action_name
-
-    def _resolve_action_def(self, npc: NPC, action_name: str) -> Optional[Dict[str, object]]:
-        action = self.action_defs.get(action_name)
-        if isinstance(action, dict):
-            return action
-        for row in self.job_action_defs.get(npc.traits.job.value, []):
-            if str(row.get("name", "")).strip() == action_name:
-                return row
-        return None
-
-    def _ensure_work_actions_selected(self) -> None:
-        if self.planner.activity_for_hour(self.time.hour) != ScheduledActivity.WORK:
-            return
-        for npc in self.npcs:
-            if npc.status.hp <= 0 or self._is_hostile(npc):
-                continue
-            if npc.current_work_action is None:
-                npc.current_work_action = self._pick_work_action(npc)
-                npc.work_hours_remaining = 0
+        return self.rng.choice(actions)
 
     def _required_tool_keys(self, required_tools: object) -> List[str]:
         if not isinstance(required_tools, list):
@@ -879,12 +856,7 @@ class VillageGame:
             return f"{npc.traits.name}: 작업(정의 없음)"
         npc.current_work_action = action_name
 
-        action = self._resolve_action_def(npc, action_name)
-        if action is None:
-            npc.current_work_action = None
-            npc.work_hours_remaining = 0
-            npc.status.current_action = "업무선택실패"
-            return f"{npc.traits.name}: 작업 실패(액션 정의 없음: {action_name})"
+        action = self.action_defs.get(action_name, {})
         duration_hours = max(1, int(action.get("duration_hours", 1)))
         if npc.work_hours_remaining <= 0:
             npc.work_hours_remaining = duration_hours
