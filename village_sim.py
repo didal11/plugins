@@ -359,6 +359,7 @@ class VillageGame:
             job_name: [self.action_defs[action_name] for action_name in action_names if action_name in self.action_defs]
             for job_name, action_names in self.job_work_actions.items()
         }
+        self.behavior = BehaviorDecisionEngine(self.planner, self.rng, self.job_work_actions, self.action_defs)
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -1028,6 +1029,9 @@ class VillageGame:
     # -----------------------------
     # Tick + movement
     # -----------------------------
+    def _ensure_work_actions_selected(self) -> None:
+        self.behavior.ensure_work_actions_selected(self.npcs, self.time.hour, self._is_hostile)
+
     def sim_tick_1hour(self) -> None:
         self.time.advance(1)
         self._ensure_work_actions_selected()
