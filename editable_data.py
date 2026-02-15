@@ -38,7 +38,7 @@ DEFAULT_ITEMS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
-    {"job": "모험가", "work_actions": ["약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"]},
+    {"job": "모험가", "work_actions": ["게시판확인", "탐색", "약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"]},
     {"job": "농부", "work_actions": ["농사"]},
     {"job": "어부", "work_actions": ["낚시"]},
     {"job": "대장장이", "work_actions": ["제련", "도구제작"]},
@@ -46,6 +46,8 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
+    {"name": "게시판확인", "duration_hours": 1, "required_tools": [], "required_entity": "guild_board", "outputs": {}, "fatigue": 2, "hunger": 1},
+    {"name": "탐색", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "", "outputs": {}, "fatigue": 9, "hunger": 7},
     {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
     {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
     {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
@@ -82,14 +84,15 @@ DEFAULT_RACES: List[Dict[str, object]] = [
     {"name": "드워프", "is_hostile": False, "str_bonus": 1, "agi_bonus": 0, "hp_bonus": 2, "speed_bonus": -0.03},
 ]
 DEFAULT_ENTITIES: List[Dict[str, object]] = [
-    {"key": "alchemy_table", "name": "약제작대", "x": 188, "y": 151, "max_quantity": 120, "current_quantity": 120, "is_workbench": True},
-    {"key": "field", "name": "밭", "x": 183, "y": 162, "max_quantity": 200, "current_quantity": 200, "is_workbench": False},
-    {"key": "fish_spot", "name": "물고기", "x": 193, "y": 162, "max_quantity": 160, "current_quantity": 160, "is_workbench": False},
-    {"key": "forge_workbench", "name": "대장장이 작업대", "x": 183, "y": 151, "max_quantity": 140, "current_quantity": 140, "is_workbench": True},
-    {"key": "herb_cluster", "name": "약초군락", "x": 176, "y": 170, "max_quantity": 90, "current_quantity": 90, "is_workbench": False},
-    {"key": "tree_grove", "name": "나무", "x": 173, "y": 177, "max_quantity": 120, "current_quantity": 120, "is_workbench": False},
-    {"key": "ore_vein", "name": "광석", "x": 171, "y": 182, "max_quantity": 100, "current_quantity": 100, "is_workbench": False},
-    {"key": "animal_habitat", "name": "동물 서식지", "x": 198, "y": 178, "max_quantity": 80, "current_quantity": 80, "is_workbench": False}
+    {"key": "alchemy_table", "name": "약제작대", "x": 188, "y": 151, "max_quantity": 120, "current_quantity": 120, "is_workbench": True, "is_discovered": True},
+    {"key": "guild_board", "name": "길드 게시판", "x": 198, "y": 151, "max_quantity": 9999, "current_quantity": 9999, "is_workbench": True, "is_discovered": True},
+    {"key": "field", "is_discovered": False, "name": "밭", "x": 183, "y": 162, "max_quantity": 200, "current_quantity": 200, "is_workbench": False},
+    {"key": "fish_spot", "is_discovered": False, "name": "물고기", "x": 193, "y": 162, "max_quantity": 160, "current_quantity": 160, "is_workbench": False},
+    {"key": "forge_workbench", "name": "대장장이 작업대", "x": 183, "y": 151, "max_quantity": 140, "current_quantity": 140, "is_workbench": True, "is_discovered": True},
+    {"key": "herb_cluster", "is_discovered": False, "name": "약초군락", "x": 176, "y": 170, "max_quantity": 90, "current_quantity": 90, "is_workbench": False},
+    {"key": "tree_grove", "is_discovered": False, "name": "나무", "x": 173, "y": 177, "max_quantity": 120, "current_quantity": 120, "is_workbench": False},
+    {"key": "ore_vein", "is_discovered": False, "name": "광석", "x": 171, "y": 182, "max_quantity": 100, "current_quantity": 100, "is_workbench": False},
+    {"key": "animal_habitat", "is_discovered": False, "name": "동물 서식지", "x": 198, "y": 178, "max_quantity": 80, "current_quantity": 80, "is_workbench": False}
 ]
 
 
@@ -166,6 +169,7 @@ def _normalize_entity(row: Dict[str, object]) -> Dict[str, object]:
         "max_quantity": max_q,
         "current_quantity": current_q,
         "is_workbench": bool(row.get("is_workbench", False)),
+        "is_discovered": True if bool(row.get("is_workbench", False)) else bool(row.get("is_discovered", False)),
     }
 
 

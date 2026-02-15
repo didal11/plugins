@@ -1,10 +1,972 @@
 [
-  {"key": "alchemy_table", "name": "약제작대", "x": 188, "y": 151, "max_quantity": 120, "current_quantity": 120, "is_workbench": true},
-  {"key": "field", "name": "밭", "x": 183, "y": 162, "max_quantity": 200, "current_quantity": 200, "is_workbench": false},
-  {"key": "fish_spot", "name": "물고기", "x": 193, "y": 162, "max_quantity": 160, "current_quantity": 160, "is_workbench": false},
-  {"key": "forge_workbench", "name": "대장장이 작업대", "x": 183, "y": 151, "max_quantity": 140, "current_quantity": 140, "is_workbench": true},
-  {"key": "herb_cluster", "name": "약초군락", "x": 176, "y": 170, "max_quantity": 90, "current_quantity": 90, "is_workbench": false},
-  {"key": "tree_grove", "name": "나무", "x": 173, "y": 177, "max_quantity": 120, "current_quantity": 120, "is_workbench": false},
-  {"key": "ore_vein", "name": "광석", "x": 171, "y": 182, "max_quantity": 100, "current_quantity": 100, "is_workbench": false},
-  {"key": "animal_habitat", "name": "동물 서식지", "x": 198, "y": 178, "max_quantity": 80, "current_quantity": 80, "is_workbench": false}
+  {
+    "key": "alchemy_table",
+    "name": "약제작대",
+    "x": 188,
+    "y": 151,
+    "max_quantity": 120,
+    "current_quantity": 120,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "forge_workbench",
+    "name": "대장장이 작업대",
+    "x": 183,
+    "y": 151,
+    "max_quantity": 140,
+    "current_quantity": 140,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "guild_board",
+    "name": "길드 게시판",
+    "x": 198,
+    "y": 151,
+    "max_quantity": 9999,
+    "current_quantity": 9999,
+    "is_workbench": true,
+    "is_discovered": true
+  },
+  {
+    "key": "field",
+    "name": "밭",
+    "x": 183,
+    "y": 162,
+    "max_quantity": 200,
+    "current_quantity": 200,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "fish_spot",
+    "name": "물고기",
+    "x": 193,
+    "y": 162,
+    "max_quantity": 160,
+    "current_quantity": 160,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster",
+    "name": "약초군락",
+    "x": 176,
+    "y": 170,
+    "max_quantity": 90,
+    "current_quantity": 90,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove",
+    "name": "나무",
+    "x": 173,
+    "y": 177,
+    "max_quantity": 120,
+    "current_quantity": 120,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein",
+    "name": "광석",
+    "x": 171,
+    "y": 182,
+    "max_quantity": 100,
+    "current_quantity": 100,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat",
+    "name": "동물 서식지",
+    "x": 198,
+    "y": 178,
+    "max_quantity": 80,
+    "current_quantity": 80,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_01",
+    "name": "약초군락",
+    "x": 201,
+    "y": 184,
+    "max_quantity": 120,
+    "current_quantity": 90,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_02",
+    "name": "약초군락",
+    "x": 166,
+    "y": 174,
+    "max_quantity": 120,
+    "current_quantity": 108,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_03",
+    "name": "약초군락",
+    "x": 172,
+    "y": 211,
+    "max_quantity": 120,
+    "current_quantity": 114,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_04",
+    "name": "약초군락",
+    "x": 167,
+    "y": 229,
+    "max_quantity": 120,
+    "current_quantity": 67,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_05",
+    "name": "약초군락",
+    "x": 164,
+    "y": 176,
+    "max_quantity": 120,
+    "current_quantity": 95,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_06",
+    "name": "약초군락",
+    "x": 213,
+    "y": 173,
+    "max_quantity": 120,
+    "current_quantity": 70,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_07",
+    "name": "약초군락",
+    "x": 171,
+    "y": 235,
+    "max_quantity": 120,
+    "current_quantity": 94,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_08",
+    "name": "약초군락",
+    "x": 167,
+    "y": 180,
+    "max_quantity": 120,
+    "current_quantity": 68,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_09",
+    "name": "약초군락",
+    "x": 234,
+    "y": 172,
+    "max_quantity": 120,
+    "current_quantity": 113,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_10",
+    "name": "약초군락",
+    "x": 234,
+    "y": 215,
+    "max_quantity": 120,
+    "current_quantity": 46,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_11",
+    "name": "약초군락",
+    "x": 188,
+    "y": 170,
+    "max_quantity": 120,
+    "current_quantity": 111,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_12",
+    "name": "약초군락",
+    "x": 177,
+    "y": 202,
+    "max_quantity": 120,
+    "current_quantity": 93,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_13",
+    "name": "약초군락",
+    "x": 178,
+    "y": 234,
+    "max_quantity": 120,
+    "current_quantity": 55,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_14",
+    "name": "약초군락",
+    "x": 233,
+    "y": 204,
+    "max_quantity": 120,
+    "current_quantity": 111,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_15",
+    "name": "약초군락",
+    "x": 183,
+    "y": 178,
+    "max_quantity": 120,
+    "current_quantity": 114,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_16",
+    "name": "약초군락",
+    "x": 233,
+    "y": 189,
+    "max_quantity": 120,
+    "current_quantity": 87,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_17",
+    "name": "약초군락",
+    "x": 172,
+    "y": 235,
+    "max_quantity": 120,
+    "current_quantity": 48,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_18",
+    "name": "약초군락",
+    "x": 232,
+    "y": 172,
+    "max_quantity": 120,
+    "current_quantity": 119,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_19",
+    "name": "약초군락",
+    "x": 186,
+    "y": 228,
+    "max_quantity": 120,
+    "current_quantity": 108,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_20",
+    "name": "약초군락",
+    "x": 214,
+    "y": 205,
+    "max_quantity": 120,
+    "current_quantity": 99,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_21",
+    "name": "약초군락",
+    "x": 234,
+    "y": 223,
+    "max_quantity": 120,
+    "current_quantity": 86,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_22",
+    "name": "약초군락",
+    "x": 198,
+    "y": 196,
+    "max_quantity": 120,
+    "current_quantity": 63,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_23",
+    "name": "약초군락",
+    "x": 191,
+    "y": 175,
+    "max_quantity": 120,
+    "current_quantity": 113,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "herb_cluster_24",
+    "name": "약초군락",
+    "x": 198,
+    "y": 232,
+    "max_quantity": 120,
+    "current_quantity": 103,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_01",
+    "name": "나무",
+    "x": 193,
+    "y": 227,
+    "max_quantity": 180,
+    "current_quantity": 106,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_02",
+    "name": "나무",
+    "x": 227,
+    "y": 179,
+    "max_quantity": 180,
+    "current_quantity": 85,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_03",
+    "name": "나무",
+    "x": 215,
+    "y": 223,
+    "max_quantity": 180,
+    "current_quantity": 91,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_04",
+    "name": "나무",
+    "x": 193,
+    "y": 189,
+    "max_quantity": 180,
+    "current_quantity": 132,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_05",
+    "name": "나무",
+    "x": 203,
+    "y": 175,
+    "max_quantity": 180,
+    "current_quantity": 155,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_06",
+    "name": "나무",
+    "x": 159,
+    "y": 241,
+    "max_quantity": 180,
+    "current_quantity": 143,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_07",
+    "name": "나무",
+    "x": 190,
+    "y": 213,
+    "max_quantity": 180,
+    "current_quantity": 158,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_08",
+    "name": "나무",
+    "x": 194,
+    "y": 233,
+    "max_quantity": 180,
+    "current_quantity": 144,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_09",
+    "name": "나무",
+    "x": 208,
+    "y": 178,
+    "max_quantity": 180,
+    "current_quantity": 177,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_10",
+    "name": "나무",
+    "x": 161,
+    "y": 204,
+    "max_quantity": 180,
+    "current_quantity": 130,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_11",
+    "name": "나무",
+    "x": 239,
+    "y": 178,
+    "max_quantity": 180,
+    "current_quantity": 77,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_12",
+    "name": "나무",
+    "x": 243,
+    "y": 209,
+    "max_quantity": 180,
+    "current_quantity": 152,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_13",
+    "name": "나무",
+    "x": 223,
+    "y": 227,
+    "max_quantity": 180,
+    "current_quantity": 106,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_14",
+    "name": "나무",
+    "x": 241,
+    "y": 219,
+    "max_quantity": 180,
+    "current_quantity": 155,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_15",
+    "name": "나무",
+    "x": 194,
+    "y": 172,
+    "max_quantity": 180,
+    "current_quantity": 129,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_16",
+    "name": "나무",
+    "x": 195,
+    "y": 191,
+    "max_quantity": 180,
+    "current_quantity": 148,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_17",
+    "name": "나무",
+    "x": 164,
+    "y": 233,
+    "max_quantity": 180,
+    "current_quantity": 77,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_18",
+    "name": "나무",
+    "x": 177,
+    "y": 206,
+    "max_quantity": 180,
+    "current_quantity": 86,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_19",
+    "name": "나무",
+    "x": 244,
+    "y": 201,
+    "max_quantity": 180,
+    "current_quantity": 120,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_20",
+    "name": "나무",
+    "x": 200,
+    "y": 233,
+    "max_quantity": 180,
+    "current_quantity": 80,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_21",
+    "name": "나무",
+    "x": 171,
+    "y": 227,
+    "max_quantity": 180,
+    "current_quantity": 121,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_22",
+    "name": "나무",
+    "x": 220,
+    "y": 205,
+    "max_quantity": 180,
+    "current_quantity": 87,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_23",
+    "name": "나무",
+    "x": 205,
+    "y": 240,
+    "max_quantity": 180,
+    "current_quantity": 105,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_24",
+    "name": "나무",
+    "x": 240,
+    "y": 223,
+    "max_quantity": 180,
+    "current_quantity": 115,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_25",
+    "name": "나무",
+    "x": 237,
+    "y": 218,
+    "max_quantity": 180,
+    "current_quantity": 99,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_26",
+    "name": "나무",
+    "x": 169,
+    "y": 180,
+    "max_quantity": 180,
+    "current_quantity": 92,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_27",
+    "name": "나무",
+    "x": 169,
+    "y": 199,
+    "max_quantity": 180,
+    "current_quantity": 154,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "tree_grove_28",
+    "name": "나무",
+    "x": 179,
+    "y": 171,
+    "max_quantity": 180,
+    "current_quantity": 132,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_01",
+    "name": "광석",
+    "x": 220,
+    "y": 203,
+    "max_quantity": 140,
+    "current_quantity": 78,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_02",
+    "name": "광석",
+    "x": 181,
+    "y": 180,
+    "max_quantity": 140,
+    "current_quantity": 63,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_03",
+    "name": "광석",
+    "x": 198,
+    "y": 248,
+    "max_quantity": 140,
+    "current_quantity": 92,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_04",
+    "name": "광석",
+    "x": 223,
+    "y": 220,
+    "max_quantity": 140,
+    "current_quantity": 61,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_05",
+    "name": "광석",
+    "x": 233,
+    "y": 245,
+    "max_quantity": 140,
+    "current_quantity": 124,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_06",
+    "name": "광석",
+    "x": 228,
+    "y": 186,
+    "max_quantity": 140,
+    "current_quantity": 103,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_07",
+    "name": "광석",
+    "x": 232,
+    "y": 230,
+    "max_quantity": 140,
+    "current_quantity": 95,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_08",
+    "name": "광석",
+    "x": 196,
+    "y": 230,
+    "max_quantity": 140,
+    "current_quantity": 58,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_09",
+    "name": "광석",
+    "x": 206,
+    "y": 231,
+    "max_quantity": 140,
+    "current_quantity": 52,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_10",
+    "name": "광석",
+    "x": 169,
+    "y": 188,
+    "max_quantity": 140,
+    "current_quantity": 71,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_11",
+    "name": "광석",
+    "x": 201,
+    "y": 200,
+    "max_quantity": 140,
+    "current_quantity": 59,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_12",
+    "name": "광석",
+    "x": 188,
+    "y": 186,
+    "max_quantity": 140,
+    "current_quantity": 58,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_13",
+    "name": "광석",
+    "x": 145,
+    "y": 199,
+    "max_quantity": 140,
+    "current_quantity": 113,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_14",
+    "name": "광석",
+    "x": 157,
+    "y": 226,
+    "max_quantity": 140,
+    "current_quantity": 123,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_15",
+    "name": "광석",
+    "x": 148,
+    "y": 189,
+    "max_quantity": 140,
+    "current_quantity": 71,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_16",
+    "name": "광석",
+    "x": 223,
+    "y": 228,
+    "max_quantity": 140,
+    "current_quantity": 64,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_17",
+    "name": "광석",
+    "x": 226,
+    "y": 212,
+    "max_quantity": 140,
+    "current_quantity": 89,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_18",
+    "name": "광석",
+    "x": 222,
+    "y": 226,
+    "max_quantity": 140,
+    "current_quantity": 105,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_19",
+    "name": "광석",
+    "x": 160,
+    "y": 194,
+    "max_quantity": 140,
+    "current_quantity": 107,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "ore_vein_20",
+    "name": "광석",
+    "x": 204,
+    "y": 241,
+    "max_quantity": 140,
+    "current_quantity": 106,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_01",
+    "name": "동물 서식지",
+    "x": 209,
+    "y": 185,
+    "max_quantity": 110,
+    "current_quantity": 48,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_02",
+    "name": "동물 서식지",
+    "x": 183,
+    "y": 218,
+    "max_quantity": 110,
+    "current_quantity": 63,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_03",
+    "name": "동물 서식지",
+    "x": 231,
+    "y": 195,
+    "max_quantity": 110,
+    "current_quantity": 96,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_04",
+    "name": "동물 서식지",
+    "x": 172,
+    "y": 201,
+    "max_quantity": 110,
+    "current_quantity": 97,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_05",
+    "name": "동물 서식지",
+    "x": 216,
+    "y": 193,
+    "max_quantity": 110,
+    "current_quantity": 99,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_06",
+    "name": "동물 서식지",
+    "x": 173,
+    "y": 242,
+    "max_quantity": 110,
+    "current_quantity": 68,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_07",
+    "name": "동물 서식지",
+    "x": 181,
+    "y": 208,
+    "max_quantity": 110,
+    "current_quantity": 96,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_08",
+    "name": "동물 서식지",
+    "x": 216,
+    "y": 196,
+    "max_quantity": 110,
+    "current_quantity": 75,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_09",
+    "name": "동물 서식지",
+    "x": 198,
+    "y": 243,
+    "max_quantity": 110,
+    "current_quantity": 99,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_10",
+    "name": "동물 서식지",
+    "x": 234,
+    "y": 217,
+    "max_quantity": 110,
+    "current_quantity": 58,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_11",
+    "name": "동물 서식지",
+    "x": 248,
+    "y": 199,
+    "max_quantity": 110,
+    "current_quantity": 60,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_12",
+    "name": "동물 서식지",
+    "x": 221,
+    "y": 204,
+    "max_quantity": 110,
+    "current_quantity": 55,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_13",
+    "name": "동물 서식지",
+    "x": 236,
+    "y": 238,
+    "max_quantity": 110,
+    "current_quantity": 75,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_14",
+    "name": "동물 서식지",
+    "x": 173,
+    "y": 178,
+    "max_quantity": 110,
+    "current_quantity": 65,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_15",
+    "name": "동물 서식지",
+    "x": 230,
+    "y": 208,
+    "max_quantity": 110,
+    "current_quantity": 54,
+    "is_workbench": false,
+    "is_discovered": false
+  },
+  {
+    "key": "animal_habitat_16",
+    "name": "동물 서식지",
+    "x": 247,
+    "y": 219,
+    "max_quantity": 110,
+    "current_quantity": 87,
+    "is_workbench": false,
+    "is_discovered": false
+  }
 ]

@@ -57,18 +57,16 @@ class ActionExecutor:
     def resolve_work_destination(
         self,
         npc: NPC,
-        fallback_building: Building,
         random_outside_tile_fn: Callable[[], Tuple[int, int]],
-    ) -> Tuple[Optional[Building], Optional[Tuple[int, int]]]:
+    ) -> Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
         action_name = npc.current_work_action or ""
         action = self.action_defs.get(action_name, {})
         entity_key = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
         if entity_key:
             tile = self.entity_manager.resolve_target_tile(entity_key)
             if tile is not None:
-                return None, tile
-            return None, random_outside_tile_fn()
-        return fallback_building, None
+                return tile, None
+        return None, random_outside_tile_fn()
 
     def do_eat_at_restaurant(self, npc: NPC) -> str:
         s = npc.status

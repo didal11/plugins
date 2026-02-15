@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import pygame
 from combat import resolve_combat_round
@@ -132,6 +132,10 @@ def rect_union(rects: List[TileRect]) -> TileRect:
     for rr in rects[1:]:
         r.union_ip(rr)
     return r
+
+ADVENTURER_GATHER_ACTIONS: Set[str] = {"약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"}
+
+
 
 
 # ============================================================
@@ -382,6 +386,9 @@ class VillageGame:
         self.bstate: Dict[str, BuildingState] = {}
         self._init_building_states()
         self.entity_manager = EntityManager(self.entities, self.rng)
+        self.guild_board_state: Dict[str, object] = {"known_entities": {}, "quests": []}
+        self.guild_board_tile: Optional[Tuple[int, int]] = self.entity_manager.resolve_target_tile("guild_board")
+        self._init_guild_board_state()
         self.action_executor = ActionExecutor(
             self.rng,
             self.sim_settings,
@@ -597,6 +604,7 @@ class VillageGame:
                 location_building=home if not hostile else None,
                 inventory={},
                 target_outside_tile=None,
+                target_entity_tile=None,
             )
             if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
@@ -644,6 +652,161 @@ class VillageGame:
             if self.get_building_world_rect(b).collidepoint(wx, wy):
                 return b.name
         return None
+
+    def _init_guild_board_state(self) -> None:
+        known = self.guild_board_state.setdefault("known_entities", {})
+        if not isinstance(known, dict):
+            known = {}
+            self.guild_board_state["known_entities"] = known
+        for ent in self.entities:
+            if bool(ent.get("is_workbench", False)):
+                continue
+            if bool(ent.get("is_discovered", False)):
+                key = str(ent.get("key", "")).strip()
+                if key:
+                    known[key] = {
+                        "x": int(ent.get("x", 0)),
+                        "y": int(ent.get("y", 0)),
+                        "qty": int(ent.get("current_quantity", 0)),
+                        "name": str(ent.get("name", key)),
+                    }
+
+    def _sync_guild_board_quantities(self) -> None:
+        known = self.guild_board_state.get("known_entities", {})
+        if not isinstance(known, dict):
+            return
+        remove_keys: List[str] = []
+        for key in list(known.keys()):
+            ent = self.entity_manager.find_by_key(key)
+            if ent is None or int(ent.get("current_quantity", 0)) <= 0:
+                remove_keys.append(key)
+                continue
+            known[key]["qty"] = int(ent.get("current_quantity", 0))
+            known[key]["x"] = int(ent.get("x", 0))
+            known[key]["y"] = int(ent.get("y", 0))
+        for key in remove_keys:
+            known.pop(key, None)
+
+    def _register_discovered_entity(self, ent: Dict[str, object]) -> None:
+        if bool(ent.get("is_workbench", False)):
+            return
+        key = str(ent.get("key", "")).strip()
+        if not key:
+            return
+        known = self.guild_board_state.setdefault("known_entities", {})
+        if not isinstance(known, dict):
+            return
+        known[key] = {
+            "x": int(ent.get("x", 0)),
+            "y": int(ent.get("y", 0)),
+            "qty": int(ent.get("current_quantity", 0)),
+            "name": str(ent.get("name", key)),
+        }
+
+    def _guild_board_known_keys(self) -> Set[str]:
+        known = self.guild_board_state.get("known_entities", {})
+        if not isinstance(known, dict):
+            return set()
+        return set(str(k) for k in known.keys())
+
+    def _pick_known_entity_tile(self, required_entity_key: str) -> Optional[Tuple[int, int]]:
+        known = self.guild_board_state.get("known_entities", {})
+        if not isinstance(known, dict):
+            return None
+        candidates: List[Tuple[int, int]] = []
+        req = str(required_entity_key).strip()
+        for key, info in known.items():
+            k = str(key).strip()
+            if not (k == req or k.startswith(f"{req}_")):
+                continue
+            if not isinstance(info, dict):
+                continue
+            qty = int(info.get("qty", 0))
+            if qty <= 0:
+                continue
+            candidates.append((int(info.get("x", 0)), int(info.get("y", 0))))
+        if not candidates:
+            return None
+        return self.rng.choice(candidates)
+
+    def _adventurer_scan_tiles(self, npc: NPC) -> List[Tuple[int, int]]:
+        if npc.explore_anchor_tile is None:
+            npc.explore_anchor_tile = world_px_to_tile(npc.x, npc.y)
+            npc.explore_scan_index = 0
+        ax, ay = npc.explore_anchor_tile
+        pattern = [
+            (-1, -1), (0, -1), (1, -1),
+            (1, 0), (-1, 0),
+            (-1, 1), (0, 1), (1, 1),
+        ]
+        out: List[Tuple[int, int]] = []
+        for dx, dy in pattern:
+            tx = max(0, min(GRID_W - 1, ax + dx))
+            ty = max(0, min(GRID_H - 1, ay + dy))
+            out.append((tx, ty))
+        return out
+
+    def _next_explore_tile(self, npc: NPC) -> Tuple[int, int]:
+        tiles = self._adventurer_scan_tiles(npc)
+        idx = max(0, min(npc.explore_scan_index, len(tiles) - 1))
+        return tiles[idx]
+
+    def _do_board_check(self, npc: NPC) -> str:
+        npc.adventurer_board_visited = True
+        npc.explore_anchor_tile = None
+        npc.explore_scan_index = 0
+        self._sync_guild_board_quantities()
+        known = self.guild_board_state.get("known_entities", {})
+        known_count = len(known) if isinstance(known, dict) else 0
+        return f"{npc.traits.name}: 길드 게시판 확인(등록 {known_count})"
+
+    def _do_explore_action(self, npc: NPC) -> str:
+        tx, ty = world_px_to_tile(npc.x, npc.y)
+        found = self.entity_manager.discover_near((tx, ty), radius=1)
+        npc.explore_scan_index += 1
+        if npc.explore_scan_index >= 8:
+            npc.explore_anchor_tile = (tx, ty)
+            npc.explore_scan_index = 0
+        if found is not None:
+            self._register_discovered_entity(found)
+            npc.adventurer_board_visited = False
+            npc.current_work_action = "게시판확인"
+            npc.work_hours_remaining = 0
+            return f"{npc.traits.name}: 탐색 성공({found.get('name', '자원')} @ {found.get('x')},{found.get('y')})"
+        return f"{npc.traits.name}: 탐색 진행(미발견)"
+
+    def _pick_adventurer_work_action(self, npc: NPC) -> Optional[str]:
+        if not npc.adventurer_board_visited:
+            return "게시판확인"
+        known_keys = self._guild_board_known_keys()
+        if not known_keys:
+            return "탐색"
+        candidate_actions = self.job_work_actions.get(JobType.ADVENTURER.value, [])
+        viable: List[str] = []
+        for action_name in candidate_actions:
+            if action_name in ("게시판확인", "탐색"):
+                continue
+            action = self.action_defs.get(action_name, {})
+            entity_key = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
+            if not entity_key:
+                continue
+            if entity_key in known_keys or any(x.startswith(f"{entity_key}_") for x in known_keys):
+                viable.append(action_name)
+        if not viable:
+            return "탐색"
+        return self.rng.choice(viable)
+
+    def _execute_primary_action(self, npc: NPC) -> str:
+        prev_action = npc.current_work_action
+        result = self._primary_action(npc)
+        if prev_action == "게시판확인":
+            result = self._do_board_check(npc)
+            npc.current_work_action = None
+            npc.work_hours_remaining = 0
+        if npc.traits.job == JobType.ADVENTURER and prev_action in ADVENTURER_GATHER_ACTIONS and npc.current_work_action is None:
+            result = f"{result} | {self._profit_action(npc)}"
+            npc.adventurer_board_visited = False
+        return result
 
     # -----------------------------
     # Planning / actions
@@ -706,11 +869,19 @@ class VillageGame:
     def _set_target_building(self, npc: NPC, b: Building) -> None:
         npc.target_building = b
         npc.target_outside_tile = None
+        npc.target_entity_tile = None
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), b.random_tile_inside(self.rng))
 
     def _set_target_outside(self, npc: NPC, tile: Tuple[int, int]) -> None:
         npc.target_building = None
         npc.target_outside_tile = tile
+        npc.target_entity_tile = None
+        npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
+
+    def _set_target_entity(self, npc: NPC, tile: Tuple[int, int]) -> None:
+        npc.target_building = None
+        npc.target_outside_tile = None
+        npc.target_entity_tile = tile
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
 
 
@@ -729,6 +900,7 @@ class VillageGame:
             npc.path = []
             npc.target_building = None
             npc.target_outside_tile = None
+            npc.target_entity_tile = None
             self.behavior.set_dead_state(npc)
             return
 
@@ -747,26 +919,51 @@ class VillageGame:
                 self._set_target_outside(npc, out_tile)
                 return
 
-        job = npc.traits.job
         activity = self.behavior.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
                 npc.work_hours_remaining = 0
             npc.status.current_action = npc.current_work_action or "업무"
-            fallback_wp = self._workplace_for_job(job) or npc.home_building
-            target_building, target_outside = self.action_executor.resolve_work_destination(npc, fallback_wp, self.random_outside_tile)
-            if target_building is not None:
-                self._set_target_building(npc, target_building)
+
+            if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "게시판확인":
+                board_tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
+                if board_tile is not None:
+                    self._set_target_entity(npc, board_tile)
+                else:
+                    self._set_target_building(npc, self.building_by_name["모험가 길드"])
+                return
+
+            if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
+                self._set_target_outside(npc, self._next_explore_tile(npc))
+                return
+
+            if npc.traits.job == JobType.ADVENTURER and (npc.current_work_action or "") in ADVENTURER_GATHER_ACTIONS:
+                action = self.action_defs.get(npc.current_work_action or "", {})
+                required_key = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
+                known_tile = self._pick_known_entity_tile(required_key)
+                if known_tile is not None:
+                    self._set_target_entity(npc, known_tile)
+                else:
+                    npc.current_work_action = "탐색"
+                    npc.work_hours_remaining = 0
+                    self._set_target_outside(npc, self._next_explore_tile(npc))
+                return
+
+            target_entity, target_outside = self.action_executor.resolve_work_destination(npc, self.random_outside_tile)
+            if target_entity is not None:
+                self._set_target_entity(npc, target_entity)
             elif target_outside is not None:
                 self._set_target_outside(npc, target_outside)
             else:
-                self._set_target_building(npc, fallback_wp)
+                self._set_target_outside(npc, self.random_outside_tile())
             return
 
         self._set_target_building(npc, npc.home_building)
 
     def _pick_work_action(self, npc: NPC) -> Optional[str]:
+        if npc.traits.job == JobType.ADVENTURER:
+            return self._pick_adventurer_work_action(npc)
         actions = self.job_work_actions.get(npc.traits.job.value, [])
         if not actions:
             return None
@@ -788,7 +985,16 @@ class VillageGame:
     # Tick + movement
     # -----------------------------
     def _ensure_work_actions_selected(self) -> None:
-        self.behavior.ensure_work_actions_selected(self.npcs, self.time.hour, self._is_hostile)
+        if self.behavior.activity_for_hour(self.time.hour) != ScheduledActivity.WORK:
+            return
+        for npc in self.npcs:
+            if npc.status.hp <= 0 or self._is_hostile(npc):
+                continue
+            if npc.current_work_action is None:
+                npc.current_work_action = self._pick_work_action(npc)
+                npc.work_hours_remaining = 0
+            detail = npc.current_work_action or "업무선택실패"
+            self.behavior.set_activity(npc, "업무", detail)
 
     def sim_tick_1hour(self) -> None:
         self.time.advance(1)
@@ -801,6 +1007,7 @@ class VillageGame:
         eco_logs: List[str] = []
         self.last_economy_snapshot = self.economy.run_hour(self.npcs, self.bstate, eco_logs)
         self.logs.extend(eco_logs[-4:])
+        self._sync_guild_board_quantities()
 
         for npc in self.npcs:
             if npc.status.hp <= 0:
@@ -827,16 +1034,21 @@ class VillageGame:
                         self._plan_next_target(npc)
                         continue
 
-                # adventurer outside arrival
-                if npc.traits.job == JobType.ADVENTURER and self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_outside_tile is not None:
-                    if (tx, ty) == npc.target_outside_tile or (abs(tx - npc.target_outside_tile[0]) + abs(ty - npc.target_outside_tile[1]) <= 1):
-                        self.logs.append(self._primary_action(npc))
+                if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.current_work_action == "탐색" and npc.target_outside_tile is not None:
+                    if (tx, ty) == npc.target_outside_tile:
+                        self.logs.append(self._do_explore_action(npc))
+                        self._plan_next_target(npc)
+                        continue
+
+                if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_entity_tile is not None:
+                    if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
+                        self.logs.append(self._execute_primary_action(npc))
                         self._plan_next_target(npc)
                         continue
 
                 if npc.target_building is not None and npc.location_building is not None and npc.location_building == npc.target_building:
                     if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK:
-                        self.logs.append(self._primary_action(npc))
+                        self.logs.append(self._execute_primary_action(npc))
                     self._plan_next_target(npc)
                 else:
                     self._plan_next_target(npc)
@@ -1046,6 +1258,8 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
         tgt = "(없음)"
         if npc.target_building is not None:
             tgt = f"{npc.target_building.zone.value}/{npc.target_building.name}"
+        elif npc.target_entity_tile is not None:
+            tgt = f"엔티티 타일 {npc.target_entity_tile}"
         elif npc.target_outside_tile is not None:
             tgt = f"{RegionType.OUTSIDE.value} 타일 {npc.target_outside_tile}"
         lines = [
