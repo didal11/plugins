@@ -12,7 +12,11 @@
       }
     },
     "fatigue": 14,
-    "hunger": 8
+    "hunger": 8,
+    "required_entity": {
+      "kind": "building",
+      "name": "농장"
+    }
   },
   {
     "name": "낚시",
@@ -27,7 +31,11 @@
       }
     },
     "fatigue": 13,
-    "hunger": 7
+    "hunger": 7,
+    "required_entity": {
+      "kind": "building",
+      "name": "낚시터"
+    }
   },
   {
     "name": "제련",
@@ -42,7 +50,11 @@
       }
     },
     "fatigue": 12,
-    "hunger": 7
+    "hunger": 7,
+    "required_entity": {
+      "kind": "building",
+      "name": "대장간"
+    }
   },
   {
     "name": "도구제작",
@@ -57,7 +69,11 @@
       }
     },
     "fatigue": 11,
-    "hunger": 6
+    "hunger": 6,
+    "required_entity": {
+      "kind": "building",
+      "name": "대장간"
+    }
   },
   {
     "name": "약 제조",
@@ -72,7 +88,11 @@
       }
     },
     "fatigue": 10,
-    "hunger": 6
+    "hunger": 6,
+    "required_entity": {
+      "kind": "building",
+      "name": "약국"
+    }
   },
   {
     "name": "약초채집",
@@ -87,7 +107,11 @@
       }
     },
     "fatigue": 11,
-    "hunger": 7
+    "hunger": 7,
+    "required_entity": {
+      "kind": "entity",
+      "entity_type": "resource"
+    }
   },
   {
     "name": "벌목",
@@ -102,7 +126,10 @@
       }
     },
     "fatigue": 15,
-    "hunger": 9
+    "hunger": 9,
+    "required_entity": {
+      "kind": "outside"
+    }
   },
   {
     "name": "채광",
@@ -117,7 +144,10 @@
       }
     },
     "fatigue": 16,
-    "hunger": 9
+    "hunger": 9,
+    "required_entity": {
+      "kind": "outside"
+    }
   },
   {
     "name": "동물사냥",
@@ -136,7 +166,10 @@
       }
     },
     "fatigue": 16,
-    "hunger": 10
+    "hunger": 10,
+    "required_entity": {
+      "kind": "outside"
+    }
   },
   {
     "name": "몬스터사냥",
@@ -155,6 +188,9 @@
       }
     },
     "fatigue": 18,
-    "hunger": 11
+    "hunger": 11,
+    "required_entity": {
+      "kind": "outside"
+    }
   }
 ]

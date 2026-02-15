@@ -46,16 +46,16 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
-    {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
-    {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
-    {"name": "도구제작", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
-    {"name": "약 제조", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
-    {"name": "약초채집", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
-    {"name": "벌목", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
-    {"name": "채광", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
-    {"name": "동물사냥", "duration_hours": 3, "required_tools": ["도구"], "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
-    {"name": "몬스터사냥", "duration_hours": 3, "required_tools": ["도구"], "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
+    {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "required_entity": {"kind": "building", "name": "농장"}, "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
+    {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "required_entity": {"kind": "building", "name": "낚시터"}, "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
+    {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "required_entity": {"kind": "building", "name": "대장간"}, "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
+    {"name": "도구제작", "duration_hours": 1, "required_tools": ["도구"], "required_entity": {"kind": "building", "name": "대장간"}, "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
+    {"name": "약 제조", "duration_hours": 1, "required_tools": ["도구"], "required_entity": {"kind": "building", "name": "약국"}, "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
+    {"name": "약초채집", "duration_hours": 1, "required_tools": ["도구"], "required_entity": {"kind": "entity", "entity_type": "resource"}, "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
+    {"name": "벌목", "duration_hours": 2, "required_tools": ["도구"], "required_entity": {"kind": "outside"}, "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
+    {"name": "채광", "duration_hours": 2, "required_tools": ["도구"], "required_entity": {"kind": "outside"}, "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
+    {"name": "동물사냥", "duration_hours": 3, "required_tools": ["도구"], "required_entity": {"kind": "outside"}, "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
+    {"name": "몬스터사냥", "duration_hours": 3, "required_tools": ["도구"], "required_entity": {"kind": "outside"}, "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -305,7 +305,8 @@ def load_action_defs() -> List[Dict[str, object]]:
         out.append({
             "name": name,
             "duration_hours": max(1, int(row.get("duration_hours", 1))),
-            "required_tools": ["도구"],
+            "required_tools": [str(x).strip() for x in row.get("required_tools", []) if str(x).strip()] if isinstance(row.get("required_tools", []), list) else ["도구"],
+            "required_entity": row.get("required_entity", {}) if isinstance(row.get("required_entity", {}), dict) else {},
             "outputs": outputs,
             "fatigue": int(row.get("fatigue", 12)),
             "hunger": int(row.get("hunger", 8)),

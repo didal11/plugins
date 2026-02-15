@@ -50,6 +50,7 @@ from config import (
 from economy import EconomySystem
 from planning import DailyPlanner, ScheduledActivity
 from behavior_decision import BehaviorDecisionEngine
+from action_execution import ActionExecutor
 from editable_data import (
     ensure_data_files,
     load_entities,
@@ -359,6 +360,7 @@ class VillageGame:
             job_name: [self.action_defs[action_name] for action_name in action_names if action_name in self.action_defs]
             for job_name, action_names in self.job_work_actions.items()
         }
+        self.behavior = BehaviorDecisionEngine(self.planner, self.rng, self.job_work_actions, self.action_defs)
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -378,6 +380,18 @@ class VillageGame:
         # Building state
         self.bstate: Dict[str, BuildingState] = {}
         self._init_building_states()
+        self.action_executor = ActionExecutor(
+            self.rng,
+            self.sim_settings,
+            self.items,
+            self.item_display_to_key,
+            self.action_defs,
+            self.bstate,
+            self.building_by_name,
+            self.entities,
+            self.behavior,
+            self._status_clamp,
+        )
 
         # NPC
         self.npcs: List[NPC] = []
@@ -782,8 +796,14 @@ class VillageGame:
                 else:
                     self._set_target_outside(npc, self.random_outside_tile())
             else:
-                wp = self._workplace_for_job(job)
-                self._set_target_building(npc, wp if wp is not None else npc.home_building)
+                fallback_wp = self._workplace_for_job(job) or npc.home_building
+                target_building, target_outside = self.action_executor.resolve_work_destination(npc, fallback_wp, self.random_outside_tile)
+                if target_building is not None:
+                    self._set_target_building(npc, target_building)
+                elif target_outside is not None:
+                    self._set_target_outside(npc, target_outside)
+                else:
+                    self._set_target_building(npc, fallback_wp)
             return
 
         self._set_target_building(npc, npc.home_building)
@@ -794,240 +814,24 @@ class VillageGame:
             return None
         return self.rng.choice(actions)
 
-    def _required_tool_keys(self, required_tools: object) -> List[str]:
-        if not isinstance(required_tools, list):
-            return []
-        keys: List[str] = []
-        for raw in required_tools:
-            tool_name = str(raw).strip()
-            if not tool_name:
-                continue
-            if tool_name in self.items:
-                keys.append(tool_name)
-                continue
-            item_key = self.item_display_to_key.get(tool_name)
-            if item_key is not None:
-                keys.append(item_key)
-        return keys
-
     def _do_eat_at_restaurant(self, npc: NPC) -> str:
-        s = npc.status
-        st = self.bstate["식당"]
-        fee = 12
-        if s.money < fee:
-            s.happiness -= 3
-            s.hunger += 3
-            self._status_clamp(npc)
-            st.last_event = f"{npc.traits.name} 돈 부족"
-            return f"{npc.traits.name}: 식당(돈없음)"
-        s.money -= fee
-        before = s.hunger
-        s.hunger -= int(self.sim_settings.get("meal_hunger_restore", 38.0))
-        s.happiness += 3
-        s.fatigue += 1
-        self._status_clamp(npc)
-        # 재고 소모
-        for k in ["bread", "meat", "fish"]:
-            if st.inventory.get(k, 0) > 0 and self.rng.random() < 0.6:
-                st.inventory[k] -= 1
-                if st.inventory[k] <= 0:
-                    del st.inventory[k]
-                break
-        st.task = "조리/서빙"
-        st.task_progress = (st.task_progress + 15) % 101
-        st.last_event = f"{npc.traits.name} 식사"
-        self.behavior.set_meal_state(npc)
-        return f"{npc.traits.name}: 식사 허기 {before}->{s.hunger}"
+        return self.action_executor.do_eat_at_restaurant(npc)
 
     def _do_rest_at_home(self, npc: NPC) -> str:
-        s = npc.status
-        before = s.fatigue
-        s.fatigue -= int(self.sim_settings.get("rest_fatigue_restore", 28.0))
-        s.hunger += 6
-        s.happiness += 2
-        self._status_clamp(npc)
-        st = self.bstate[npc.home_building.name]
-        st.last_event = f"{npc.traits.name} 휴식"
-        self.behavior.set_sleep_state(npc)
-        return f"{npc.traits.name}: 휴식 피로 {before}->{s.fatigue}"
+        return self.action_executor.do_rest_at_home(npc)
 
     def _primary_action(self, npc: NPC) -> str:
-        action_name = npc.current_work_action or self._pick_work_action(npc)
-        if action_name is None:
-            return f"{npc.traits.name}: 작업(정의 없음)"
-        npc.current_work_action = action_name
-
-        action = self.action_defs.get(action_name, {})
-        duration_hours = max(1, int(action.get("duration_hours", 1)))
-        if npc.work_hours_remaining <= 0:
-            npc.work_hours_remaining = duration_hours
-
-        tool_names = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
-        required_keys = self._required_tool_keys(tool_names)
-        missing_tools = [k for k in required_keys if int(npc.inventory.get(k, 0)) <= 0]
-        if missing_tools:
-            display_names = [self.items[k].display if k in self.items else k for k in missing_tools]
-            npc.status.current_action = f"{action_name}(도구부족)"
-            return f"{npc.traits.name}: {action_name} 실패(도구 부족: {', '.join(display_names)})"
-
-        npc.work_hours_remaining = max(0, npc.work_hours_remaining - 1)
-        done_hours = duration_hours - npc.work_hours_remaining
-
-        fatigue_cost = int(action.get("fatigue", 12))
-        hunger_cost = int(action.get("hunger", 8))
-        per_hour_fatigue = max(0, round(fatigue_cost / duration_hours))
-        per_hour_hunger = max(0, round(hunger_cost / duration_hours))
-
-        s = npc.status
-        s.fatigue += per_hour_fatigue
-        s.hunger += per_hour_hunger
-        s.happiness -= 1
-        self._status_clamp(npc)
-
-        worksite = self._workplace_for_job(npc.traits.job)
-        if worksite is not None and worksite.name in self.bstate:
-            bst = self.bstate[worksite.name]
-            bst.task = action_name
-            bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            bst.last_event = f"{npc.traits.name} {action_name} {done_hours}/{duration_hours}"
-
-        if npc.work_hours_remaining > 0:
-            npc.status.current_action = f"{action_name}({done_hours}/{duration_hours})"
-            return f"{npc.traits.name}: {action_name} 진행 {done_hours}/{duration_hours}h"
-
-        outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
-        gained_parts: List[str] = []
-        valid_items = set(self.items.keys())
-        for item, spec in outputs.items():
-            if str(item) not in valid_items:
-                continue
-            qty = 0
-            if isinstance(spec, int):
-                qty = max(0, int(spec))
-            elif isinstance(spec, dict):
-                lo = int(spec.get("min", 0))
-                hi = int(spec.get("max", lo))
-                if hi < lo:
-                    lo, hi = hi, lo
-                qty = self.rng.randint(max(0, lo), max(0, hi))
-            if qty <= 0:
-                continue
-            npc.inventory[str(item)] = int(npc.inventory.get(str(item), 0)) + qty
-            gained_parts.append(f"{item}+{qty}")
-
-        tool_text = f" 도구:{', '.join([str(x) for x in tool_names])}" if tool_names else ""
-        gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
-        npc.status.current_action = action_name
-        npc.current_work_action = None
-        npc.work_hours_remaining = 0
-        return f"{npc.traits.name}: {action_name} 완료({gained_text}){tool_text}"
+        return self.action_executor.primary_action(npc)
 
     def _profit_action(self, npc: NPC) -> str:
-        job = npc.traits.job
-        s = npc.status
-
-        if job == JobType.ADVENTURER:
-            guild = self.bstate["모험가 길드"]
-            moved = 0
-            earned = 0
-            price = {"meat": 10, "wood": 8, "ore": 12, "potion": 16}
-            for k in ["meat", "wood", "ore", "potion"]:
-                q = int(npc.inventory.get(k, 0))
-                if q <= 0:
-                    continue
-                take = min(q, 2)
-                npc.inventory[k] = q - take
-                if npc.inventory[k] <= 0:
-                    npc.inventory.pop(k, None)
-                guild.inventory[k] = int(guild.inventory.get(k, 0)) + take
-                moved += take
-                earned += price.get(k, 5) * take
-            if moved == 0:
-                s.happiness -= 1
-                self._status_clamp(npc)
-                guild.last_event = f"{npc.traits.name} 납품(없음)"
-                return f"{npc.traits.name}: 길드 납품(없음)"
-            s.money += earned
-            s.happiness += 2
-            self._status_clamp(npc)
-            guild.task_progress = (guild.task_progress + 12) % 101
-            guild.last_event = f"{npc.traits.name} 납품({moved}) +{earned}G"
-            return f"{npc.traits.name}: 길드 납품({moved}) +{earned}G"
-
-        if job in (JobType.FARMER, JobType.FISHER):
-            shop = self.bstate["잡화점"]
-            item = "bread" if job == JobType.FARMER else "fish"
-            unit = 6 if job == JobType.FARMER else 7
-            q = int(npc.inventory.get(item, 0))
-            if q <= 0:
-                s.happiness -= 1
-                self._status_clamp(npc)
-                shop.last_event = f"{npc.traits.name} 판매(없음)"
-                return f"{npc.traits.name}: 잡화점 판매(없음)"
-            sell = min(q, 3)
-            npc.inventory[item] = q - sell
-            if npc.inventory[item] <= 0:
-                npc.inventory.pop(item, None)
-            shop.inventory[item] = int(shop.inventory.get(item, 0)) + sell
-            gained = unit * sell
-            s.money += gained
-            s.happiness += 1
-            self._status_clamp(npc)
-            shop.task_progress = (shop.task_progress + 10) % 101
-            shop.last_event = f"{npc.traits.name} 판매({item} {sell}) +{gained}G"
-            return f"{npc.traits.name}: 잡화점 판매(+{gained}G)"
-
-        if job == JobType.BLACKSMITH:
-            smith = self.bstate["대장간"]
-            item = "ore"
-            unit = 12
-            q = int(npc.inventory.get(item, 0))
-            if q <= 0:
-                s.happiness -= 1
-                self._status_clamp(npc)
-                smith.last_event = f"{npc.traits.name} 판매(없음)"
-                return f"{npc.traits.name}: 대장간 판매(없음)"
-            sell = min(q, 2)
-            npc.inventory[item] = q - sell
-            if npc.inventory[item] <= 0:
-                npc.inventory.pop(item, None)
-            smith.inventory[item] = int(smith.inventory.get(item, 0)) + sell
-            gained = unit * sell
-            s.money += gained
-            s.happiness += 1
-            self._status_clamp(npc)
-            smith.task_progress = (smith.task_progress + 10) % 101
-            smith.last_event = f"{npc.traits.name} 판매({sell}) +{gained}G"
-            return f"{npc.traits.name}: 대장간 판매(+{gained}G)"
-
-        if job == JobType.PHARMACIST:
-            pharm = self.bstate["약국"]
-            item = "potion"
-            unit = 18
-            q = int(npc.inventory.get(item, 0))
-            if q <= 0:
-                s.happiness -= 1
-                self._status_clamp(npc)
-                pharm.last_event = f"{npc.traits.name} 판매(없음)"
-                return f"{npc.traits.name}: 약국 판매(없음)"
-            sell = min(q, 2)
-            npc.inventory[item] = q - sell
-            if npc.inventory[item] <= 0:
-                npc.inventory.pop(item, None)
-            pharm.inventory[item] = int(pharm.inventory.get(item, 0)) + sell
-            gained = unit * sell
-            s.money += gained
-            s.happiness += 1
-            self._status_clamp(npc)
-            pharm.task_progress = (pharm.task_progress + 10) % 101
-            pharm.last_event = f"{npc.traits.name} 판매({sell}) +{gained}G"
-            return f"{npc.traits.name}: 약국 판매(+{gained}G)"
-
-        return f"{npc.traits.name}: 수익창출(대기)"
+        return self.action_executor.profit_action(npc)
 
     # -----------------------------
     # Tick + movement
     # -----------------------------
+    def _ensure_work_actions_selected(self) -> None:
+        self.behavior.ensure_work_actions_selected(self.npcs, self.time.hour, self._is_hostile)
+
     def sim_tick_1hour(self) -> None:
         self.time.advance(1)
         self._ensure_work_actions_selected()
