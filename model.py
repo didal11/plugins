@@ -207,5 +207,6 @@ class NPC:
     explore_known_buffer: Dict[str, Dict[str, object]] = field(default_factory=dict)
     explore_duration_ticks: int = 0
     explore_chain_remaining: int = 0
+    home_sleep_tile: Optional[Tuple[int, int]] = None
     hunger_tick_buffer: float = 0.0
     fatigue_tick_buffer: float = 0.0

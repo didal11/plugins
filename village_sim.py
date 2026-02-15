@@ -577,6 +577,7 @@ class VillageGame:
             else:
                 home = self.rng.choice(res_buildings)
                 tx, ty = home.random_tile_inside(self.rng)
+            home_sleep_tile = home.random_tile_inside(self.rng)
             wx, wy = tile_to_world_px_center(tx, ty)
             max_hp = max(1, int(t.get("max_hp", self.rng.randint(85, 125))) + int(race_cfg.get("hp_bonus", 0)))
             hp = max(0, min(max_hp, int(t.get("hp", max_hp))))
@@ -613,6 +614,7 @@ class VillageGame:
                 inventory={},
                 target_outside_tile=None,
                 target_entity_tile=None,
+                home_sleep_tile=home_sleep_tile,
             )
             if self.rng.random() < 0.6 and "bread" in self.items:
                 npc.inventory["bread"] = self.rng.randint(0, 2)
@@ -1045,9 +1047,6 @@ class VillageGame:
         if activity == ScheduledActivity.MEAL:
             self.behavior.set_meal_state(npc)
             return "dining_table"
-        if activity == ScheduledActivity.SLEEP:
-            self.behavior.set_sleep_state(npc)
-            return "bed"
         return None
 
     def _set_target_outside(self, npc: NPC, tile: Tuple[int, int]) -> None:
@@ -1102,6 +1101,16 @@ class VillageGame:
         if self._is_hostile(npc):
             self.behavior.set_wander_state(npc)
             self._set_target_outside(npc, self.random_outside_tile())
+            return
+
+        activity_now = self.planner.activity_for_hour(self.time.hour)
+        if activity_now == ScheduledActivity.SLEEP:
+            self.behavior.set_sleep_state(npc)
+            sleep_tile = npc.home_sleep_tile
+            if sleep_tile is None or not npc.home_building.contains_tile(*sleep_tile):
+                sleep_tile = npc.home_building.random_tile_inside(self.rng)
+                npc.home_sleep_tile = sleep_tile
+            self._set_target_entity(npc, sleep_tile)
             return
 
         override_entity_key = self._scheduled_destination_entity_key(npc)
