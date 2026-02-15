@@ -41,12 +41,14 @@ class SelectionType(Enum):
     NONE = "none"
     NPC = "npc"
     BUILDING = "building"
+    BOARD = "board"
 
 
 class ModalKind(Enum):
     NONE = "none"
     NPC = "npc"
     BUILDING = "building"
+    BOARD = "board"
 
 
 class BuildingTab(Enum):
@@ -59,6 +61,12 @@ class NPCTab(Enum):
     TRAITS = "트레잇"
     STATUS = "스테이터스"
     INVENTORY = "인벤토리"
+
+
+class BoardTab(Enum):
+    ENTITIES = "자원 목록"
+    CELLS = "탐색 기록"
+    EXPLORE = "탐색 설정"
 
 
 @dataclass
