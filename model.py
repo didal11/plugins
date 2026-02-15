@@ -190,3 +190,5 @@ class NPC:
     location_building: Optional[Building]
     inventory: Dict[str, int]
     target_outside_tile: Optional[Tuple[int, int]]
+    current_work_action: Optional[str] = None
+    work_hours_remaining: int = 0
