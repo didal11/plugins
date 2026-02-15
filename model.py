@@ -186,7 +186,6 @@ class NPC:
     y: float
     path: List[Tuple[int, int]]
     home_building: Building
-    target_building: Optional[Building]
     location_building: Optional[Building]
     inventory: Dict[str, int]
     target_outside_tile: Optional[Tuple[int, int]]

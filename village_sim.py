@@ -600,7 +600,6 @@ class VillageGame:
                 y=float(wy),
                 path=[],
                 home_building=home,
-                target_building=None,
                 location_building=home if not hostile else None,
                 inventory={},
                 target_outside_tile=None,
@@ -832,57 +831,45 @@ class VillageGame:
             s.happiness -= 3
         self._status_clamp(npc)
 
-    def _scheduled_destination(self, npc: NPC) -> Optional[Tuple[str, Optional[Building], Optional[Tuple[int, int]]]]:
+    def _scheduled_destination_entity_key(self, npc: NPC) -> Optional[str]:
         activity = self.planner.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.MEAL:
             self.behavior.set_meal_state(npc)
-            return ("eat", self.building_by_name.get("식당"), None)
+            return "dining_table"
         if activity == ScheduledActivity.SLEEP:
             self.behavior.set_sleep_state(npc)
-            return ("rest", npc.home_building, None)
+            return "bed"
         return None
-
-    def _workplace_for_job(self, job: JobType) -> Optional[Building]:
-        if job == JobType.ADVENTURER:
-            return None
-        if job == JobType.FARMER:
-            return self.building_by_name["농장"]
-        if job == JobType.FISHER:
-            return self.building_by_name["낚시터"]
-        if job == JobType.BLACKSMITH:
-            return self.building_by_name["대장간"]
-        if job == JobType.PHARMACIST:
-            return self.building_by_name["약국"]
-        return None
-
-    def _profit_place_for_job(self, job: JobType) -> Building:
-        if job == JobType.ADVENTURER:
-            return self.building_by_name["모험가 길드"]
-        if job in (JobType.FARMER, JobType.FISHER):
-            return self.building_by_name["잡화점"]
-        if job == JobType.BLACKSMITH:
-            return self.building_by_name["대장간"]
-        if job == JobType.PHARMACIST:
-            return self.building_by_name["약국"]
-        return self.building_by_name["잡화점"]
-
-    def _set_target_building(self, npc: NPC, b: Building) -> None:
-        npc.target_building = b
-        npc.target_outside_tile = None
-        npc.target_entity_tile = None
-        npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), b.random_tile_inside(self.rng))
 
     def _set_target_outside(self, npc: NPC, tile: Tuple[int, int]) -> None:
-        npc.target_building = None
         npc.target_outside_tile = tile
         npc.target_entity_tile = None
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
 
     def _set_target_entity(self, npc: NPC, tile: Tuple[int, int]) -> None:
-        npc.target_building = None
         npc.target_outside_tile = None
         npc.target_entity_tile = tile
         npc.path = manhattan_path(world_px_to_tile(npc.x, npc.y), tile)
+
+
+    def _is_matching_entity_target(self, entity_key: str, tile: Tuple[int, int]) -> bool:
+        tx, ty = tile
+        candidates = self.entity_manager.candidates_by_key(entity_key, discovered_only=False)
+        return any(int(ent.get("x", -1)) == tx and int(ent.get("y", -1)) == ty for ent in candidates)
+
+    def _has_valid_work_target(self, npc: NPC) -> bool:
+        action_name = npc.current_work_action or ""
+        if not action_name:
+            return True
+        if action_name == "탐색":
+            return npc.target_outside_tile is not None
+        action = self.action_defs.get(action_name, {})
+        required_entity = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
+        if not required_entity:
+            return True
+        if npc.target_entity_tile is None:
+            return False
+        return self._is_matching_entity_target(required_entity, npc.target_entity_tile)
 
 
     def _is_hostile(self, npc: NPC) -> bool:
@@ -898,7 +885,6 @@ class VillageGame:
     def _plan_next_target(self, npc: NPC) -> None:
         if npc.status.hp <= 0:
             npc.path = []
-            npc.target_building = None
             npc.target_outside_tile = None
             npc.target_entity_tile = None
             self.behavior.set_dead_state(npc)
@@ -909,15 +895,14 @@ class VillageGame:
             self._set_target_outside(npc, self.random_outside_tile())
             return
 
-        override = self._scheduled_destination(npc)
-        if override is not None:
-            _, b, out_tile = override
-            if b is not None:
-                self._set_target_building(npc, b)
-                return
-            if out_tile is not None:
-                self._set_target_outside(npc, out_tile)
-                return
+        override_entity_key = self._scheduled_destination_entity_key(npc)
+        if override_entity_key is not None:
+            tile = self.entity_manager.resolve_target_tile(override_entity_key)
+            if tile is not None:
+                self._set_target_entity(npc, tile)
+            else:
+                self._set_target_outside(npc, self.random_outside_tile())
+            return
 
         activity = self.behavior.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
@@ -931,7 +916,7 @@ class VillageGame:
                 if board_tile is not None:
                     self._set_target_entity(npc, board_tile)
                 else:
-                    self._set_target_building(npc, self.building_by_name["모험가 길드"])
+                    self._set_target_outside(npc, self.random_outside_tile())
                 return
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
@@ -959,7 +944,11 @@ class VillageGame:
                 self._set_target_outside(npc, self.random_outside_tile())
             return
 
-        self._set_target_building(npc, npc.home_building)
+        home_tile = self.entity_manager.resolve_target_tile("bed")
+        if home_tile is not None:
+            self._set_target_entity(npc, home_tile)
+        else:
+            self._set_target_outside(npc, self.random_outside_tile())
 
     def _pick_work_action(self, npc: NPC) -> Optional[str]:
         if npc.traits.job == JobType.ADVENTURER:
@@ -986,7 +975,7 @@ class VillageGame:
             return False
 
         # 게시판확인/탐색은 반드시 각 목표 지점(게시판 엔티티/탐색 타일) 도착 후에만 실행한다.
-        # target_building 잔재(예: 주택)만으로 업무를 실행하면 이동 없이 처리되는 문제가 생긴다.
+        # 건물 목표 잔재 없이, 엔티티/외부 타일 목표 도착 기준으로만 업무를 실행한다.
         if npc.current_work_action == "탐색" and npc.target_outside_tile is not None:
             if (tx, ty) == npc.target_outside_tile:
                 self.logs.append(self._do_explore_action(npc))
@@ -995,14 +984,15 @@ class VillageGame:
             return False
 
         if npc.current_work_action == "게시판확인" and npc.target_entity_tile is not None:
-            ex, ey = npc.target_entity_tile
-            if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
-                self.logs.append(self._execute_primary_action(npc))
-                self._plan_next_target(npc)
-                return True
+            if self._is_matching_entity_target("guild_board", npc.target_entity_tile):
+                ex, ey = npc.target_entity_tile
+                if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
+                    self.logs.append(self._execute_primary_action(npc))
+                    self._plan_next_target(npc)
+                    return True
             return False
 
-        if npc.target_entity_tile is not None:
+        if npc.target_entity_tile is not None and self._has_valid_work_target(npc):
             ex, ey = npc.target_entity_tile
             if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
                 self.logs.append(self._execute_primary_action(npc))
@@ -1046,17 +1036,22 @@ class VillageGame:
             npc.location_building = self.find_building_by_tile(tx, ty)
 
             if len(npc.path) == 0:
+                current_activity = self.planner.activity_for_hour(self.time.hour)
+                if current_activity == ScheduledActivity.WORK and not self._has_valid_work_target(npc):
+                    self._plan_next_target(npc)
+                    if npc.path:
+                        continue
+
                 if self._try_execute_arrived_work(npc, tx, ty):
                     continue
 
-                override = self._scheduled_destination(npc)
-                if override is not None:
-                    kind, b, _ = override
-                    if kind == "eat" and b is not None and b.name == "식당":
+                if current_activity == ScheduledActivity.MEAL and npc.target_entity_tile is not None:
+                    if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
                         self.logs.append(self._do_eat_at_restaurant(npc))
                         self._plan_next_target(npc)
                         continue
-                    if kind == "rest" and b is not None and b.zone == ZoneType.RESIDENTIAL:
+                if current_activity == ScheduledActivity.SLEEP and npc.target_entity_tile is not None:
+                    if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
                         self.logs.append(self._do_rest_at_home(npc))
                         self._plan_next_target(npc)
                         continue
@@ -1067,7 +1062,7 @@ class VillageGame:
                         self._plan_next_target(npc)
                         continue
 
-                if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_entity_tile is not None:
+                if current_activity == ScheduledActivity.WORK and npc.target_entity_tile is not None:
                     if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
                         self.logs.append(self._execute_primary_action(npc))
                         self._plan_next_target(npc)
@@ -1077,12 +1072,9 @@ class VillageGame:
                 required_entity = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
                 needs_external_target = bool(required_entity) or (npc.current_work_action == "탐색")
 
-                if npc.target_building is not None and npc.location_building is not None and npc.location_building == npc.target_building:
-                    if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and not needs_external_target:
-                        self.logs.append(self._execute_primary_action(npc))
-                    self._plan_next_target(npc)
-                else:
-                    self._plan_next_target(npc)
+                if current_activity == ScheduledActivity.WORK and not needs_external_target:
+                    self.logs.append(self._execute_primary_action(npc))
+                self._plan_next_target(npc)
 
         if len(self.logs) > 14:
             self.logs = self.logs[-14:]
@@ -1287,9 +1279,7 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
         if npc.location_building is not None:
             loc = f"{region} / {npc.location_building.zone.value}/{npc.location_building.name}"
         tgt = "(없음)"
-        if npc.target_building is not None:
-            tgt = f"{npc.target_building.zone.value}/{npc.target_building.name}"
-        elif npc.target_entity_tile is not None:
+        if npc.target_entity_tile is not None:
             tgt = f"엔티티 타일 {npc.target_entity_tile}"
         elif npc.target_outside_tile is not None:
             tgt = f"{RegionType.OUTSIDE.value} 타일 {npc.target_outside_tile}"
