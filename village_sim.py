@@ -981,6 +981,36 @@ class VillageGame:
     def _profit_action(self, npc: NPC) -> str:
         return self.action_executor.profit_action(npc)
 
+    def _try_execute_arrived_work(self, npc: NPC, tx: int, ty: int) -> bool:
+        if npc.current_work_action is None:
+            return False
+
+        # 게시판확인/탐색은 반드시 각 목표 지점(게시판 엔티티/탐색 타일) 도착 후에만 실행한다.
+        # target_building 잔재(예: 주택)만으로 업무를 실행하면 이동 없이 처리되는 문제가 생긴다.
+        if npc.current_work_action == "탐색" and npc.target_outside_tile is not None:
+            if (tx, ty) == npc.target_outside_tile:
+                self.logs.append(self._do_explore_action(npc))
+                self._plan_next_target(npc)
+                return True
+            return False
+
+        if npc.current_work_action == "게시판확인" and npc.target_entity_tile is not None:
+            ex, ey = npc.target_entity_tile
+            if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
+                self.logs.append(self._execute_primary_action(npc))
+                self._plan_next_target(npc)
+                return True
+            return False
+
+        if npc.target_entity_tile is not None:
+            ex, ey = npc.target_entity_tile
+            if (tx, ty) == (ex, ey) or (abs(tx - ex) + abs(ty - ey) <= 1):
+                self.logs.append(self._execute_primary_action(npc))
+                self._plan_next_target(npc)
+                return True
+
+        return False
+
     # -----------------------------
     # Tick + movement
     # -----------------------------
@@ -1016,6 +1046,9 @@ class VillageGame:
             npc.location_building = self.find_building_by_tile(tx, ty)
 
             if len(npc.path) == 0:
+                if self._try_execute_arrived_work(npc, tx, ty):
+                    continue
+
                 override = self._scheduled_destination(npc)
                 if override is not None:
                     kind, b, _ = override
@@ -1034,20 +1067,18 @@ class VillageGame:
                         self._plan_next_target(npc)
                         continue
 
-                if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.current_work_action == "탐색" and npc.target_outside_tile is not None:
-                    if (tx, ty) == npc.target_outside_tile:
-                        self.logs.append(self._do_explore_action(npc))
-                        self._plan_next_target(npc)
-                        continue
-
                 if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and npc.target_entity_tile is not None:
                     if (tx, ty) == npc.target_entity_tile or (abs(tx - npc.target_entity_tile[0]) + abs(ty - npc.target_entity_tile[1]) <= 1):
                         self.logs.append(self._execute_primary_action(npc))
                         self._plan_next_target(npc)
                         continue
 
+                action = self.action_defs.get(npc.current_work_action or "", {})
+                required_entity = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
+                needs_external_target = bool(required_entity) or (npc.current_work_action == "탐색")
+
                 if npc.target_building is not None and npc.location_building is not None and npc.location_building == npc.target_building:
-                    if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK:
+                    if self.planner.activity_for_hour(self.time.hour) == ScheduledActivity.WORK and not needs_external_target:
                         self.logs.append(self._execute_primary_action(npc))
                     self._plan_next_target(npc)
                 else:
