@@ -353,6 +353,11 @@ class VillageGame:
             str(row.get("job", "")).strip(): [str(x).strip() for x in row.get("work_actions", []) if str(x).strip()]
             for row in jobs_for_economy if isinstance(row, dict)
         }
+        # jobs.json(work_actions) 와 actions.json(action_defs)를 선-조인한 실제 사용 가능 액션 테이블
+        self.job_action_defs: Dict[str, List[Dict[str, object]]] = {
+            job_name: [self.action_defs[action_name] for action_name in action_names if action_name in self.action_defs]
+            for job_name, action_names in self.job_work_actions.items()
+        }
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -765,7 +770,10 @@ class VillageGame:
         job = npc.traits.job
         activity = self.planner.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
-            npc.status.current_action = "업무"
+            if npc.current_work_action is None:
+                npc.current_work_action = self._pick_work_action(npc)
+                npc.work_hours_remaining = 0
+            npc.status.current_action = npc.current_work_action or "업무선택실패"
             if job == JobType.ADVENTURER:
                 hostile = self._nearest_hostile(npc)
                 if hostile is not None:
@@ -778,6 +786,51 @@ class VillageGame:
             return
 
         self._set_target_building(npc, npc.home_building)
+
+    def _pick_work_action(self, npc: NPC) -> Optional[str]:
+        action_defs = self.job_action_defs.get(npc.traits.job.value, [])
+        if not action_defs:
+            return None
+        chosen = self.rng.choice(action_defs)
+        action_name = str(chosen.get("name", "")).strip()
+        if not action_name:
+            return None
+        return action_name
+
+    def _resolve_action_def(self, npc: NPC, action_name: str) -> Optional[Dict[str, object]]:
+        action = self.action_defs.get(action_name)
+        if isinstance(action, dict):
+            return action
+        for row in self.job_action_defs.get(npc.traits.job.value, []):
+            if str(row.get("name", "")).strip() == action_name:
+                return row
+        return None
+
+    def _ensure_work_actions_selected(self) -> None:
+        if self.planner.activity_for_hour(self.time.hour) != ScheduledActivity.WORK:
+            return
+        for npc in self.npcs:
+            if npc.status.hp <= 0 or self._is_hostile(npc):
+                continue
+            if npc.current_work_action is None:
+                npc.current_work_action = self._pick_work_action(npc)
+                npc.work_hours_remaining = 0
+
+    def _required_tool_keys(self, required_tools: object) -> List[str]:
+        if not isinstance(required_tools, list):
+            return []
+        keys: List[str] = []
+        for raw in required_tools:
+            tool_name = str(raw).strip()
+            if not tool_name:
+                continue
+            if tool_name in self.items:
+                keys.append(tool_name)
+                continue
+            item_key = self.item_display_to_key.get(tool_name)
+            if item_key is not None:
+                keys.append(item_key)
+        return keys
 
     def _do_eat_at_restaurant(self, npc: NPC) -> str:
         s = npc.status
@@ -821,15 +874,55 @@ class VillageGame:
         return f"{npc.traits.name}: 휴식 피로 {before}->{s.fatigue}"
 
     def _primary_action(self, npc: NPC) -> str:
-        job_name = npc.traits.job.value
-        actions = self.job_work_actions.get(job_name, [])
-        if not actions:
+        action_name = npc.current_work_action or self._pick_work_action(npc)
+        if action_name is None:
             return f"{npc.traits.name}: 작업(정의 없음)"
+        npc.current_work_action = action_name
 
-        action_name = self.rng.choice(actions)
-        action = self.action_defs.get(action_name, {})
+        action = self._resolve_action_def(npc, action_name)
+        if action is None:
+            npc.current_work_action = None
+            npc.work_hours_remaining = 0
+            npc.status.current_action = "업무선택실패"
+            return f"{npc.traits.name}: 작업 실패(액션 정의 없음: {action_name})"
+        duration_hours = max(1, int(action.get("duration_hours", 1)))
+        if npc.work_hours_remaining <= 0:
+            npc.work_hours_remaining = duration_hours
+
+        tool_names = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
+        required_keys = self._required_tool_keys(tool_names)
+        missing_tools = [k for k in required_keys if int(npc.inventory.get(k, 0)) <= 0]
+        if missing_tools:
+            display_names = [self.items[k].display if k in self.items else k for k in missing_tools]
+            npc.status.current_action = f"{action_name}(도구부족)"
+            return f"{npc.traits.name}: {action_name} 실패(도구 부족: {', '.join(display_names)})"
+
+        npc.work_hours_remaining = max(0, npc.work_hours_remaining - 1)
+        done_hours = duration_hours - npc.work_hours_remaining
+
+        fatigue_cost = int(action.get("fatigue", 12))
+        hunger_cost = int(action.get("hunger", 8))
+        per_hour_fatigue = max(0, round(fatigue_cost / duration_hours))
+        per_hour_hunger = max(0, round(hunger_cost / duration_hours))
+
+        s = npc.status
+        s.fatigue += per_hour_fatigue
+        s.hunger += per_hour_hunger
+        s.happiness -= 1
+        self._status_clamp(npc)
+
+        worksite = self._workplace_for_job(npc.traits.job)
+        if worksite is not None and worksite.name in self.bstate:
+            bst = self.bstate[worksite.name]
+            bst.task = action_name
+            bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
+            bst.last_event = f"{npc.traits.name} {action_name} {done_hours}/{duration_hours}"
+
+        if npc.work_hours_remaining > 0:
+            npc.status.current_action = f"{action_name}({done_hours}/{duration_hours})"
+            return f"{npc.traits.name}: {action_name} 진행 {done_hours}/{duration_hours}h"
+
         outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
-
         gained_parts: List[str] = []
         valid_items = set(self.items.keys())
         for item, spec in outputs.items():
@@ -849,24 +942,12 @@ class VillageGame:
             npc.inventory[str(item)] = int(npc.inventory.get(str(item), 0)) + qty
             gained_parts.append(f"{item}+{qty}")
 
-        s = npc.status
-        s.fatigue += int(action.get("fatigue", 12))
-        s.hunger += int(action.get("hunger", 8))
-        s.happiness -= 1
-        self._status_clamp(npc)
-
-        worksite = self._workplace_for_job(npc.traits.job)
-        if worksite is not None and worksite.name in self.bstate:
-            bst = self.bstate[worksite.name]
-            bst.task = action_name
-            bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
-            bst.last_event = f"{npc.traits.name} {action_name}"
-
-        tools = action.get("required_tools", []) if isinstance(action.get("required_tools", []), list) else []
-        tool_text = f" 도구:{', '.join([str(x) for x in tools])}" if tools else ""
+        tool_text = f" 도구:{', '.join([str(x) for x in tool_names])}" if tool_names else ""
         gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
         npc.status.current_action = action_name
-        return f"{npc.traits.name}: {action_name}({gained_text}){tool_text}"
+        npc.current_work_action = None
+        npc.work_hours_remaining = 0
+        return f"{npc.traits.name}: {action_name} 완료({gained_text}){tool_text}"
 
     def _profit_action(self, npc: NPC) -> str:
         job = npc.traits.job
@@ -976,6 +1057,7 @@ class VillageGame:
     # -----------------------------
     def sim_tick_1hour(self) -> None:
         self.time.advance(1)
+        self._ensure_work_actions_selected()
         for npc in self.npcs:
             if npc.status.hp > 0:
                 self.npc_passive_1h(npc)
