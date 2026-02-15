@@ -200,9 +200,11 @@ class NPC:
     target_outside_tile: Optional[Tuple[int, int]]
     target_entity_tile: Optional[Tuple[int, int]] = None
     current_work_action: Optional[str] = None
-    work_hours_remaining: int = 0
+    work_ticks_remaining: int = 0
     adventurer_board_visited: bool = False
     explore_target_tile: Optional[Tuple[int, int]] = None
     explore_known_buffer: Dict[str, Dict[str, object]] = field(default_factory=dict)
-    explore_roundtrip_ticks: int = 0
+    explore_duration_ticks: int = 0
     explore_chain_remaining: int = 0
+    hunger_tick_buffer: float = 0.0
+    fatigue_tick_buffer: float = 0.0

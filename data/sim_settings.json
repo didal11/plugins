@@ -1,9 +1,9 @@
 {
   "npc_speed": 220.0,
-  "hunger_gain_per_hour": 5.0,
-  "fatigue_gain_per_hour": 4.0,
+  "hunger_gain_per_tick": 0.8333333333333334,
+  "fatigue_gain_per_tick": 0.6666666666666666,
   "meal_hunger_restore": 30.0,
   "rest_fatigue_restore": 35.0,
   "potion_heal": 14.0,
-  "explore_target_distance_ticks": 2
+  "explore_duration_ticks": 6
 }

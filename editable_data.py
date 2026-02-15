@@ -46,27 +46,28 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "게시판확인", "duration_hours": 1, "required_tools": [], "required_entity": "guild_board", "outputs": {}, "fatigue": 2, "hunger": 1},
-    {"name": "탐색", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "", "outputs": {}, "fatigue": 9, "hunger": 7},
-    {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
-    {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
-    {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
-    {"name": "도구제작", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
-    {"name": "약 제조", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "alchemy_table", "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
-    {"name": "약초채집", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "herb_cluster", "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
-    {"name": "벌목", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "tree_grove", "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
-    {"name": "채광", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "ore_vein", "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
-    {"name": "동물사냥", "duration_hours": 3, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
-    {"name": "몬스터사냥", "duration_hours": 3, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
+    {"name": "게시판확인", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "outputs": {}, "fatigue": 2, "hunger": 1},
+    {"name": "탐색", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "outputs": {}, "fatigue": 9, "hunger": 7},
+    {"name": "농사", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
+    {"name": "낚시", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
+    {"name": "제련", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
+    {"name": "도구제작", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
+    {"name": "약 제조", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "alchemy_table", "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
+    {"name": "약초채집", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "herb_cluster", "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
+    {"name": "벌목", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "tree_grove", "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
+    {"name": "채광", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "ore_vein", "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
+    {"name": "동물사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
+    {"name": "몬스터사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
     "npc_speed": 220.0,
-    "hunger_gain_per_hour": 5.0,
-    "fatigue_gain_per_hour": 4.0,
+    "hunger_gain_per_tick": 5.0 / 6.0,
+    "fatigue_gain_per_tick": 4.0 / 6.0,
     "meal_hunger_restore": 30.0,
     "rest_fatigue_restore": 35.0,
     "potion_heal": 14.0,
+    "explore_duration_ticks": 6,
 }
 
 DEFAULT_NPCS: List[Dict[str, object]] = [
@@ -322,7 +323,7 @@ def load_action_defs() -> List[Dict[str, object]]:
         outputs = {k: v for k, v in outputs_raw.items() if str(k).strip() in item_keys}
         out.append({
             "name": name,
-            "duration_hours": max(1, int(row.get("duration_hours", 1))),
+            "duration_minutes": max(10, int(row.get("duration_minutes", int(row.get("duration_hours", 1)) * 60) // 10 * 10)),
             "required_tools": [str(x).strip() for x in row.get("required_tools", []) if str(x).strip()] if isinstance(row.get("required_tools", []), list) else ["도구"],
             "required_entity": str(row.get("required_entity", "")).strip(),
             "outputs": outputs,
@@ -348,11 +349,17 @@ def load_sim_settings() -> Dict[str, float]:
     raw = _read_json(SIM_SETTINGS_FILE, DEFAULT_SIM_SETTINGS)
     out = dict(DEFAULT_SIM_SETTINGS)
     if isinstance(raw, dict):
+        if "hunger_gain_per_tick" not in raw and "hunger_gain_per_hour" in raw:
+            raw["hunger_gain_per_tick"] = float(raw.get("hunger_gain_per_hour", 5.0)) / 6.0
+        if "fatigue_gain_per_tick" not in raw and "fatigue_gain_per_hour" in raw:
+            raw["fatigue_gain_per_tick"] = float(raw.get("fatigue_gain_per_hour", 4.0)) / 6.0
         for k in out:
             try:
-                out[k] = float(raw.get(k, out[k]))
+                out[k] = float(raw.get(k, out[k])) if k != "explore_duration_ticks" else int(raw.get(k, out[k]))
             except Exception:
                 pass
+    if int(out.get("explore_duration_ticks", 6)) not in (6, 12, 18):
+        out["explore_duration_ticks"] = 6
     return out
 
 
@@ -361,9 +368,11 @@ def save_sim_settings(settings: Dict[str, float]) -> None:
     out = dict(DEFAULT_SIM_SETTINGS)
     for k in out:
         try:
-            out[k] = float(settings.get(k, out[k]))
+            out[k] = float(settings.get(k, out[k])) if k != "explore_duration_ticks" else int(settings.get(k, out[k]))
         except Exception:
             pass
+    if int(out.get("explore_duration_ticks", 6)) not in (6, 12, 18):
+        out["explore_duration_ticks"] = 6
     _write_json(SIM_SETTINGS_FILE, out)
 
 
