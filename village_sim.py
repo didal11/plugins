@@ -702,20 +702,40 @@ class VillageGame:
         for ent in self.entities:
             if bool(ent.get("is_workbench", False)):
                 continue
-            if bool(ent.get("is_discovered", False)):
-                key = str(ent.get("key", "")).strip()
-                if key:
-                    known[key] = {
-                        "x": int(ent.get("x", 0)),
-                        "y": int(ent.get("y", 0)),
-                        "qty": int(ent.get("current_quantity", 0)),
-                        "name": str(ent.get("name", key)),
-                    }
-                    self.guild_board_state["known_cells"][self._tile_key(int(ent.get("x", 0)), int(ent.get("y", 0)))] = {
-                        "entities": [{"key": key, "name": str(ent.get("name", key)), "qty": int(ent.get("current_quantity", 0))}],
-                        "monsters": [],
-                        "updated_at": self.time.total_minutes,
-                    }
+            key = str(ent.get("key", "")).strip()
+            if not key:
+                continue
+            ex = int(ent.get("x", 0))
+            ey = int(ent.get("y", 0))
+            in_village = vr.collidepoint(ex, ey)
+            if not bool(ent.get("is_discovered", False)) and not in_village:
+                continue
+
+            qty = int(ent.get("current_quantity", 0))
+            name = str(ent.get("name", key))
+            known[key] = {
+                "x": ex,
+                "y": ey,
+                "qty": qty,
+                "name": name,
+            }
+
+            cell_key = self._tile_key(ex, ey)
+            cell = known_cells.setdefault(cell_key, {
+                "entities": [],
+                "monsters": [],
+                "updated_at": self.time.total_minutes,
+            })
+            if not isinstance(cell, dict):
+                cell = {"entities": [], "monsters": [], "updated_at": self.time.total_minutes}
+                known_cells[cell_key] = cell
+            entities = cell.setdefault("entities", [])
+            if not isinstance(entities, list):
+                entities = []
+                cell["entities"] = entities
+            entities.append({"key": key, "name": name, "qty": qty})
+            cell.setdefault("monsters", [])
+            cell["updated_at"] = self.time.total_minutes
 
     def _tile_key(self, tx: int, ty: int) -> str:
         return f"{int(tx)},{int(ty)}"
