@@ -66,6 +66,7 @@ class NPCTab(Enum):
 class BoardTab(Enum):
     ENTITIES = "자원 목록"
     CELLS = "탐색 기록"
+    EXPLORE = "탐색 설정"
 
 
 @dataclass
