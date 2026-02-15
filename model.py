@@ -9,6 +9,7 @@ UI 프레임워크와 독립적인 순수 모델 계층.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
@@ -193,5 +194,5 @@ class NPC:
     current_work_action: Optional[str] = None
     work_hours_remaining: int = 0
     adventurer_board_visited: bool = False
-    explore_anchor_tile: Optional[Tuple[int, int]] = None
-    explore_scan_index: int = 0
+    explore_target_tile: Optional[Tuple[int, int]] = None
+    explore_known_buffer: Dict[str, Dict[str, object]] = field(default_factory=dict)

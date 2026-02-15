@@ -4,5 +4,6 @@
   "fatigue_gain_per_hour": 4.0,
   "meal_hunger_restore": 30.0,
   "rest_fatigue_restore": 35.0,
-  "potion_heal": 14.0
+  "potion_heal": 14.0,
+  "explore_target_distance_ticks": 2
 }
