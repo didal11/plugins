@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -826,11 +827,20 @@ class VillageGame:
             return None
         return self.rng.choice(candidates)
 
-    def _pick_frontier_explore_tile(self, npc: NPC) -> Tuple[int, int]:
+    def _estimate_roundtrip_ticks(self, start: Tuple[int, int], target: Tuple[int, int]) -> int:
+        dist_tiles = abs(target[0] - start[0]) + abs(target[1] - start[1])
+        if dist_tiles <= 0:
+            return 1
+        speed_px_s = float(self.sim_settings.get("npc_speed", 220.0))
+        if speed_px_s <= 1e-6:
+            return 3
+        tick_seconds = max(0.001, SIM_TICK_MS / 1000.0)
+        one_way_seconds = (dist_tiles * BASE_TILE_SIZE) / speed_px_s
+        return max(1, int(math.ceil((one_way_seconds * 2.0) / tick_seconds)))
+
+    def _pick_frontier_explore_tile(self, npc: NPC, desired_roundtrip: int) -> Optional[Tuple[int, int]]:
         known_cells = self.guild_board_state.get("known_cells", {})
         known_keys = set(known_cells.keys()) if isinstance(known_cells, dict) else set()
-        if not known_keys:
-            return self.random_outside_tile()
 
         frontier: Set[Tuple[int, int]] = set()
         for key in known_keys:
@@ -842,11 +852,31 @@ class VillageGame:
                 nx = max(0, min(GRID_W - 1, tx + dx))
                 ny = max(0, min(GRID_H - 1, ty + dy))
                 nkey = self._tile_key(nx, ny)
-                if nkey not in known_keys:
+                if nkey not in known_keys and self.is_outside_tile(nx, ny):
                     frontier.add((nx, ny))
 
         if not frontier:
-            return self.random_outside_tile()
+            return None
+
+        base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
+        desired_roundtrip = max(1, min(3, int(desired_roundtrip)))
+        exact = [tile for tile in frontier if self._estimate_roundtrip_ticks(base_tile, tile) == desired_roundtrip]
+        if exact:
+            return self.rng.choice(exact)
+        return None
+    def _assign_exact_explore_target(self, npc: NPC) -> bool:
+        # 1~3틱 중에서 모험가가 랜덤으로 고른 틱에 "정확히 일치"하는 목표만 선택한다.
+        choices = [1, 2, 3]
+        self.rng.shuffle(choices)
+        for ticks in choices:
+            tile = self._pick_frontier_explore_tile(npc, ticks)
+            if tile is not None:
+                npc.explore_roundtrip_ticks = ticks
+                npc.explore_target_tile = tile
+                return True
+        npc.explore_roundtrip_ticks = 0
+        npc.explore_target_tile = None
+        return False
 
         base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
         ntx, nty = base_tile
@@ -874,9 +904,11 @@ class VillageGame:
         tx, ty = world_px_to_tile(npc.x, npc.y)
         npc.adventurer_board_visited = False
         npc.explore_target_tile = None
+        planned_ticks = max(1, int(npc.explore_roundtrip_ticks or 1))
         npc.current_work_action = "게시판확인"
         npc.work_hours_remaining = 0
-        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀"
+        npc.explore_roundtrip_ticks = 0
+        return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀(계획 왕복 {planned_ticks}틱)"
 
     def _pick_adventurer_work_action(self, npc: NPC) -> Optional[str]:
         if not npc.adventurer_board_visited:
@@ -1025,7 +1057,14 @@ class VillageGame:
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
                 if npc.explore_target_tile is None:
-                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc)
+                    if not self._assign_exact_explore_target(npc):
+                        npc.current_work_action = "게시판확인"
+                        board_tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
+                        if board_tile is not None:
+                            self._set_target_entity(npc, board_tile)
+                        else:
+                            self._set_target_outside(npc, self.random_outside_tile())
+                        return
                 self._set_target_outside(npc, npc.explore_target_tile)
                 return
 
@@ -1038,8 +1077,15 @@ class VillageGame:
                 else:
                     npc.current_work_action = "탐색"
                     npc.work_hours_remaining = 0
-                    npc.explore_target_tile = self._pick_frontier_explore_tile(npc)
-                    self._set_target_outside(npc, npc.explore_target_tile)
+                    if self._assign_exact_explore_target(npc):
+                        self._set_target_outside(npc, npc.explore_target_tile)
+                    else:
+                        npc.current_work_action = "게시판확인"
+                        board_tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
+                        if board_tile is not None:
+                            self._set_target_entity(npc, board_tile)
+                        else:
+                            self._set_target_outside(npc, self.random_outside_tile())
                 return
 
             target_entity, target_outside = self.action_executor.resolve_work_destination(npc, self.random_outside_tile)
@@ -1734,7 +1780,8 @@ def main():
                         tab_w = 190
                         tab_h = 34
                         gap = 10
-                        for idx in range(3):
+                        tab_count = 2 if game.modal_kind == ModalKind.BOARD else 3
+                        for idx in range(tab_count):
                             r = pygame.Rect(tab_x + idx * (tab_w + gap), tab_y, tab_w, tab_h)
                             if r.collidepoint(mx, my):
                                 if game.modal_kind == ModalKind.BUILDING:
