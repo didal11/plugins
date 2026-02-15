@@ -353,6 +353,11 @@ class VillageGame:
             str(row.get("job", "")).strip(): [str(x).strip() for x in row.get("work_actions", []) if str(x).strip()]
             for row in jobs_for_economy if isinstance(row, dict)
         }
+        # jobs.json(work_actions) 와 actions.json(action_defs)를 선-조인한 실제 사용 가능 액션 테이블
+        self.job_action_defs: Dict[str, List[Dict[str, object]]] = {
+            job_name: [self.action_defs[action_name] for action_name in action_names if action_name in self.action_defs]
+            for job_name, action_names in self.job_work_actions.items()
+        }
 
         # Table-driven building names
         self.market_building_names = ["식당", "잡화점", "사치상점"]
@@ -1024,6 +1029,7 @@ class VillageGame:
     # -----------------------------
     def sim_tick_1hour(self) -> None:
         self.time.advance(1)
+        self._ensure_work_actions_selected()
         for npc in self.npcs:
             if npc.status.hp > 0:
                 self.npc_passive_1h(npc)
