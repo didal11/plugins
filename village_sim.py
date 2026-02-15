@@ -903,22 +903,13 @@ class VillageGame:
         return tile, tick
 
     def _assign_exact_explore_target(self, npc: NPC) -> bool:
-        # 설정 틱과 정확히 일치하는 목표를 우선 배정하고, 없으면 가장 근접한 목표를 배정한다.
+        # UI에서 설정한 왕복 틱과 정확히 일치하는 목표만 배정한다.
         desired = max(1, min(3, int(self.explore_roundtrip_ticks)))
         tile = self._pick_frontier_explore_tile(npc, desired)
         if tile is not None:
             npc.explore_roundtrip_ticks = desired
             npc.explore_target_tile = tile
             return True
-
-        closest = self._pick_frontier_explore_tile_closest(npc, desired)
-        if closest is not None:
-            c_tile, _ = closest
-            # UI에서 선택한 목표 틱(1~3)을 유지하고, 좌표만 근접 후보로 보정한다.
-            npc.explore_roundtrip_ticks = desired
-            npc.explore_target_tile = c_tile
-            return True
-
         npc.explore_roundtrip_ticks = 0
         npc.explore_target_tile = None
         return False
