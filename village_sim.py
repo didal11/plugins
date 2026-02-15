@@ -51,6 +51,7 @@ from economy import EconomySystem
 from planning import DailyPlanner, ScheduledActivity
 from behavior_decision import BehaviorDecisionEngine
 from action_execution import ActionExecutor
+from entity_manager import EntityManager
 from editable_data import (
     ensure_data_files,
     load_entities,
@@ -380,6 +381,7 @@ class VillageGame:
         # Building state
         self.bstate: Dict[str, BuildingState] = {}
         self._init_building_states()
+        self.entity_manager = EntityManager(self.entities, self.rng)
         self.action_executor = ActionExecutor(
             self.rng,
             self.sim_settings,
@@ -389,6 +391,7 @@ class VillageGame:
             self.bstate,
             self.building_by_name,
             self.entities,
+            self.entity_manager,
             self.behavior,
             self._status_clamp,
         )
@@ -465,44 +468,6 @@ class VillageGame:
             if self.is_outside_tile(tx, ty):
                 return tx, ty
         return 2, 2
-
-    def _nearest_entity(self, kind: str, tx: int, ty: int) -> Optional[Dict[str, object]]:
-        candidates = [e for e in self.entities if str(e.get("type", "")).strip() == kind]
-        if kind == "resource":
-            candidates = [e for e in candidates if int(e.get("stock", 0)) > 0]
-        if not candidates:
-            return None
-        return min(candidates, key=lambda e: abs(tx - int(e.get("x", 0))) + abs(ty - int(e.get("y", 0))))
-
-    def _gather_from_resource(self, npc: NPC, item_key: str, amount: int) -> Optional[str]:
-        tx, ty = world_px_to_tile(npc.x, npc.y)
-        node = self._nearest_entity("resource", tx, ty)
-        if node is None:
-            return None
-        stock = int(node.get("stock", 0))
-        got = min(max(0, amount), stock)
-        if got <= 0:
-            return None
-        node["stock"] = stock - got
-        npc.inventory[item_key] = int(npc.inventory.get(item_key, 0)) + got
-        return f"{node.get('name', '자원지')}[{int(node.get('x', 0))},{int(node.get('y', 0))}] {item_key}+{got}"
-
-    def _use_workbench(self, npc: NPC, station_keyword: str, src_item: str, dst_item: str, cost: int, out: int) -> Optional[str]:
-        tx, ty = world_px_to_tile(npc.x, npc.y)
-        bench = self._nearest_entity("workbench", tx, ty)
-        if bench is None:
-            return None
-        bench_name = str(bench.get("name", "작업대"))
-        if station_keyword not in bench_name:
-            return None
-        have = int(npc.inventory.get(src_item, 0))
-        if have < cost:
-            return f"{bench_name} 재료부족({src_item})"
-        npc.inventory[src_item] = have - cost
-        if npc.inventory[src_item] <= 0:
-            npc.inventory.pop(src_item, None)
-        npc.inventory[dst_item] = int(npc.inventory.get(dst_item, 0)) + out
-        return f"{bench_name}[{int(bench.get('x', 0))},{int(bench.get('y', 0))}] {src_item}-{cost}->{dst_item}+{out}"
 
     # -----------------------------
     # Building state
@@ -789,21 +754,14 @@ class VillageGame:
                 npc.current_work_action = self._pick_work_action(npc)
                 npc.work_hours_remaining = 0
             npc.status.current_action = npc.current_work_action or "업무"
-            if job == JobType.ADVENTURER:
-                hostile = self._nearest_hostile(npc)
-                if hostile is not None:
-                    self._set_target_outside(npc, world_px_to_tile(hostile.x, hostile.y))
-                else:
-                    self._set_target_outside(npc, self.random_outside_tile())
+            fallback_wp = self._workplace_for_job(job) or npc.home_building
+            target_building, target_outside = self.action_executor.resolve_work_destination(npc, fallback_wp, self.random_outside_tile)
+            if target_building is not None:
+                self._set_target_building(npc, target_building)
+            elif target_outside is not None:
+                self._set_target_outside(npc, target_outside)
             else:
-                fallback_wp = self._workplace_for_job(job) or npc.home_building
-                target_building, target_outside = self.action_executor.resolve_work_destination(npc, fallback_wp, self.random_outside_tile)
-                if target_building is not None:
-                    self._set_target_building(npc, target_building)
-                elif target_outside is not None:
-                    self._set_target_outside(npc, target_outside)
-                else:
-                    self._set_target_building(npc, fallback_wp)
+                self._set_target_building(npc, fallback_wp)
             return
 
         self._set_target_building(npc, npc.home_building)
@@ -1211,28 +1169,30 @@ def draw_world(screen: pygame.Surface, game: VillageGame, small: pygame.font.Fon
     sx0, sy0 = cam.world_to_screen(wx0, wy0)
     pygame.draw.rect(screen, (230, 230, 230), pygame.Rect(sx0, sy0, int(ww0 * cam.zoom), int(wh0 * cam.zoom)), max(2, int(3 * cam.zoom)))
 
-    # world entities (workbench/resource)
+    # world entities
     for ent in game.entities:
         ex = int(ent.get("x", 0)) * BASE_TILE_SIZE + BASE_TILE_SIZE // 2
         ey = int(ent.get("y", 0)) * BASE_TILE_SIZE + BASE_TILE_SIZE // 2
-        et = str(ent.get("type", ""))
+        is_workbench = bool(ent.get("is_workbench", False))
+        cur_q = int(ent.get("current_quantity", 0))
+        max_q = max(1, int(ent.get("max_quantity", 1)))
         sx, sy = cam.world_to_screen(ex, ey)
-        if et == "resource":
-            color = (110, 180, 90)
-            rad = max(2, int(6 * cam.zoom))
-            pygame.draw.circle(screen, color, (sx, sy), rad)
-            pygame.draw.circle(screen, (0, 0, 0), (sx, sy), rad, 1)
-            if cam.zoom >= 1.0:
-                label = f"{ent.get('name', '자원')}({int(ent.get('stock', 0))})"
-                screen.blit(small.render(label, True, (210, 230, 210)), (sx + 6, sy - 8))
-        elif et == "workbench":
+        if is_workbench:
             rw = max(4, int(10 * cam.zoom))
             rh = max(4, int(8 * cam.zoom))
             rect = pygame.Rect(sx - rw // 2, sy - rh // 2, rw, rh)
             pygame.draw.rect(screen, (180, 140, 80), rect)
             pygame.draw.rect(screen, (0, 0, 0), rect, 1)
             if cam.zoom >= 1.0:
-                screen.blit(small.render(str(ent.get("name", "작업대")), True, (230, 210, 180)), (sx + 6, sy - 8))
+                screen.blit(small.render(f"{ent.get('name', '작업대')} {cur_q}/{max_q}", True, (230, 210, 180)), (sx + 6, sy - 8))
+        else:
+            color = (110, 180, 90)
+            rad = max(2, int(6 * cam.zoom))
+            pygame.draw.circle(screen, color, (sx, sy), rad)
+            pygame.draw.circle(screen, (0, 0, 0), (sx, sy), rad, 1)
+            if cam.zoom >= 1.0:
+                label = f"{ent.get('name', '자원')} {cur_q}/{max_q}"
+                screen.blit(small.render(label, True, (210, 230, 210)), (sx + 6, sy - 8))
 
     # NPC
     for i, npc in enumerate(game.npcs):

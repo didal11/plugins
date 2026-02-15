@@ -7,6 +7,7 @@ from random import Random
 from typing import Callable, Dict, List, Optional, Tuple
 
 from behavior_decision import BehaviorDecisionEngine
+from entity_manager import EntityManager
 from model import Building, BuildingState, JobType, NPC
 
 
@@ -21,6 +22,7 @@ class ActionExecutor:
         bstate: Dict[str, BuildingState],
         building_by_name: Dict[str, Building],
         entities: List[Dict[str, object]],
+        entity_manager: EntityManager,
         behavior: BehaviorDecisionEngine,
         status_clamp: Callable[[NPC], None],
     ):
@@ -32,6 +34,7 @@ class ActionExecutor:
         self.bstate = bstate
         self.building_by_name = building_by_name
         self.entities = entities
+        self.entity_manager = entity_manager
         self.behavior = behavior
         self.status_clamp = status_clamp
 
@@ -51,19 +54,6 @@ class ActionExecutor:
                 keys.append(item_key)
         return keys
 
-    def _find_entity_tile(self, required_entity: Dict[str, object]) -> Optional[Tuple[int, int]]:
-        entity_type = str(required_entity.get("entity_type", "")).strip()
-        entity_name = str(required_entity.get("name", "")).strip()
-        candidates = self.entities
-        if entity_type:
-            candidates = [e for e in candidates if str(e.get("type", "")).strip() == entity_type]
-        if entity_name:
-            candidates = [e for e in candidates if str(e.get("name", "")).strip() == entity_name]
-        if not candidates:
-            return None
-        picked = self.rng.choice(candidates)
-        return int(picked.get("x", 0)), int(picked.get("y", 0))
-
     def resolve_work_destination(
         self,
         npc: NPC,
@@ -72,20 +62,12 @@ class ActionExecutor:
     ) -> Tuple[Optional[Building], Optional[Tuple[int, int]]]:
         action_name = npc.current_work_action or ""
         action = self.action_defs.get(action_name, {})
-        required_entity = action.get("required_entity", {}) if isinstance(action, dict) else {}
-        if isinstance(required_entity, dict):
-            kind = str(required_entity.get("kind", "")).strip()
-            if kind == "building":
-                building_name = str(required_entity.get("name", "")).strip()
-                if building_name in self.building_by_name:
-                    return self.building_by_name[building_name], None
-            if kind == "entity":
-                tile = self._find_entity_tile(required_entity)
-                if tile is not None:
-                    return None, tile
-                return None, random_outside_tile_fn()
-            if kind == "outside":
-                return None, random_outside_tile_fn()
+        entity_key = str(action.get("required_entity", "")).strip() if isinstance(action, dict) else ""
+        if entity_key:
+            tile = self.entity_manager.resolve_target_tile(entity_key)
+            if tile is not None:
+                return None, tile
+            return None, random_outside_tile_fn()
         return fallback_building, None
 
     def do_eat_at_restaurant(self, npc: NPC) -> str:
@@ -159,10 +141,22 @@ class ActionExecutor:
         s.happiness -= 1
         self.status_clamp(npc)
 
-        required_entity = action.get("required_entity", {}) if isinstance(action.get("required_entity", {}), dict) else {}
-        building_name = str(required_entity.get("name", "")).strip() if str(required_entity.get("kind", "")).strip() == "building" else ""
-        if building_name and building_name in self.bstate:
-            bst = self.bstate[building_name]
+        entity_key = str(action.get("required_entity", "")).strip()
+        if entity_key and not self.entity_manager.consume(entity_key, 1):
+            npc.status.current_action = f"{action_name}(대상없음)"
+            return f"{npc.traits.name}: {action_name} 실패(엔티티 소진/없음: {entity_key})"
+
+        target_bstate_name = ""
+        if entity_key == "field":
+            target_bstate_name = "농장"
+        elif entity_key == "fish_spot":
+            target_bstate_name = "낚시터"
+        elif entity_key == "forge_workbench":
+            target_bstate_name = "대장간"
+        elif entity_key == "alchemy_table":
+            target_bstate_name = "약국"
+        if target_bstate_name and target_bstate_name in self.bstate:
+            bst = self.bstate[target_bstate_name]
             bst.task = action_name
             bst.task_progress = (bst.task_progress + self.rng.randint(15, 35)) % 101
             bst.last_event = f"{npc.traits.name} {action_name} {done_hours}/{duration_hours}"
