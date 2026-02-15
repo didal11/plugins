@@ -808,6 +808,12 @@ class VillageGame:
             return set()
         return set(str(k) for k in known.keys())
 
+    def _known_cell_keys_for_explore(self, npc: NPC) -> Set[str]:
+        known_cells = self.guild_board_state.get("known_cells", {})
+        merged: Set[str] = set(known_cells.keys()) if isinstance(known_cells, dict) else set()
+        merged.update(str(k) for k in npc.explore_known_buffer.keys())
+        return merged
+
     def _pick_known_entity_tile(self, required_entity_key: str) -> Optional[Tuple[int, int]]:
         known = self.guild_board_state.get("known_entities", {})
         if not isinstance(known, dict):
@@ -840,8 +846,7 @@ class VillageGame:
         return max(1, int(math.ceil((one_way_seconds * 2.0) / tick_seconds)))
 
     def _pick_frontier_explore_tile(self, npc: NPC, desired_roundtrip: int) -> Optional[Tuple[int, int]]:
-        known_cells = self.guild_board_state.get("known_cells", {})
-        known_keys = set(known_cells.keys()) if isinstance(known_cells, dict) else set()
+        known_keys = self._known_cell_keys_for_explore(npc)
 
         frontier: Set[Tuple[int, int]] = set()
         for key in known_keys:
@@ -865,6 +870,38 @@ class VillageGame:
         if exact:
             return self.rng.choice(exact)
         return None
+    def _pick_frontier_explore_tile_closest(self, npc: NPC, desired_roundtrip: int) -> Optional[Tuple[Tuple[int, int], int]]:
+        known_keys = self._known_cell_keys_for_explore(npc)
+
+        frontier: Set[Tuple[int, int]] = set()
+        for key in known_keys:
+            tile = self._tile_from_key(key)
+            if tile is None:
+                continue
+            tx, ty = tile
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx = max(0, min(GRID_W - 1, tx + dx))
+                ny = max(0, min(GRID_H - 1, ty + dy))
+                nkey = self._tile_key(nx, ny)
+                if nkey not in known_keys and self.is_outside_tile(nx, ny):
+                    frontier.add((nx, ny))
+
+        if not frontier:
+            return None
+
+        base_tile = self.guild_board_tile or world_px_to_tile(npc.x, npc.y)
+        desired = max(1, min(3, int(desired_roundtrip)))
+        scored: List[Tuple[int, int, Tuple[int, int]]] = []
+        for tile in frontier:
+            tick = self._estimate_roundtrip_ticks(base_tile, tile)
+            scored.append((abs(tick - desired), tick, tile))
+        if not scored:
+            return None
+        best_gap = min(x[0] for x in scored)
+        best = [x for x in scored if x[0] == best_gap]
+        _, tick, tile = self.rng.choice(best)
+        return tile, tick
+
     def _assign_exact_explore_target(self, npc: NPC) -> bool:
         # UI에서 설정한 왕복 틱과 정확히 일치하는 목표만 배정한다.
         desired = max(1, min(3, int(self.explore_roundtrip_ticks)))
@@ -880,6 +917,7 @@ class VillageGame:
     def _do_board_check(self, npc: NPC) -> str:
         npc.adventurer_board_visited = True
         npc.explore_target_tile = None
+        npc.explore_chain_remaining = 0
         merged = self._flush_explore_buffer_to_board(npc)
         self._sync_guild_board_quantities()
         known = self.guild_board_state.get("known_entities", {})
@@ -890,10 +928,27 @@ class VillageGame:
         tx, ty = world_px_to_tile(npc.x, npc.y)
         npc.adventurer_board_visited = False
         npc.explore_target_tile = None
+
+        if npc.explore_chain_remaining > 0:
+            npc.explore_chain_remaining -= 1
+
+        if npc.explore_chain_remaining > 0 and self._assign_exact_explore_target(npc):
+            self._set_target_outside(npc, npc.explore_target_tile)
+            ntx, nty = npc.explore_target_tile or (tx, ty)
+            npc.current_action_detail = f"탐색연속({ntx},{nty})/잔여 {npc.explore_chain_remaining}틱"
+            npc.status.current_action = npc.current_action_detail
+            return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) -> 다음 탐색({ntx},{nty}), 잔여 {npc.explore_chain_remaining}틱"
+
         planned_ticks = max(1, int(npc.explore_roundtrip_ticks or 1))
         npc.current_work_action = "게시판확인"
         npc.work_hours_remaining = 0
         npc.explore_roundtrip_ticks = 0
+        npc.explore_chain_remaining = 0
+        board_tile = self.guild_board_tile or self.entity_manager.resolve_target_tile("guild_board")
+        if board_tile is not None:
+            self._set_target_entity(npc, board_tile)
+        else:
+            self._set_target_outside(npc, self.random_outside_tile())
         return f"{npc.traits.name}: 탐색 지점 도착({tx},{ty}) 후 게시판 복귀(계획 왕복 {planned_ticks}틱)"
 
     def _pick_adventurer_work_action(self, npc: NPC) -> Optional[str]:
@@ -1031,6 +1086,7 @@ class VillageGame:
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
                 npc.work_hours_remaining = 0
+            npc.current_action_detail = npc.current_work_action or "업무"
             npc.status.current_action = npc.current_work_action or "업무"
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "게시판확인":
@@ -1042,6 +1098,8 @@ class VillageGame:
                 return
 
             if npc.traits.job == JobType.ADVENTURER and npc.current_work_action == "탐색":
+                if npc.explore_chain_remaining <= 0:
+                    npc.explore_chain_remaining = max(1, int(self.explore_roundtrip_ticks))
                 if npc.explore_target_tile is None:
                     if not self._assign_exact_explore_target(npc):
                         npc.current_work_action = "게시판확인"
@@ -1052,6 +1110,10 @@ class VillageGame:
                             self._set_target_outside(npc, self.random_outside_tile())
                         return
                 self._set_target_outside(npc, npc.explore_target_tile)
+                if npc.explore_target_tile is not None:
+                    tx, ty = npc.explore_target_tile
+                    npc.current_action_detail = f"탐색목표({tx},{ty})/잔여 {npc.explore_chain_remaining}틱"
+                    npc.status.current_action = npc.current_action_detail
                 return
 
             if npc.traits.job == JobType.ADVENTURER and (npc.current_work_action or "") in ADVENTURER_GATHER_ACTIONS:
@@ -1063,6 +1125,7 @@ class VillageGame:
                 else:
                     npc.current_work_action = "탐색"
                     npc.work_hours_remaining = 0
+                    npc.explore_chain_remaining = max(1, int(self.explore_roundtrip_ticks))
                     if self._assign_exact_explore_target(npc):
                         self._set_target_outside(npc, npc.explore_target_tile)
                     else:
