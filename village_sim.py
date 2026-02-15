@@ -391,7 +391,8 @@ class VillageGame:
         self.entity_manager = EntityManager(self.entities, self.rng)
         self.guild_board_state: Dict[str, object] = {"known_entities": {}, "quests": []}
         self.guild_board_tile: Optional[Tuple[int, int]] = self.entity_manager.resolve_target_tile("guild_board")
-        self.explore_roundtrip_ticks: int = max(1, min(3, int(self.sim_settings.get("explore_roundtrip_ticks", 2))))
+        configured_ticks = self.sim_settings.get("explore_roundtrip_ticks", self.sim_settings.get("explore_target_distance_ticks", 2))
+        self.explore_roundtrip_ticks: int = max(1, min(3, int(configured_ticks)))
         self._init_guild_board_state()
         self.action_executor = ActionExecutor(
             self.rng,
@@ -865,15 +866,13 @@ class VillageGame:
             return self.rng.choice(exact)
         return None
     def _assign_exact_explore_target(self, npc: NPC) -> bool:
-        # 설정한 왕복 틱을 우선 적용하고, 없을 때만 인접한 틱으로 완화한다.
+        # UI에서 설정한 왕복 틱과 정확히 일치하는 목표만 배정한다.
         desired = max(1, min(3, int(self.explore_roundtrip_ticks)))
-        choices = sorted((1, 2, 3), key=lambda ticks: abs(ticks - desired))
-        for ticks in choices:
-            tile = self._pick_frontier_explore_tile(npc, ticks)
-            if tile is not None:
-                npc.explore_roundtrip_ticks = ticks
-                npc.explore_target_tile = tile
-                return True
+        tile = self._pick_frontier_explore_tile(npc, desired)
+        if tile is not None:
+            npc.explore_roundtrip_ticks = desired
+            npc.explore_target_tile = tile
+            return True
         npc.explore_roundtrip_ticks = 0
         npc.explore_target_tile = None
         return False
