@@ -1,6 +1,10 @@
 [
-  {"type": "workbench", "name": "화덕", "x": 120, "y": 100},
-  {"type": "workbench", "name": "약제작대", "x": 160, "y": 110},
-  {"type": "resource", "name": "야생 약초 군락", "x": 280, "y": 210, "stock": 40},
-  {"type": "resource", "name": "노천 광맥", "x": 300, "y": 220, "stock": 35}
+  {"key": "alchemy_table", "name": "약제작대", "x": 188, "y": 151, "max_quantity": 120, "current_quantity": 120, "is_workbench": true},
+  {"key": "field", "name": "밭", "x": 183, "y": 162, "max_quantity": 200, "current_quantity": 200, "is_workbench": false},
+  {"key": "fish_spot", "name": "물고기", "x": 193, "y": 162, "max_quantity": 160, "current_quantity": 160, "is_workbench": false},
+  {"key": "forge_workbench", "name": "대장장이 작업대", "x": 183, "y": 151, "max_quantity": 140, "current_quantity": 140, "is_workbench": true},
+  {"key": "herb_cluster", "name": "약초군락", "x": 176, "y": 170, "max_quantity": 90, "current_quantity": 90, "is_workbench": false},
+  {"key": "tree_grove", "name": "나무", "x": 173, "y": 177, "max_quantity": 120, "current_quantity": 120, "is_workbench": false},
+  {"key": "ore_vein", "name": "광석", "x": 171, "y": 182, "max_quantity": 100, "current_quantity": 100, "is_workbench": false},
+  {"key": "animal_habitat", "name": "동물 서식지", "x": 198, "y": 178, "max_quantity": 80, "current_quantity": 80, "is_workbench": false}
 ]

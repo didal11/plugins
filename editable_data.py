@@ -46,16 +46,16 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
-    {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
-    {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
-    {"name": "도구제작", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
-    {"name": "약 제조", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
-    {"name": "약초채집", "duration_hours": 1, "required_tools": ["도구"], "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
-    {"name": "벌목", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
-    {"name": "채광", "duration_hours": 2, "required_tools": ["도구"], "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
-    {"name": "동물사냥", "duration_hours": 3, "required_tools": ["도구"], "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
-    {"name": "몬스터사냥", "duration_hours": 3, "required_tools": ["도구"], "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
+    {"name": "농사", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
+    {"name": "낚시", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
+    {"name": "제련", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
+    {"name": "도구제작", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
+    {"name": "약 제조", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "alchemy_table", "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
+    {"name": "약초채집", "duration_hours": 1, "required_tools": ["도구"], "required_entity": "herb_cluster", "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
+    {"name": "벌목", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "tree_grove", "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
+    {"name": "채광", "duration_hours": 2, "required_tools": ["도구"], "required_entity": "ore_vein", "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
+    {"name": "동물사냥", "duration_hours": 3, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
+    {"name": "몬스터사냥", "duration_hours": 3, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -81,7 +81,16 @@ DEFAULT_RACES: List[Dict[str, object]] = [
     {"name": "엘프", "is_hostile": False, "str_bonus": 0, "agi_bonus": 1, "hp_bonus": 0, "speed_bonus": 0.05},
     {"name": "드워프", "is_hostile": False, "str_bonus": 1, "agi_bonus": 0, "hp_bonus": 2, "speed_bonus": -0.03},
 ]
-DEFAULT_ENTITIES: List[Dict[str, object]] = []
+DEFAULT_ENTITIES: List[Dict[str, object]] = [
+    {"key": "alchemy_table", "name": "약제작대", "x": 188, "y": 151, "max_quantity": 120, "current_quantity": 120, "is_workbench": True},
+    {"key": "field", "name": "밭", "x": 183, "y": 162, "max_quantity": 200, "current_quantity": 200, "is_workbench": False},
+    {"key": "fish_spot", "name": "물고기", "x": 193, "y": 162, "max_quantity": 160, "current_quantity": 160, "is_workbench": False},
+    {"key": "forge_workbench", "name": "대장장이 작업대", "x": 183, "y": 151, "max_quantity": 140, "current_quantity": 140, "is_workbench": True},
+    {"key": "herb_cluster", "name": "약초군락", "x": 176, "y": 170, "max_quantity": 90, "current_quantity": 90, "is_workbench": False},
+    {"key": "tree_grove", "name": "나무", "x": 173, "y": 177, "max_quantity": 120, "current_quantity": 120, "is_workbench": False},
+    {"key": "ore_vein", "name": "광석", "x": 171, "y": 182, "max_quantity": 100, "current_quantity": 100, "is_workbench": False},
+    {"key": "animal_habitat", "name": "동물 서식지", "x": 198, "y": 178, "max_quantity": 80, "current_quantity": 80, "is_workbench": False}
+]
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -143,16 +152,21 @@ def ensure_data_files() -> None:
 
 
 def _normalize_entity(row: Dict[str, object]) -> Dict[str, object]:
-    kind = str(row.get("type", "workbench")).strip() or "workbench"
-    if kind not in ("workbench", "resource"):
-        return {}
+    key = str(row.get("key", "")).strip()
     name = str(row.get("name", "")).strip()
-    if not name:
+    if not key or not name:
         return {}
-    out: Dict[str, object] = {"type": kind, "name": name, "x": int(row.get("x", 0)), "y": int(row.get("y", 0))}
-    if kind == "resource":
-        out["stock"] = max(0, int(row.get("stock", 0)))
-    return out
+    max_q = max(1, int(row.get("max_quantity", 1)))
+    current_q = max(0, min(max_q, int(row.get("current_quantity", max_q))))
+    return {
+        "key": key,
+        "name": name,
+        "x": int(row.get("x", 0)),
+        "y": int(row.get("y", 0)),
+        "max_quantity": max_q,
+        "current_quantity": current_q,
+        "is_workbench": bool(row.get("is_workbench", False)),
+    }
 
 
 def load_item_defs() -> List[Dict[str, object]]:
@@ -305,7 +319,8 @@ def load_action_defs() -> List[Dict[str, object]]:
         out.append({
             "name": name,
             "duration_hours": max(1, int(row.get("duration_hours", 1))),
-            "required_tools": ["도구"],
+            "required_tools": [str(x).strip() for x in row.get("required_tools", []) if str(x).strip()] if isinstance(row.get("required_tools", []), list) else ["도구"],
+            "required_entity": str(row.get("required_entity", "")).strip(),
             "outputs": outputs,
             "fatigue": int(row.get("fatigue", 12)),
             "hunger": int(row.get("hunger", 8)),
