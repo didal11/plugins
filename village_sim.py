@@ -49,6 +49,7 @@ from config import (
 
 from economy import EconomySystem
 from planning import DailyPlanner, ScheduledActivity
+from behavior_decision import BehaviorDecisionEngine
 from editable_data import (
     ensure_data_files,
     load_entities,
@@ -692,10 +693,10 @@ class VillageGame:
     def _scheduled_destination(self, npc: NPC) -> Optional[Tuple[str, Optional[Building], Optional[Tuple[int, int]]]]:
         activity = self.planner.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.MEAL:
-            npc.status.current_action = "식사"
+            self.behavior.set_meal_state(npc)
             return ("eat", self.building_by_name.get("식당"), None)
         if activity == ScheduledActivity.SLEEP:
-            npc.status.current_action = "취침"
+            self.behavior.set_sleep_state(npc)
             return ("rest", npc.home_building, None)
         return None
 
@@ -749,11 +750,11 @@ class VillageGame:
             npc.path = []
             npc.target_building = None
             npc.target_outside_tile = None
-            npc.status.current_action = "사망"
+            self.behavior.set_dead_state(npc)
             return
 
         if self._is_hostile(npc):
-            npc.status.current_action = "배회"
+            self.behavior.set_wander_state(npc)
             self._set_target_outside(npc, self.random_outside_tile())
             return
 
@@ -768,7 +769,7 @@ class VillageGame:
                 return
 
         job = npc.traits.job
-        activity = self.planner.activity_for_hour(self.time.hour)
+        activity = self.behavior.activity_for_hour(self.time.hour)
         if activity == ScheduledActivity.WORK:
             if npc.current_work_action is None:
                 npc.current_work_action = self._pick_work_action(npc)
@@ -835,7 +836,7 @@ class VillageGame:
         st.task = "조리/서빙"
         st.task_progress = (st.task_progress + 15) % 101
         st.last_event = f"{npc.traits.name} 식사"
-        npc.status.current_action = "식사"
+        self.behavior.set_meal_state(npc)
         return f"{npc.traits.name}: 식사 허기 {before}->{s.hunger}"
 
     def _do_rest_at_home(self, npc: NPC) -> str:
@@ -847,7 +848,7 @@ class VillageGame:
         self._status_clamp(npc)
         st = self.bstate[npc.home_building.name]
         st.last_event = f"{npc.traits.name} 휴식"
-        npc.status.current_action = "취침"
+        self.behavior.set_sleep_state(npc)
         return f"{npc.traits.name}: 휴식 피로 {before}->{s.fatigue}"
 
     def _primary_action(self, npc: NPC) -> str:
@@ -1289,6 +1290,8 @@ def draw_npc_modal(screen: pygame.Surface, game: VillageGame, font: pygame.font.
             "스테이터스",
             "",
             f"현재 위치: {loc}",
+            f"행동 분류: {npc.current_activity}",
+            f"행동 세부: {npc.current_action_detail}",
             f"현재 행동: {npc.status.current_action}",
             f"이동 목표: {tgt}",
             "",
@@ -1466,6 +1469,7 @@ def draw_hud(screen: pygame.Surface, game: VillageGame, font: pygame.font.Font, 
             f"선택(NPC): {npc.traits.name} / {npc.traits.job.value} / {loc}",
             f"돈 {s.money} | 행복 {s.happiness} | 허기 {s.hunger} | 피로 {s.fatigue}",
             f"HP {s.hp}/{s.max_hp} | 힘 {s.strength} | 민첩 {s.agility}",
+            f"행동 분류/세부: {npc.current_activity} / {npc.current_action_detail}",
             f"현재 행동: {npc.status.current_action}",
             econ_line,
             "I: 모달 | 휠: 줌 | 미니맵 클릭: 이동",
