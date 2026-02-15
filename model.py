@@ -204,3 +204,4 @@ class NPC:
     adventurer_board_visited: bool = False
     explore_target_tile: Optional[Tuple[int, int]] = None
     explore_known_buffer: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    explore_roundtrip_ticks: int = 0
