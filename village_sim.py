@@ -329,6 +329,8 @@ class SimulationRuntime:
                 next_x, next_y = state.path.pop(0)
                 npc.x, npc.y = next_x, next_y
                 return
+            if (npc.x, npc.y) in self.bed_tiles:
+                return
 
         self._step_random(npc, width_tiles, height_tiles)
 
