@@ -27,6 +27,7 @@ from editable_data import (
     load_npc_templates,
 )
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
+from planning import DailyPlanner, ScheduledActivity
 
 
 class RuntimeConfig(BaseModel):
@@ -91,13 +92,25 @@ class SimulationNpcState(BaseModel):
 class SimulationRuntime:
     """렌더 루프와 분리된 고정 틱(10분 단위) 시뮬레이터."""
 
-    def __init__(self, world: GameWorld, npcs: List[RenderNpc], tick_seconds: float = 0.25, seed: int = 42):
+    TICK_MINUTES = 10
+    TICKS_PER_HOUR = 60 // TICK_MINUTES
+
+    def __init__(
+        self,
+        world: GameWorld,
+        npcs: List[RenderNpc],
+        tick_seconds: float = 0.25,
+        seed: int = 42,
+        start_hour: int = 8,
+    ):
         self.world = world
         self.npcs = npcs
         self.tick_seconds = max(0.05, float(tick_seconds))
         self._accumulator = 0.0
         self.ticks = 0
         self.rng = Random(seed)
+        self.start_hour = int(start_hour) % 24
+        self.planner = DailyPlanner()
 
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
@@ -137,7 +150,21 @@ class SimulationRuntime:
             out[name] = self._duration_to_ticks(row.get("duration_minutes", 10))
         return out
 
+    def _current_hour(self) -> int:
+        hours_elapsed = self.ticks // self.TICKS_PER_HOUR
+        return (self.start_hour + hours_elapsed) % 24
+
     def _pick_next_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
+        activity = self.planner.activity_for_hour(self._current_hour())
+        if activity == ScheduledActivity.MEAL:
+            state.current_action = "식사"
+            state.ticks_remaining = self.TICKS_PER_HOUR
+            return
+        if activity == ScheduledActivity.SLEEP:
+            state.current_action = "취침"
+            state.ticks_remaining = self.TICKS_PER_HOUR
+            return
+
         candidates = self.job_actions.get(npc.job, [])
         if not candidates:
             state.current_action = "배회"
