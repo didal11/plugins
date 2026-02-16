@@ -19,7 +19,7 @@ from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from editable_data import DATA_DIR, load_action_defs, load_entities, load_job_defs, load_npc_templates
+from editable_data import DATA_DIR, load_entities, load_npc_templates
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
 
@@ -204,17 +204,6 @@ def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
     g = 50 + (seed * 57) % 120
     b = 60 + (seed * 79) % 120
     return int(r), int(g), int(b), 130
-
-
-def _font_candidates() -> list[str]:
-    return [
-        "Noto Sans CJK KR",
-        "NanumGothic",
-        "Malgun Gothic",
-        "AppleGothic",
-        "Arial Unicode MS",
-        "DejaVu Sans",
-    ]
 
 
 def _npc_color(job_name: str) -> tuple[int, int, int, int]:
