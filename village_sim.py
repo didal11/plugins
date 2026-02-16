@@ -18,7 +18,7 @@ from typing import List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from editable_data import load_entities
+from editable_data import DATA_DIR, load_entities, load_npc_templates
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
 
@@ -56,6 +56,24 @@ class JsonEntity(BaseModel):
     is_discovered: bool = False
 
 
+class JsonNpc(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    job: str = "농부"
+    x: int | None = None
+    y: int | None = None
+
+
+class RenderNpc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    job: str
+    x: int
+    y: int
+
+
 def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) -> GameWorld:
     entities = [JsonEntity.model_validate(row) for row in load_entities()]
     if not entities:
@@ -87,8 +105,46 @@ def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) 
     )
 
 
+def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
+    seed = sum(ord(ch) for ch in layer_name)
+    r = 40 + (seed * 37) % 120
+    g = 50 + (seed * 57) % 120
+    b = 60 + (seed * 79) % 120
+    return int(r), int(g), int(b), 130
+
+
+def _npc_color(job_name: str) -> tuple[int, int, int, int]:
+    seed = sum(ord(ch) for ch in job_name)
+    r = 140 + (seed * 17) % 95
+    g = 120 + (seed * 29) % 110
+    b = 130 + (seed * 43) % 95
+    return int(r), int(g), int(b), 255
+
+
+def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
+    raw_npcs = [JsonNpc.model_validate(row) for row in load_npc_templates() if isinstance(row, dict)]
+    if not raw_npcs:
+        return []
+
+    width_tiles = max(1, world.width_px // world.grid_size)
+    height_tiles = max(1, world.height_px // world.grid_size)
+
+    out: List[RenderNpc] = []
+    for idx, npc in enumerate(raw_npcs):
+        default_x = 1 + (idx % max(1, width_tiles - 2))
+        default_y = 1 + ((idx // max(1, width_tiles - 2)) % max(1, height_tiles - 2))
+        x = npc.x if npc.x is not None else default_x
+        y = npc.y if npc.y is not None else default_y
+        x = min(max(0, int(x)), width_tiles - 1)
+        y = min(max(0, int(y)), height_tiles - 1)
+        out.append(RenderNpc(name=npc.name, job=npc.job, x=x, y=y))
+    return out
+
+
 def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
+
+    npcs = _build_render_npcs(world)
 
     class VillageArcadeWindow(arcade.Window):
         def __init__(self):
@@ -139,10 +195,29 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             tile = world.grid_size
             with self.camera.activate():
                 arcade.draw_lrbt_rectangle_filled(0, world.width_px, 0, world.height_px, (38, 42, 50, 255))
+
+                for tile_row in world.tiles:
+                    tx = tile_row.x * tile
+                    ty = tile_row.y * tile
+                    arcade.draw_lrbt_rectangle_filled(
+                        tx,
+                        tx + tile,
+                        ty,
+                        ty + tile,
+                        _stable_layer_color(tile_row.name),
+                    )
+
                 for y in range(0, world.height_px, tile):
                     arcade.draw_line(0, y, world.width_px, y, (46, 52, 60, 80), 1)
                 for x in range(0, world.width_px, tile):
                     arcade.draw_line(x, 0, x, world.height_px, (46, 52, 60, 80), 1)
+
+                for npc in npcs:
+                    nx = npc.x * tile + tile / 2
+                    ny = npc.y * tile + tile / 2
+                    arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
+                    arcade.draw_text(npc.name, nx + 5, ny - 12, (240, 240, 240, 255), 9)
+
                 for entity in world.entities:
                     ex = entity.x * tile + tile / 2
                     ey = entity.y * tile + tile / 2
@@ -157,7 +232,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Arcade village simulator runner")
-    parser.add_argument("--ldtk", default=None, help="Optional path to LDtk project")
+    default_ldtk = DATA_DIR / "map.ldtk"
+    parser.add_argument("--ldtk", default=str(default_ldtk), help=f"Path to LDtk project (default: {default_ldtk})")
     parser.add_argument("--level", default=None, help="LDtk level identifier")
     return parser.parse_args()
 
@@ -165,7 +241,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     config = RuntimeConfig()
-    world = build_world_from_ldtk(Path(args.ldtk), level_identifier=args.level) if args.ldtk else world_from_entities_json()
+    world = build_world_from_ldtk(Path(args.ldtk), level_identifier=args.level)
     run_arcade(world, config)
 
 
