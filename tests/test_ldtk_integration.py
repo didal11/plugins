@@ -229,3 +229,49 @@ def test_build_world_falls_back_to_default_tile_when_grid_is_missing_everywhere(
     assert world.grid_size == 16
     assert world.entities[0].x == 2
     assert world.entities[0].y == 3
+
+
+@pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
+def test_build_world_collects_blocked_tiles_from_collision_and_wall(tmp_path: Path):
+    sample = {
+        "defs": {
+            "layers": [
+                {
+                    "uid": 10,
+                    "identifier": "Collision",
+                    "intGridValues": [{"value": 1, "identifier": "wall"}],
+                }
+            ]
+        },
+        "levels": [
+            {
+                "identifier": "World",
+                "worldGridSize": 16,
+                "pxWid": 32,
+                "pxHei": 32,
+                "layerInstances": [
+                    {"__identifier": "Entities", "__type": "Entities", "entityInstances": []},
+                    {
+                        "__identifier": "Collision",
+                        "__type": "IntGrid",
+                        "layerDefUid": 10,
+                        "__cWid": 2,
+                        "__cHei": 2,
+                        "__gridSize": 16,
+                        "intGridCsv": [1, 0, 0, 0],
+                    },
+                    {
+                        "__identifier": "Wall",
+                        "__type": "Tiles",
+                        "__gridSize": 16,
+                        "gridTiles": [{"px": [16, 16], "t": 1}],
+                    },
+                ],
+            }
+        ],
+    }
+    ldtk_file = tmp_path / "sample_collision.ldtk"
+    ldtk_file.write_text(json.dumps(sample), encoding="utf-8")
+
+    world = build_world_from_ldtk(ldtk_file)
+    assert sorted(world.blocked_tiles) == [[0, 0], [1, 1]]
