@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from pathlib import Path
 
 import arcade
 
@@ -111,7 +112,8 @@ class LdtkArcadeWindow(arcade.Window):
 
 def main():
     parser = argparse.ArgumentParser(description="Arcade + LDtk game runner")
-    parser.add_argument("--ldtk", required=True, help="Path to LDtk project file")
+    default_ldtk = Path(__file__).resolve().parent / "data" / "map.ldtk"
+    parser.add_argument("--ldtk", default=str(default_ldtk), help=f"Path to LDtk project file (default: {default_ldtk})")
     parser.add_argument("--level", default=None, help="Level identifier")
     args = parser.parse_args()
 
