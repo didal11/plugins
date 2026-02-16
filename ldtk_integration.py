@@ -40,6 +40,7 @@ class LdtkLayerInstance(BaseModel):
 
     identifier: str = Field(alias="__identifier")
     layer_type: str = Field(alias="__type")
+    grid_size: Optional[int] = Field(default=None, alias="__gridSize")
     entity_instances: List[LdtkEntityInstance] = Field(default_factory=list, alias="entityInstances")
 
 
@@ -47,7 +48,7 @@ class LdtkLevel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     identifier: str
-    world_grid_size: int = Field(alias="worldGridSize")
+    world_grid_size: Optional[int] = Field(default=None, alias="worldGridSize")
     px_wid: int = Field(alias="pxWid")
     px_hei: int = Field(alias="pxHei")
     layer_instances: Optional[List[LdtkLayerInstance]] = Field(default=None, alias="layerInstances")
@@ -56,6 +57,7 @@ class LdtkLevel(BaseModel):
 class LdtkProject(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    default_grid_size: Optional[int] = Field(default=None, alias="defaultGridSize")
     levels: List[LdtkLevel]
 
 
@@ -157,13 +159,23 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
         None,
     )
 
+    resolved_grid_size = level.world_grid_size
+    if resolved_grid_size is None and entity_layer_row is not None:
+        resolved_grid_size = entity_layer_row.grid_size
+    if resolved_grid_size is None:
+        resolved_grid_size = next((layer.grid_size for layer in layer_instances if layer.grid_size is not None), None)
+    if resolved_grid_size is None:
+        resolved_grid_size = project.default_grid_size
+    if resolved_grid_size is None:
+        resolved_grid_size = 16
+
     entities: List[GameEntity] = []
     if entity_layer_row is not None:
-        entities = [_entity_from_ldtk(row, grid_size=level.world_grid_size) for row in entity_layer_row.entity_instances]
+        entities = [_entity_from_ldtk(row, grid_size=resolved_grid_size) for row in entity_layer_row.entity_instances]
 
     return GameWorld(
         level_id=level.identifier,
-        grid_size=level.world_grid_size,
+        grid_size=resolved_grid_size,
         width_px=level.px_wid,
         height_px=level.px_hei,
         entities=entities,

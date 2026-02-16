@@ -18,7 +18,7 @@ from typing import List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from editable_data import load_entities
+from editable_data import DATA_DIR, load_entities
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
 
@@ -157,7 +157,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Arcade village simulator runner")
-    parser.add_argument("--ldtk", default=None, help="Optional path to LDtk project")
+    default_ldtk = DATA_DIR / "map.ldtk"
+    parser.add_argument("--ldtk", default=str(default_ldtk), help=f"Path to LDtk project (default: {default_ldtk})")
     parser.add_argument("--level", default=None, help="LDtk level identifier")
     return parser.parse_args()
 
@@ -165,7 +166,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     config = RuntimeConfig()
-    world = build_world_from_ldtk(Path(args.ldtk), level_identifier=args.level) if args.ldtk else world_from_entities_json()
+    world = build_world_from_ldtk(Path(args.ldtk), level_identifier=args.level)
     run_arcade(world, config)
 
 
