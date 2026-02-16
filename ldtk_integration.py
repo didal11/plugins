@@ -35,6 +35,13 @@ class LdtkEntityInstance(BaseModel):
     field_instances: List[LdtkFieldInstance] = Field(default_factory=list, alias="fieldInstances")
 
 
+class LdtkTileInstance(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    px: List[int]
+    tile_id: int = Field(alias="t")
+
+
 class LdtkLayerInstance(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -42,6 +49,8 @@ class LdtkLayerInstance(BaseModel):
     layer_type: str = Field(alias="__type")
     grid_size: Optional[int] = Field(default=None, alias="__gridSize")
     entity_instances: List[LdtkEntityInstance] = Field(default_factory=list, alias="entityInstances")
+    grid_tiles: List[LdtkTileInstance] = Field(default_factory=list, alias="gridTiles")
+    auto_layer_tiles: List[LdtkTileInstance] = Field(default_factory=list, alias="autoLayerTiles")
 
 
 class LdtkLevel(BaseModel):
@@ -74,6 +83,15 @@ class GameEntity(BaseModel):
     is_discovered: bool
 
 
+class GameTile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    layer: str
+    tile_id: int
+    x: int
+    y: int
+
+
 class GameWorld(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -82,6 +100,7 @@ class GameWorld(BaseModel):
     width_px: int
     height_px: int
     entities: List[GameEntity]
+    tiles: List[GameTile] = Field(default_factory=list)
 
 
 def _fields_to_map(fields: List[LdtkFieldInstance]) -> Dict[str, Any]:
@@ -129,6 +148,20 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
         is_workbench=is_workbench,
         is_discovered=is_discovered,
     )
+
+
+def _tiles_from_layer(layer: LdtkLayerInstance, *, fallback_grid_size: int) -> List[GameTile]:
+    layer_grid = layer.grid_size or fallback_grid_size
+    rows = [*layer.grid_tiles, *layer.auto_layer_tiles]
+    return [
+        GameTile(
+            layer=layer.identifier,
+            tile_id=row.tile_id,
+            x=int(row.px[0] // layer_grid),
+            y=int(row.px[1] // layer_grid),
+        )
+        for row in rows
+    ]
 
 
 def load_ldtk_project(path: str | Path) -> LdtkProject:
@@ -179,8 +212,13 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
         width_px=level.px_wid,
         height_px=level.px_hei,
         entities=entities,
+        tiles=tiles,
     )
 
 
 def world_entities_as_rows(world: GameWorld) -> List[Dict[str, object]]:
     return [entity.model_dump() for entity in world.entities]
+
+
+def world_tiles_as_rows(world: GameWorld) -> List[Dict[str, object]]:
+    return [tile.model_dump() for tile in world.tiles]

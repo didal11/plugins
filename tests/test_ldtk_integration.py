@@ -10,7 +10,7 @@ HAS_DEPS = importlib.util.find_spec("pydantic") is not None and importlib.util.f
 
 if HAS_DEPS:
     from editable_data import import_entities_from_ldtk
-    from ldtk_integration import build_world_from_ldtk, load_ldtk_project, world_entities_as_rows
+    from ldtk_integration import build_world_from_ldtk, load_ldtk_project, world_entities_as_rows, world_tiles_as_rows
 
 
 SAMPLE_LDTK = {
@@ -45,6 +45,15 @@ SAMPLE_LDTK = {
                                 {"__identifier": "isDiscovered", "__value": False},
                             ],
                         },
+                    ],
+                },
+                {
+                    "__identifier": "Road",
+                    "__type": "Tiles",
+                    "__gridSize": 16,
+                    "gridTiles": [
+                        {"px": [16, 32], "t": 7},
+                        {"px": [48, 64], "t": 8}
                     ],
                 }
             ],
@@ -118,6 +127,12 @@ def test_load_ldtk_project_and_build_world(tmp_path: Path):
     assert rows[1]["x"] == 30
     assert rows[1]["y"] == 13
     assert rows[1]["current_quantity"] == 150
+
+    tile_rows = world_tiles_as_rows(world)
+    assert len(tile_rows) == 2
+    assert tile_rows[0]["layer"] == "Road"
+    assert tile_rows[0]["x"] == 1
+    assert tile_rows[0]["y"] == 2
 
 
 @pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
