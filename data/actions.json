@@ -89,7 +89,7 @@
     "required_tools": [
       "도구"
     ],
-    "required_entity": "alchemy_table",
+    "required_entity": "alchemy_workbench",
     "outputs": {
       "potion": {
         "min": 1,
@@ -105,7 +105,7 @@
     "required_tools": [
       "도구"
     ],
-    "required_entity": "herb_cluster",
+    "required_entity": "herb",
     "outputs": {
       "herb": {
         "min": 2,
@@ -121,7 +121,7 @@
     "required_tools": [
       "도구"
     ],
-    "required_entity": "tree_grove",
+    "required_entity": "tree",
     "outputs": {
       "wood": {
         "min": 1,
@@ -137,7 +137,7 @@
     "required_tools": [
       "도구"
     ],
-    "required_entity": "ore_vein",
+    "required_entity": "ore",
     "outputs": {
       "ore": {
         "min": 1,
