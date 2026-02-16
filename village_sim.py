@@ -19,7 +19,13 @@ from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from editable_data import DATA_DIR, load_entities, load_npc_templates
+from editable_data import (
+    DATA_DIR,
+    load_action_defs,
+    load_entities,
+    load_job_defs,
+    load_npc_templates,
+)
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
 
