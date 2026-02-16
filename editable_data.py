@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import json
+import orjson
 from pathlib import Path
 from typing import Dict, List
 
@@ -100,12 +100,12 @@ DEFAULT_ENTITIES: List[Dict[str, object]] = [
 
 
 def _write_json(path: Path, obj: object) -> None:
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_bytes(orjson.dumps(obj, option=orjson.OPT_INDENT_2))
 
 
 def _read_json(path: Path, fallback: object) -> object:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return orjson.loads(path.read_bytes())
     except Exception:
         return fallback
 
