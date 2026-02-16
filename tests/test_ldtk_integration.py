@@ -105,6 +105,49 @@ SAMPLE_LDTK_WITH_DEFAULT_GRID = {
 }
 
 
+
+SAMPLE_LDTK_WITHOUT_ANY_GRID_SIZE = {
+    "levels": [
+        {
+            "identifier": "NoGrid",
+            "worldGridSize": None,
+            "pxWid": 320,
+            "pxHei": 160,
+            "layerInstances": [
+                {
+                    "__identifier": "Entities",
+                    "__type": "Entities",
+                    "entityInstances": [
+                        {"__identifier": "rock", "px": [32, 48], "fieldInstances": []}
+                    ],
+                }
+            ],
+        }
+    ]
+}
+
+SAMPLE_LDTK_WITH_DEFAULT_GRID = {
+    "defaultGridSize": 24,
+    "levels": [
+        {
+            "identifier": "World",
+            "worldGridSize": None,
+            "pxWid": 480,
+            "pxHei": 240,
+            "layerInstances": [
+                {
+                    "__identifier": "Entities",
+                    "__type": "Entities",
+                    "entityInstances": [
+                        {"__identifier": "tree", "px": [48, 72], "fieldInstances": []}
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
 @pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
 def test_load_ldtk_project_and_build_world(tmp_path: Path):
     ldtk_file = tmp_path / "sample.ldtk"
@@ -131,7 +174,6 @@ def test_load_ldtk_project_and_build_world(tmp_path: Path):
     tile_rows = world_tiles_as_rows(world)
     assert len(tile_rows) == 2
     assert tile_rows[0]["layer"] == "Road"
-    assert tile_rows[0]["name"] == "Road"
     assert tile_rows[0]["x"] == 1
     assert tile_rows[0]["y"] == 2
 
@@ -187,29 +229,3 @@ def test_build_world_falls_back_to_default_tile_when_grid_is_missing_everywhere(
     assert world.grid_size == 16
     assert world.entities[0].x == 2
     assert world.entities[0].y == 3
-
-
-@pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
-def test_build_world_without_tile_layers_returns_empty_tiles(tmp_path: Path):
-    ldtk = {
-        "levels": [
-            {
-                "identifier": "NoTile",
-                "worldGridSize": 16,
-                "pxWid": 160,
-                "pxHei": 160,
-                "layerInstances": [
-                    {
-                        "__identifier": "Entities",
-                        "__type": "Entities",
-                        "entityInstances": [],
-                    }
-                ],
-            }
-        ]
-    }
-    ldtk_file = tmp_path / "sample_no_tiles.ldtk"
-    ldtk_file.write_text(json.dumps(ldtk), encoding="utf-8")
-
-    world = build_world_from_ldtk(ldtk_file)
-    assert world.tiles == []

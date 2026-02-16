@@ -18,7 +18,7 @@ from typing import List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from editable_data import DATA_DIR, load_entities, load_npc_templates
+from editable_data import DATA_DIR, load_entities
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
 
@@ -105,41 +105,14 @@ def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) 
     )
 
 
+
+
 def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
     seed = sum(ord(ch) for ch in layer_name)
     r = 40 + (seed * 37) % 120
     g = 50 + (seed * 57) % 120
     b = 60 + (seed * 79) % 120
     return int(r), int(g), int(b), 130
-
-
-def _npc_color(job_name: str) -> tuple[int, int, int, int]:
-    seed = sum(ord(ch) for ch in job_name)
-    r = 140 + (seed * 17) % 95
-    g = 120 + (seed * 29) % 110
-    b = 130 + (seed * 43) % 95
-    return int(r), int(g), int(b), 255
-
-
-def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
-    raw_npcs = [JsonNpc.model_validate(row) for row in load_npc_templates() if isinstance(row, dict)]
-    if not raw_npcs:
-        return []
-
-    width_tiles = max(1, world.width_px // world.grid_size)
-    height_tiles = max(1, world.height_px // world.grid_size)
-
-    out: List[RenderNpc] = []
-    for idx, npc in enumerate(raw_npcs):
-        default_x = 1 + (idx % max(1, width_tiles - 2))
-        default_y = 1 + ((idx // max(1, width_tiles - 2)) % max(1, height_tiles - 2))
-        x = npc.x if npc.x is not None else default_x
-        y = npc.y if npc.y is not None else default_y
-        x = min(max(0, int(x)), width_tiles - 1)
-        y = min(max(0, int(y)), height_tiles - 1)
-        out.append(RenderNpc(name=npc.name, job=npc.job, x=x, y=y))
-    return out
-
 
 def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
