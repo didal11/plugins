@@ -368,6 +368,46 @@ def test_sleep_does_not_recalculate_bed_path_every_tick(monkeypatch):
     assert calls == 1
 
 
+def test_sleep_stays_on_bed_after_arrival(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [{"job": "농부", "work_actions": ["농사"]}])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [{"name": "농사", "duration_minutes": 10}])
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.GameEntity(
+                key="bed_single",
+                name="침대",
+                x=3,
+                y=1,
+                max_quantity=1,
+                current_quantity=1,
+                is_workbench=False,
+                is_discovered=True,
+                tags=[],
+            )
+        ],
+        tiles=[],
+        blocked_tiles=[[2, 1]],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    _set_sim_time(sim, 22)
+    for _ in range(4):
+        sim.tick_once()
+    assert (npcs[0].x, npcs[0].y) == (3, 1)
+
+    sim.tick_once()
+    sim.tick_once()
+    assert (npcs[0].x, npcs[0].y) == (3, 1)
+
+
 def test_collect_non_resource_entities_filters_resource_tag():
     import village_sim
 
