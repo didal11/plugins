@@ -167,18 +167,8 @@ class SimulationRuntime:
         hours_elapsed = self.ticks // self.TICKS_PER_HOUR
         return (self.start_hour + hours_elapsed) % 24
 
-    def _pick_next_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
-        activity = self.planner.activity_for_hour(self._current_hour())
-        if activity == ScheduledActivity.MEAL:
-            state.current_action = "식사"
-            state.ticks_remaining = self.TICKS_PER_HOUR
-            state.path = []
-            return
-        if activity == ScheduledActivity.SLEEP:
-            state.current_action = "취침"
-            state.ticks_remaining = self.TICKS_PER_HOUR
-            state.path = []
-            return
+    def _pick_next_work_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
+        """업무 시간에만 호출되는 업무 선택 로직."""
 
         candidates = self.job_actions.get(npc.job, [])
         if not candidates:
@@ -284,8 +274,19 @@ class SimulationRuntime:
 
     def _step_npc(self, npc: RenderNpc) -> None:
         state = self.state_by_name[npc.name]
-        if state.ticks_remaining <= 0:
-            self._pick_next_action(npc, state)
+        planned = self.planner.activity_for_hour(self._current_hour())
+        if planned == ScheduledActivity.MEAL:
+            if state.current_action != "식사":
+                state.current_action = "식사"
+                state.path = []
+            state.ticks_remaining = 1
+        elif planned == ScheduledActivity.SLEEP:
+            if state.current_action != "취침":
+                state.current_action = "취침"
+                state.path = []
+            state.ticks_remaining = 1
+        elif state.ticks_remaining <= 0:
+            self._pick_next_work_action(npc, state)
 
         state.ticks_remaining = max(0, state.ticks_remaining - 1)
 
