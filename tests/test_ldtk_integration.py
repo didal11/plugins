@@ -105,6 +105,49 @@ SAMPLE_LDTK_WITH_DEFAULT_GRID = {
 }
 
 
+
+SAMPLE_LDTK_WITHOUT_ANY_GRID_SIZE = {
+    "levels": [
+        {
+            "identifier": "NoGrid",
+            "worldGridSize": None,
+            "pxWid": 320,
+            "pxHei": 160,
+            "layerInstances": [
+                {
+                    "__identifier": "Entities",
+                    "__type": "Entities",
+                    "entityInstances": [
+                        {"__identifier": "rock", "px": [32, 48], "fieldInstances": []}
+                    ],
+                }
+            ],
+        }
+    ]
+}
+
+SAMPLE_LDTK_WITH_DEFAULT_GRID = {
+    "defaultGridSize": 24,
+    "levels": [
+        {
+            "identifier": "World",
+            "worldGridSize": None,
+            "pxWid": 480,
+            "pxHei": 240,
+            "layerInstances": [
+                {
+                    "__identifier": "Entities",
+                    "__type": "Entities",
+                    "entityInstances": [
+                        {"__identifier": "tree", "px": [48, 72], "fieldInstances": []}
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
 @pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
 def test_load_ldtk_project_and_build_world(tmp_path: Path):
     ldtk_file = tmp_path / "sample.ldtk"

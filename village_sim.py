@@ -56,6 +56,24 @@ class JsonEntity(BaseModel):
     is_discovered: bool = False
 
 
+class JsonNpc(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    job: str = "농부"
+    x: int | None = None
+    y: int | None = None
+
+
+class RenderNpc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    job: str
+    x: int
+    y: int
+
+
 def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) -> GameWorld:
     entities = [JsonEntity.model_validate(row) for row in load_entities()]
     if not entities:
@@ -98,6 +116,8 @@ def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
 
 def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
+
+    npcs = _build_render_npcs(world)
 
     class VillageArcadeWindow(arcade.Window):
         def __init__(self):
@@ -164,6 +184,13 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     arcade.draw_line(0, y, world.width_px, y, (46, 52, 60, 80), 1)
                 for x in range(0, world.width_px, tile):
                     arcade.draw_line(x, 0, x, world.height_px, (46, 52, 60, 80), 1)
+
+                for npc in npcs:
+                    nx = npc.x * tile + tile / 2
+                    ny = npc.y * tile + tile / 2
+                    arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
+                    arcade.draw_text(npc.name, nx + 5, ny - 12, (240, 240, 240, 255), 9)
+
                 for entity in world.entities:
                     ex = entity.x * tile + tile / 2
                     ey = entity.y * tile + tile / 2
