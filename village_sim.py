@@ -19,7 +19,6 @@ from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-import editable_data
 from editable_data import DATA_DIR, load_entities, load_npc_templates
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
@@ -110,9 +109,7 @@ class SimulationRuntime:
 
     def _job_actions_map(self) -> Dict[str, List[str]]:
         out: Dict[str, List[str]] = {}
-        loader = getattr(editable_data, "load_job_defs", None)
-        rows = loader() if callable(loader) else []
-        for row in rows:
+        for row in load_job_defs():
             if not isinstance(row, dict):
                 continue
             job = str(row.get("job", "")).strip()
@@ -125,9 +122,7 @@ class SimulationRuntime:
 
     def _action_duration_map(self) -> Dict[str, int]:
         out: Dict[str, int] = {}
-        loader = getattr(editable_data, "load_action_defs", None)
-        rows = loader() if callable(loader) else []
-        for row in rows:
+        for row in load_action_defs():
             if not isinstance(row, dict):
                 continue
             name = str(row.get("name", "")).strip()
@@ -209,17 +204,6 @@ def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
     g = 50 + (seed * 57) % 120
     b = 60 + (seed * 79) % 120
     return int(r), int(g), int(b), 130
-
-
-def _font_candidates() -> list[str]:
-    return [
-        "Noto Sans CJK KR",
-        "NanumGothic",
-        "Malgun Gothic",
-        "AppleGothic",
-        "Arial Unicode MS",
-        "DejaVu Sans",
-    ]
 
 
 def _npc_color(job_name: str) -> tuple[int, int, int, int]:
