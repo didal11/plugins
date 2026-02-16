@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
+from ldtk_integration import build_world_from_ldtk, world_entities_as_rows
+
 DATA_DIR = Path(__file__).parent / "data"
 ITEMS_FILE = DATA_DIR / "items.json"
 NPCS_FILE = DATA_DIR / "npcs.json"
@@ -291,6 +293,25 @@ def load_entities() -> List[Dict[str, object]]:
 def save_entities(entities: List[Dict[str, object]]) -> None:
     ensure_data_files()
     _write_json(ENTITIES_FILE, [e for e in (_normalize_entity(x) for x in entities if isinstance(x, dict)) if e])
+
+
+def import_entities_from_ldtk(ldtk_path: str, level_identifier: str | None = None, layer_identifier: str = "Entities") -> List[Dict[str, object]]:
+    """Import entity rows from LDtk into the current entities data file."""
+
+    ensure_data_files()
+    world = build_world_from_ldtk(
+        ldtk_path,
+        level_identifier=level_identifier,
+        entity_layer=layer_identifier,
+    )
+    imported = world_entities_as_rows(world)
+    normalized = [
+        norm for norm in (_normalize_entity(row) for row in imported if isinstance(row, dict)) if norm
+    ]
+    if not normalized:
+        raise ValueError("No valid entities imported from LDtk")
+    _write_json(ENTITIES_FILE, normalized)
+    return normalized
 
 
 def load_job_defs() -> List[Dict[str, object]]:
