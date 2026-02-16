@@ -10,6 +10,8 @@ HAS_ARCADE = importlib.util.find_spec("arcade") is not None
 
 def _set_sim_time(sim, hour: int, minute: int = 0) -> None:
     sim.ticks = ((hour % 24) * 60) + (minute % 60) - 1
+    for state in sim.state_by_name.values():
+        state.decision_ticks_until_check = 0
 
 
 @pytest.mark.skipif(not HAS_ARCADE, reason="requires arcade")
@@ -242,3 +244,41 @@ def test_simulation_runtime_does_not_select_work_during_meal_or_sleep(monkeypatc
     sim.state_by_name["A"].ticks_remaining = 0
     sim.tick_once()  # 22시 취침
     assert sim.state_by_name["A"].current_action == "취침"
+
+
+def test_simulation_runtime_updates_decision_once_per_10_ticks(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "농부", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 1}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    _set_sim_time(sim, 9)
+
+    called = 0
+
+    def _count_pick(npc, state):
+        nonlocal called
+        called += 1
+        state.current_action = "농사"
+        state.ticks_remaining = 1
+
+    sim._pick_next_work_action = _count_pick
+
+    for _ in range(10):
+        sim.tick_once()
+    assert called == 1
+
+    sim.tick_once()
+    assert called == 2

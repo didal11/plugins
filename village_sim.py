@@ -88,6 +88,7 @@ class SimulationNpcState(BaseModel):
 
     current_action: str = "대기"
     ticks_remaining: int = 0
+    decision_ticks_until_check: int = 0
     path: List[Tuple[int, int]] = Field(default_factory=list)
 
 
@@ -96,17 +97,18 @@ class SimulationRuntime:
 
     TICK_MINUTES = 1
     TICKS_PER_HOUR = 60 // TICK_MINUTES
+    DECISION_INTERVAL_TICKS = 10
 
     def __init__(
         self,
         world: GameWorld,
         npcs: List[RenderNpc],
-        tick_seconds: float = 0.05,
+        tick_seconds: float = 0.1,
         seed: int = 42,
     ):
         self.world = world
         self.npcs = npcs
-        self.tick_seconds = max(0.05, float(tick_seconds))
+        self.tick_seconds = max(0.1, float(tick_seconds))
         self._accumulator = 0.0
         self.ticks = 0
         self.rng = Random(seed)
@@ -272,20 +274,24 @@ class SimulationRuntime:
 
     def _step_npc(self, npc: RenderNpc) -> None:
         state = self.state_by_name[npc.name]
-        planned = self.planner.activity_for_hour(self._current_hour())
-        if planned == ScheduledActivity.MEAL:
-            if state.current_action != "식사":
-                state.current_action = "식사"
-                state.path = []
-            state.ticks_remaining = 1
-        elif planned == ScheduledActivity.SLEEP:
-            if state.current_action != "취침":
-                state.current_action = "취침"
-                state.path = []
-            state.ticks_remaining = 1
-        elif state.ticks_remaining <= 0:
-            self._pick_next_work_action(npc, state)
 
+        if state.decision_ticks_until_check <= 0:
+            planned = self.planner.activity_for_hour(self._current_hour())
+            if planned == ScheduledActivity.MEAL:
+                if state.current_action != "식사":
+                    state.current_action = "식사"
+                    state.path = []
+                state.ticks_remaining = 1
+            elif planned == ScheduledActivity.SLEEP:
+                if state.current_action != "취침":
+                    state.current_action = "취침"
+                    state.path = []
+                state.ticks_remaining = 1
+            elif state.ticks_remaining <= 0:
+                self._pick_next_work_action(npc, state)
+            state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
+
+        state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
         state.ticks_remaining = max(0, state.ticks_remaining - 1)
 
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
