@@ -87,6 +87,15 @@ def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) 
     )
 
 
+
+
+def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
+    seed = sum(ord(ch) for ch in layer_name)
+    r = 40 + (seed * 37) % 120
+    g = 50 + (seed * 57) % 120
+    b = 60 + (seed * 79) % 120
+    return int(r), int(g), int(b), 130
+
 def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
 
@@ -139,6 +148,18 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             tile = world.grid_size
             with self.camera.activate():
                 arcade.draw_lrbt_rectangle_filled(0, world.width_px, 0, world.height_px, (38, 42, 50, 255))
+
+                for tile_row in world.tiles:
+                    tx = tile_row.x * tile
+                    ty = tile_row.y * tile
+                    arcade.draw_lrbt_rectangle_filled(
+                        tx,
+                        tx + tile,
+                        ty,
+                        ty + tile,
+                        _stable_layer_color(tile_row.name),
+                    )
+
                 for y in range(0, world.height_px, tile):
                     arcade.draw_line(0, y, world.width_px, y, (46, 52, 60, 80), 1)
                 for x in range(0, world.width_px, tile):
