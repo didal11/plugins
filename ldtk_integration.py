@@ -206,6 +206,12 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
     if entity_layer_row is not None:
         entities = [_entity_from_ldtk(row, grid_size=resolved_grid_size) for row in entity_layer_row.entity_instances]
 
+    tiles: List[GameTile] = []
+    for layer in layer_instances:
+        if layer.layer_type == "Entities":
+            continue
+        tiles.extend(_tiles_from_layer(layer, fallback_grid_size=resolved_grid_size))
+
     return GameWorld(
         level_id=level.identifier,
         grid_size=resolved_grid_size,
