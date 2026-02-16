@@ -69,3 +69,38 @@ def test_build_render_npcs_uses_defaults_and_clamps(monkeypatch):
     assert len(npcs) == 2
     assert (npcs[0].x, npcs[0].y) == (1, 1)
     assert (npcs[1].x, npcs[1].y) == (3, 0)
+
+
+def test_simulation_runtime_uses_daily_planning_for_actions(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "농부", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1, start_hour=8)
+
+    sim.tick_once()  # 08시, 식사 시간
+    assert sim.state_by_name["A"].current_action == "식사"
+
+    sim.start_hour = 9
+    sim.ticks = 0
+    sim.state_by_name["A"].ticks_remaining = 0
+    sim.tick_once()  # 09시, 업무 시간
+    assert sim.state_by_name["A"].current_action == "농사"
+
+    sim.start_hour = 22
+    sim.ticks = 0
+    sim.state_by_name["A"].ticks_remaining = 0
+    sim.tick_once()  # 22시, 취침 시간
+    assert sim.state_by_name["A"].current_action == "취침"
