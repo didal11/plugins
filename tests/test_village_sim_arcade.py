@@ -8,6 +8,12 @@ import pytest
 HAS_ARCADE = importlib.util.find_spec("arcade") is not None
 
 
+def _set_sim_time(sim, hour: int, minute: int = 0) -> None:
+    sim.ticks = ((hour % 24) * 60) + (minute % 60) - 1
+    for state in sim.state_by_name.values():
+        state.decision_ticks_until_check = 0
+
+
 @pytest.mark.skipif(not HAS_ARCADE, reason="requires arcade")
 def test_village_sim_uses_arcade_and_not_pygame(monkeypatch):
     import village_sim
@@ -88,19 +94,18 @@ def test_simulation_runtime_uses_daily_planning_for_actions(monkeypatch):
     world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
     npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
 
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1, start_hour=8)
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
+    _set_sim_time(sim, 8)
     sim.tick_once()  # 08시, 식사 시간
     assert sim.state_by_name["A"].current_action == "식사"
 
-    sim.start_hour = 9
-    sim.ticks = 0
+    _set_sim_time(sim, 9)
     sim.state_by_name["A"].ticks_remaining = 0
     sim.tick_once()  # 09시, 업무 시간
     assert sim.state_by_name["A"].current_action == "농사"
 
-    sim.start_hour = 22
-    sim.ticks = 0
+    _set_sim_time(sim, 22)
     sim.state_by_name["A"].ticks_remaining = 0
     sim.tick_once()  # 22시, 취침 시간
     assert sim.state_by_name["A"].current_action == "취침"
@@ -133,14 +138,51 @@ def test_simulation_runtime_meal_moves_towards_dining_table(monkeypatch):
         blocked_tiles=[[2, 1]],
     )
     npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1, start_hour=8)
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
+    _set_sim_time(sim, 8)
     sim.tick_once()
     assert sim.state_by_name["A"].current_action == "식사"
     assert (npcs[0].x, npcs[0].y) == (1, 0)
 
 
-def test_display_clock_starts_from_year_zero_and_advances_10_minutes(monkeypatch):
+
+
+def test_simulation_runtime_sleep_moves_towards_bed(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [{"job": "농부", "work_actions": ["농사"]}])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [{"name": "농사", "duration_minutes": 10}])
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.GameEntity(
+                key="bed_single",
+                name="침대",
+                x=3,
+                y=1,
+                max_quantity=1,
+                current_quantity=1,
+                is_workbench=False,
+                is_discovered=True,
+            )
+        ],
+        tiles=[],
+        blocked_tiles=[[2, 1]],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    _set_sim_time(sim, 22)
+    sim.tick_once()
+    assert sim.state_by_name["A"].current_action == "취침"
+    assert (npcs[0].x, npcs[0].y) == (1, 0)
+
+def test_display_clock_starts_from_year_zero_and_advances_1_minute(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(village_sim, "load_job_defs", lambda: [])
@@ -151,7 +193,26 @@ def test_display_clock_starts_from_year_zero_and_advances_10_minutes(monkeypatch
 
     assert sim.display_clock() == "0000년 01월 01일 00:00"
     sim.tick_once()
-    assert sim.display_clock() == "0000년 01월 01일 00:10"
+    assert sim.display_clock() == "0000년 01월 01일 00:01"
+
+def test_display_clock_hud_rounds_down_to_30_minutes(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [])
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=32, height_px=32, entities=[], tiles=[])
+    sim = village_sim.SimulationRuntime(world, [], seed=1)
+
+    sim.ticks = 29
+    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 00:00"
+
+    sim.ticks = 30
+    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 00:30"
+
+    sim.ticks = 61
+    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 01:00"
+
 
 
 def test_simulation_runtime_planning_preempts_ongoing_work(monkeypatch):
@@ -171,12 +232,13 @@ def test_simulation_runtime_planning_preempts_ongoing_work(monkeypatch):
     world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
     npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
 
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1, start_hour=11)
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
+    _set_sim_time(sim, 11)
     sim.tick_once()  # 11시 업무 시작
     assert sim.state_by_name["A"].current_action == "장기작업"
 
-    for _ in range(6):
+    for _ in range(60):
         sim.tick_once()  # 12시 진입
     assert sim.state_by_name["A"].current_action == "식사"
 
@@ -198,12 +260,13 @@ def test_simulation_runtime_planning_preempts_ongoing_work_for_sleep(monkeypatch
     world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
     npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
 
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1, start_hour=19)
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
+    _set_sim_time(sim, 19)
     sim.tick_once()  # 19시 업무 시작
     assert sim.state_by_name["A"].current_action == "장기작업"
 
-    for _ in range(6):
+    for _ in range(60):
         sim.tick_once()  # 20시 진입
     assert sim.state_by_name["A"].current_action == "취침"
 
@@ -225,14 +288,52 @@ def test_simulation_runtime_does_not_select_work_during_meal_or_sleep(monkeypatc
     world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
     npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
 
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1, start_hour=8)
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
     sim._pick_next_work_action = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("업무 선택 로직 호출되면 안됨"))
 
+    _set_sim_time(sim, 8)
     sim.tick_once()  # 08시 식사
     assert sim.state_by_name["A"].current_action == "식사"
 
-    sim.start_hour = 22
-    sim.ticks = 0
+    _set_sim_time(sim, 22)
     sim.state_by_name["A"].ticks_remaining = 0
     sim.tick_once()  # 22시 취침
     assert sim.state_by_name["A"].current_action == "취침"
+
+
+def test_simulation_runtime_updates_decision_once_per_10_ticks(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "농부", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 1}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    _set_sim_time(sim, 9)
+
+    called = 0
+
+    def _count_pick(npc, state):
+        nonlocal called
+        called += 1
+        state.current_action = "농사"
+        state.ticks_remaining = 1
+
+    sim._pick_next_work_action = _count_pick
+
+    for _ in range(10):
+        sim.tick_once()
+    assert called == 1
+
+    sim.tick_once()
+    assert called == 2
