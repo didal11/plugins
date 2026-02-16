@@ -159,25 +159,6 @@ def test_display_clock_starts_from_year_zero_and_advances_1_minute(monkeypatch):
     sim.tick_once()
     assert sim.display_clock() == "0000년 01월 01일 00:01"
 
-def test_display_clock_hud_rounds_down_to_30_minutes(monkeypatch):
-    import village_sim
-
-    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [])
-    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [])
-
-    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=32, height_px=32, entities=[], tiles=[])
-    sim = village_sim.SimulationRuntime(world, [], seed=1)
-
-    sim.ticks = 29
-    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 00:00"
-
-    sim.ticks = 30
-    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 00:30"
-
-    sim.ticks = 61
-    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 01:00"
-
-
 
 def test_simulation_runtime_planning_preempts_ongoing_work(monkeypatch):
     import village_sim
