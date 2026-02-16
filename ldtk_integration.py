@@ -14,6 +14,7 @@ explicit validation errors.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional
 
 import orjson
@@ -48,9 +49,34 @@ class LdtkLayerInstance(BaseModel):
     identifier: str = Field(alias="__identifier")
     layer_type: str = Field(alias="__type")
     grid_size: Optional[int] = Field(default=None, alias="__gridSize")
+    c_wid: Optional[int] = Field(default=None, alias="__cWid")
+    c_hei: Optional[int] = Field(default=None, alias="__cHei")
+    layer_def_uid: Optional[int] = Field(default=None, alias="layerDefUid")
     entity_instances: List[LdtkEntityInstance] = Field(default_factory=list, alias="entityInstances")
     grid_tiles: List[LdtkTileInstance] = Field(default_factory=list, alias="gridTiles")
     auto_layer_tiles: List[LdtkTileInstance] = Field(default_factory=list, alias="autoLayerTiles")
+    int_grid_csv: List[int] = Field(default_factory=list, alias="intGridCsv")
+
+
+class LdtkIntGridValueDef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    value: int
+    identifier: Optional[str] = None
+
+
+class LdtkLayerDef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    uid: int
+    identifier: str
+    int_grid_values: List[LdtkIntGridValueDef] = Field(default_factory=list, alias="intGridValues")
+
+
+class LdtkDefs(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    layers: List[LdtkLayerDef] = Field(default_factory=list)
 
 
 class LdtkLevel(BaseModel):
@@ -68,6 +94,7 @@ class LdtkProject(BaseModel):
 
     default_grid_size: Optional[int] = Field(default=None, alias="defaultGridSize")
     levels: List[LdtkLevel]
+    defs: LdtkDefs = Field(default_factory=LdtkDefs)
 
 
 class GameEntity(BaseModel):
@@ -101,6 +128,7 @@ class GameWorld(BaseModel):
     height_px: int
     entities: List[GameEntity]
     tiles: List[GameTile] = Field(default_factory=list)
+    blocked_tiles: List[List[int]] = Field(default_factory=list)
 
 
 def _fields_to_map(fields: List[LdtkFieldInstance]) -> Dict[str, Any]:
@@ -124,6 +152,7 @@ def _as_bool(v: Any, default: bool = False) -> bool:
 def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
     f = _fields_to_map(row.field_instances)
     key = str(f.get("key") or row.identifier).strip()
+    key = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key).replace(" ", "_").replace("-", "_").lower()
     if not key:
         raise ValueError("LDtk entity key cannot be empty")
 
@@ -207,10 +236,34 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
         entities = [_entity_from_ldtk(row, grid_size=resolved_grid_size) for row in entity_layer_row.entity_instances]
 
     tiles: List[GameTile] = []
+    blocked_set: set[tuple[int, int]] = set()
+    layer_def_by_uid = {layer.uid: layer for layer in project.defs.layers}
+
     for layer in layer_instances:
         if layer.layer_type == "Entities":
             continue
         tiles.extend(_tiles_from_layer(layer, fallback_grid_size=resolved_grid_size))
+
+        if layer.identifier.lower() == "wall":
+            for row in [*layer.grid_tiles, *layer.auto_layer_tiles]:
+                layer_grid = layer.grid_size or resolved_grid_size
+                blocked_set.add((int(row.px[0] // layer_grid), int(row.px[1] // layer_grid)))
+
+        is_collision_layer = layer.identifier.lower() == "collision"
+        value_identifiers: dict[int, str] = {}
+        if layer.layer_def_uid is not None and layer.layer_def_uid in layer_def_by_uid:
+            value_identifiers = {
+                int(v.value): str(v.identifier or "").strip().lower()
+                for v in layer_def_by_uid[layer.layer_def_uid].int_grid_values
+            }
+        if layer.int_grid_csv and (is_collision_layer or value_identifiers):
+            cw = layer.c_wid or max(1, level.px_wid // (layer.grid_size or resolved_grid_size))
+            for idx, value in enumerate(layer.int_grid_csv):
+                if value == 0:
+                    continue
+                ident = value_identifiers.get(int(value), "")
+                if is_collision_layer or "wall" in ident or "collision" in ident or "block" in ident:
+                    blocked_set.add((idx % cw, idx // cw))
 
     return GameWorld(
         level_id=level.identifier,
@@ -219,6 +272,7 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
         height_px=level.px_hei,
         entities=entities,
         tiles=tiles,
+        blocked_tiles=[[x, y] for x, y in sorted(blocked_set)],
     )
 
 

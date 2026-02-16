@@ -13,9 +13,10 @@
 from __future__ import annotations
 
 import argparse
+import heapq
 from pathlib import Path
 from random import Random
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -87,6 +88,7 @@ class SimulationNpcState(BaseModel):
 
     current_action: str = "대기"
     ticks_remaining: int = 0
+    path: List[Tuple[int, int]] = Field(default_factory=list)
 
 
 class SimulationRuntime:
@@ -117,6 +119,17 @@ class SimulationRuntime:
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
+        self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
+        self.dining_tiles = self._find_dining_tiles()
+
+    def _find_dining_tiles(self) -> List[Tuple[int, int]]:
+        out: List[Tuple[int, int]] = []
+        for entity in self.world.entities:
+            key = entity.key.lower()
+            name = entity.name.lower()
+            if "dining" in key or "식탁" in name:
+                out.append((entity.x, entity.y))
+        return out
 
     @staticmethod
     def _duration_to_ticks(minutes: object) -> int:
@@ -159,20 +172,115 @@ class SimulationRuntime:
         if activity == ScheduledActivity.MEAL:
             state.current_action = "식사"
             state.ticks_remaining = self.TICKS_PER_HOUR
+            state.path = []
             return
         if activity == ScheduledActivity.SLEEP:
             state.current_action = "취침"
             state.ticks_remaining = self.TICKS_PER_HOUR
+            state.path = []
             return
 
         candidates = self.job_actions.get(npc.job, [])
         if not candidates:
             state.current_action = "배회"
             state.ticks_remaining = 1
+            state.path = []
             return
         action = self.rng.choice(candidates)
         state.current_action = action
         state.ticks_remaining = self.action_duration_ticks.get(action, 1)
+        state.path = []
+
+    def _neighbors(self, x: int, y: int, width_tiles: int, height_tiles: int) -> List[Tuple[int, int]]:
+        out: List[Tuple[int, int]] = []
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
+                continue
+            if (nx, ny) in self.blocked_tiles:
+                continue
+            out.append((nx, ny))
+        return out
+
+    @staticmethod
+    def _distance_to_targets(x: int, y: int, targets: List[Tuple[int, int]]) -> int:
+        return min(abs(x - tx) + abs(y - ty) for tx, ty in targets)
+
+    def _find_path_to_nearest_target(
+        self,
+        start: Tuple[int, int],
+        targets: List[Tuple[int, int]],
+        width_tiles: int,
+        height_tiles: int,
+    ) -> List[Tuple[int, int]]:
+        if not targets or start in targets:
+            return []
+
+        open_heap: List[Tuple[int, int, Tuple[int, int]]] = []
+        heapq.heappush(open_heap, (self._distance_to_targets(start[0], start[1], targets), 0, start))
+        came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
+        g_cost: Dict[Tuple[int, int], int] = {start: 0}
+        target_set = set(targets)
+
+        while open_heap:
+            _, cost, current = heapq.heappop(open_heap)
+            if current in target_set:
+                path: List[Tuple[int, int]] = []
+                node = current
+                while node != start:
+                    path.append(node)
+                    node = came_from[node]
+                path.reverse()
+                return path
+
+            for nb in self._neighbors(current[0], current[1], width_tiles, height_tiles):
+                next_cost = cost + 1
+                if next_cost >= g_cost.get(nb, 10**9):
+                    continue
+                came_from[nb] = current
+                g_cost[nb] = next_cost
+                score = next_cost + self._distance_to_targets(nb[0], nb[1], targets)
+                heapq.heappush(open_heap, (score, next_cost, nb))
+
+        return []
+
+    def _step_random(self, npc: RenderNpc, width_tiles: int, height_tiles: int) -> None:
+        candidates = self._neighbors(npc.x, npc.y, width_tiles, height_tiles) + [(npc.x, npc.y)]
+        next_x, next_y = self.rng.choice(candidates)
+        npc.x, npc.y = next_x, next_y
+
+    @staticmethod
+    def _format_sim_datetime(ticks: int) -> str:
+        minutes = max(0, ticks) * SimulationRuntime.TICK_MINUTES
+        minute = minutes % 60
+        total_hours = minutes // 60
+        hour = total_hours % 24
+        total_days = total_hours // 24
+
+        year = 0
+        month_days = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+        def year_days(y: int) -> int:
+            leap = (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)
+            return 366 if leap else 365
+
+        days_left = total_days
+        while days_left >= year_days(year):
+            days_left -= year_days(year)
+            year += 1
+
+        month = 1
+        for idx, md in enumerate(month_days, start=1):
+            leap_bonus = 1 if idx == 2 and year_days(year) == 366 else 0
+            if days_left < md + leap_bonus:
+                month = idx
+                break
+            days_left -= md + leap_bonus
+        day = days_left + 1
+
+        return f"{year:04d}년 {month:02d}월 {day:02d}일 {hour:02d}:{minute:02d}"
+
+    def display_clock(self) -> str:
+        return self._format_sim_datetime(self.ticks)
 
     def _step_npc(self, npc: RenderNpc) -> None:
         state = self.state_by_name[npc.name]
@@ -183,9 +291,20 @@ class SimulationRuntime:
 
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
         height_tiles = max(1, self.world.height_px // self.world.grid_size)
-        dx, dy = self.rng.choice([(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)])
-        npc.x = min(max(0, npc.x + dx), width_tiles - 1)
-        npc.y = min(max(0, npc.y + dy), height_tiles - 1)
+        if state.current_action == "식사" and self.dining_tiles:
+            if not state.path:
+                state.path = self._find_path_to_nearest_target(
+                    (npc.x, npc.y),
+                    self.dining_tiles,
+                    width_tiles,
+                    height_tiles,
+                )
+            if state.path:
+                next_x, next_y = state.path.pop(0)
+                npc.x, npc.y = next_x, next_y
+                return
+
+        self._step_random(npc, width_tiles, height_tiles)
 
     def tick_once(self) -> None:
         self.ticks += 1
@@ -379,7 +498,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))
                     arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=selected_font)
 
-            hud = f"WASD/Arrow: move | Q/E: zoom | sim_tick={simulation.ticks}"
+            hud = f"WASD/Arrow: move | Q/E: zoom | {simulation.display_clock()} | sim_tick={simulation.ticks}"
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
 
     VillageArcadeWindow()
