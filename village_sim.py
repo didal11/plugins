@@ -92,18 +92,17 @@ class SimulationNpcState(BaseModel):
 
 
 class SimulationRuntime:
-    """렌더 루프와 분리된 고정 틱(10분 단위) 시뮬레이터."""
+    """렌더 루프와 분리된 고정 틱(1분 단위) 시뮬레이터."""
 
-    TICK_MINUTES = 10
+    TICK_MINUTES = 1
     TICKS_PER_HOUR = 60 // TICK_MINUTES
 
     def __init__(
         self,
         world: GameWorld,
         npcs: List[RenderNpc],
-        tick_seconds: float = 0.25,
+        tick_seconds: float = 0.05,
         seed: int = 42,
-        start_hour: int = 8,
     ):
         self.world = world
         self.npcs = npcs
@@ -111,7 +110,6 @@ class SimulationRuntime:
         self._accumulator = 0.0
         self.ticks = 0
         self.rng = Random(seed)
-        self.start_hour = int(start_hour) % 24
         self.planner = DailyPlanner()
 
         self.job_actions = self._job_actions_map()
@@ -136,8 +134,8 @@ class SimulationRuntime:
         try:
             parsed = int(minutes)
         except Exception:
-            parsed = 10
-        return max(1, parsed // 10)
+            parsed = 1
+        return max(1, parsed)
 
     def _job_actions_map(self) -> Dict[str, List[str]]:
         out: Dict[str, List[str]] = {}
@@ -165,7 +163,7 @@ class SimulationRuntime:
 
     def _current_hour(self) -> int:
         hours_elapsed = self.ticks // self.TICKS_PER_HOUR
-        return (self.start_hour + hours_elapsed) % 24
+        return hours_elapsed % 24
 
     def _pick_next_work_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
         """업무 시간에만 호출되는 업무 선택 로직."""
