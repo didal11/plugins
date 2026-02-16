@@ -42,3 +42,30 @@ def test_parse_args_defaults_to_data_map(monkeypatch):
     args = village_sim._parse_args()
 
     assert args.ldtk.endswith("data/map.ldtk")
+
+
+def test_build_render_npcs_uses_defaults_and_clamps(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_npc_templates",
+        lambda: [
+            {"name": "A", "job": "농부"},
+            {"name": "B", "job": "약사", "x": 999, "y": -5},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="World",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+    )
+
+    npcs = village_sim._build_render_npcs(world)
+    assert len(npcs) == 2
+    assert (npcs[0].x, npcs[0].y) == (1, 1)
+    assert (npcs[1].x, npcs[1].y) == (3, 0)
