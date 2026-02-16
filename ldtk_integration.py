@@ -35,19 +35,29 @@ class LdtkEntityInstance(BaseModel):
     field_instances: List[LdtkFieldInstance] = Field(default_factory=list, alias="fieldInstances")
 
 
+class LdtkTileInstance(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    px: List[int]
+    tile_id: int = Field(alias="t")
+
+
 class LdtkLayerInstance(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     identifier: str = Field(alias="__identifier")
     layer_type: str = Field(alias="__type")
+    grid_size: Optional[int] = Field(default=None, alias="__gridSize")
     entity_instances: List[LdtkEntityInstance] = Field(default_factory=list, alias="entityInstances")
+    grid_tiles: List[LdtkTileInstance] = Field(default_factory=list, alias="gridTiles")
+    auto_layer_tiles: List[LdtkTileInstance] = Field(default_factory=list, alias="autoLayerTiles")
 
 
 class LdtkLevel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     identifier: str
-    world_grid_size: int = Field(alias="worldGridSize")
+    world_grid_size: Optional[int] = Field(default=None, alias="worldGridSize")
     px_wid: int = Field(alias="pxWid")
     px_hei: int = Field(alias="pxHei")
     layer_instances: Optional[List[LdtkLayerInstance]] = Field(default=None, alias="layerInstances")
@@ -56,6 +66,7 @@ class LdtkLevel(BaseModel):
 class LdtkProject(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    default_grid_size: Optional[int] = Field(default=None, alias="defaultGridSize")
     levels: List[LdtkLevel]
 
 
@@ -72,6 +83,16 @@ class GameEntity(BaseModel):
     is_discovered: bool
 
 
+class GameTile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    layer: str
+    name: str
+    tile_id: int
+    x: int
+    y: int
+
+
 class GameWorld(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -80,6 +101,7 @@ class GameWorld(BaseModel):
     width_px: int
     height_px: int
     entities: List[GameEntity]
+    tiles: List[GameTile] = Field(default_factory=list)
 
 
 def _fields_to_map(fields: List[LdtkFieldInstance]) -> Dict[str, Any]:
@@ -129,6 +151,21 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
     )
 
 
+def _tiles_from_layer(layer: LdtkLayerInstance, *, fallback_grid_size: int) -> List[GameTile]:
+    layer_grid = layer.grid_size or fallback_grid_size
+    rows = [*layer.grid_tiles, *layer.auto_layer_tiles]
+    return [
+        GameTile(
+            layer=layer.identifier,
+            name=layer.identifier,
+            tile_id=row.tile_id,
+            x=int(row.px[0] // layer_grid),
+            y=int(row.px[1] // layer_grid),
+        )
+        for row in rows
+    ]
+
+
 def load_ldtk_project(path: str | Path) -> LdtkProject:
     payload = orjson.loads(Path(path).read_bytes())
     return LdtkProject.model_validate(payload)
@@ -157,18 +194,38 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
         None,
     )
 
+    resolved_grid_size = level.world_grid_size
+    if resolved_grid_size is None and entity_layer_row is not None:
+        resolved_grid_size = entity_layer_row.grid_size
+    if resolved_grid_size is None:
+        resolved_grid_size = next((layer.grid_size for layer in layer_instances if layer.grid_size is not None), None)
+    if resolved_grid_size is None:
+        resolved_grid_size = project.default_grid_size
+    if resolved_grid_size is None:
+        resolved_grid_size = 16
+
     entities: List[GameEntity] = []
     if entity_layer_row is not None:
-        entities = [_entity_from_ldtk(row, grid_size=level.world_grid_size) for row in entity_layer_row.entity_instances]
+        entities = [_entity_from_ldtk(row, grid_size=resolved_grid_size) for row in entity_layer_row.entity_instances]
+
+    tiles: List[GameTile] = []
+    for layer in layer_instances:
+        if layer.layer_type in {"Tiles", "AutoLayer"}:
+            tiles.extend(_tiles_from_layer(layer, fallback_grid_size=resolved_grid_size))
 
     return GameWorld(
         level_id=level.identifier,
-        grid_size=level.world_grid_size,
+        grid_size=resolved_grid_size,
         width_px=level.px_wid,
         height_px=level.px_hei,
         entities=entities,
+        tiles=tiles,
     )
 
 
 def world_entities_as_rows(world: GameWorld) -> List[Dict[str, object]]:
     return [entity.model_dump() for entity in world.entities]
+
+
+def world_tiles_as_rows(world: GameWorld) -> List[Dict[str, object]]:
+    return [tile.model_dump() for tile in world.tiles]

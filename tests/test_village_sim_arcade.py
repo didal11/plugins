@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 
 import pytest
 
@@ -32,3 +33,23 @@ def test_village_sim_uses_arcade_and_not_pygame(monkeypatch):
     assert world.entities[0].key == "guild_board"
     source = __import__("inspect").getsource(village_sim)
     assert "import pygame" not in source
+
+
+def test_parse_args_defaults_to_data_map(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(sys, "argv", ["village_sim.py"])
+    args = village_sim._parse_args()
+
+    assert args.ldtk.endswith("data/map.ldtk")
+
+
+def test_stable_layer_color_is_deterministic():
+    import village_sim
+
+    c1 = village_sim._stable_layer_color("Road")
+    c2 = village_sim._stable_layer_color("Road")
+    c3 = village_sim._stable_layer_color("Wall")
+
+    assert c1 == c2
+    assert c1 != c3
