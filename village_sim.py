@@ -63,6 +63,7 @@ class JsonEntity(BaseModel):
     current_quantity: int = Field(default=0, ge=0)
     is_workbench: bool = False
     is_discovered: bool = False
+    tags: List[str] = Field(default_factory=list)
 
 
 class JsonNpc(BaseModel):
@@ -89,6 +90,7 @@ class SimulationNpcState(BaseModel):
     current_action: str = "대기"
     ticks_remaining: int = 0
     decision_ticks_until_check: int = 0
+    sleep_path_initialized: bool = False
     path: List[Tuple[int, int]] = Field(default_factory=list)
 
 
@@ -298,13 +300,16 @@ class SimulationRuntime:
                 if state.current_action != "식사":
                     state.current_action = "식사"
                     state.path = []
+                state.sleep_path_initialized = False
                 state.ticks_remaining = 1
             elif planned == ScheduledActivity.SLEEP:
                 if state.current_action != "취침":
                     state.current_action = "취침"
                     state.path = []
+                    state.sleep_path_initialized = False
                 state.ticks_remaining = 1
             elif state.ticks_remaining <= 0:
+                state.sleep_path_initialized = False
                 self._pick_next_work_action(npc, state)
             state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
 
@@ -327,13 +332,14 @@ class SimulationRuntime:
                 return
 
         if state.current_action == "취침" and self.bed_tiles:
-            if not state.path:
+            if not state.sleep_path_initialized:
                 state.path = self._find_path_to_nearest_target(
                     (npc.x, npc.y),
                     self.bed_tiles,
                     width_tiles,
                     height_tiles,
                 )
+                state.sleep_path_initialized = True
             if state.path:
                 next_x, next_y = state.path.pop(0)
                 npc.x, npc.y = next_x, next_y
@@ -370,6 +376,7 @@ def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) 
             current_quantity=min(e.max_quantity, e.current_quantity),
             is_workbench=e.is_workbench,
             is_discovered=True if e.is_workbench else e.is_discovered,
+            tags=[str(tag) for tag in e.tags if str(tag).strip()],
         )
         for e in entities
     ]
@@ -399,6 +406,16 @@ def _npc_color(job_name: str) -> tuple[int, int, int, int]:
     g = 120 + (seed * 29) % 110
     b = 130 + (seed * 43) % 95
     return int(r), int(g), int(b), 255
+
+
+def _collect_non_resource_entities(entities: List[GameEntity]) -> List[GameEntity]:
+    out: List[GameEntity] = []
+    for entity in entities:
+        tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
+        if "resource" in tags:
+            continue
+        out.append(entity)
+    return out
 
 
 FONT_CANDIDATES: tuple[str, ...] = (
@@ -452,6 +469,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     npcs = _build_render_npcs(world)
     simulation = SimulationRuntime(world, npcs)
     selected_font = _pick_font_name()
+    render_entities = _collect_non_resource_entities(world.entities)
 
     class VillageArcadeWindow(arcade.Window):
         def __init__(self):
@@ -535,7 +553,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
 
-                for entity in world.entities:
+                for entity in render_entities:
                     ex = entity.x * tile + tile / 2
                     ey = self._tile_center_y(entity.y)
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))

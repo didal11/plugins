@@ -195,6 +195,25 @@ def test_display_clock_starts_from_year_zero_and_advances_1_minute(monkeypatch):
     sim.tick_once()
     assert sim.display_clock() == "0000년 01월 01일 00:01"
 
+def test_display_clock_hud_rounds_down_to_30_minutes(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [])
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=32, height_px=32, entities=[], tiles=[])
+    sim = village_sim.SimulationRuntime(world, [], seed=1)
+
+    sim.ticks = 29
+    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 00:00"
+
+    sim.ticks = 30
+    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 00:30"
+
+    sim.ticks = 61
+    assert sim.display_clock_by_interval(30) == "0000년 01월 01일 01:00"
+
+
 
 def test_simulation_runtime_planning_preempts_ongoing_work(monkeypatch):
     import village_sim
@@ -318,3 +337,82 @@ def test_simulation_runtime_updates_decision_once_per_10_ticks(monkeypatch):
 
     sim.tick_once()
     assert called == 2
+
+
+def test_sleep_does_not_recalculate_bed_path_every_tick(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [{"job": "농부", "work_actions": ["농사"]}])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [{"name": "농사", "duration_minutes": 10}])
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.GameEntity(
+                key="bed_single",
+                name="침대",
+                x=3,
+                y=1,
+                max_quantity=1,
+                current_quantity=1,
+                is_workbench=False,
+                is_discovered=True,
+                tags=[],
+            )
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    calls = 0
+    original = sim._find_path_to_nearest_target
+
+    def wrapped(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    sim._find_path_to_nearest_target = wrapped
+
+    _set_sim_time(sim, 22)
+    sim.tick_once()
+    sim.tick_once()
+    sim.tick_once()
+
+    assert calls == 1
+
+
+def test_collect_non_resource_entities_filters_resource_tag():
+    import village_sim
+
+    entities = [
+        village_sim.GameEntity(
+            key="tree",
+            name="나무",
+            x=1,
+            y=1,
+            max_quantity=1,
+            current_quantity=1,
+            is_workbench=False,
+            is_discovered=True,
+            tags=["resource"],
+        ),
+        village_sim.GameEntity(
+            key="bed",
+            name="침대",
+            x=2,
+            y=2,
+            max_quantity=1,
+            current_quantity=1,
+            is_workbench=False,
+            is_discovered=True,
+            tags=["furniture"],
+        ),
+    ]
+
+    collected = village_sim._collect_non_resource_entities(entities)
+    assert [e.name for e in collected] == ["침대"]

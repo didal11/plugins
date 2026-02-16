@@ -33,6 +33,7 @@ class LdtkEntityInstance(BaseModel):
 
     identifier: str = Field(alias="__identifier")
     px: List[int]
+    tags: List[str] = Field(default_factory=list, alias="__tags")
     field_instances: List[LdtkFieldInstance] = Field(default_factory=list, alias="fieldInstances")
 
 
@@ -108,6 +109,7 @@ class GameEntity(BaseModel):
     current_quantity: int
     is_workbench: bool
     is_discovered: bool
+    tags: List[str] = Field(default_factory=list)
 
 
 class GameTile(BaseModel):
@@ -176,6 +178,7 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
         current_quantity=current_q,
         is_workbench=is_workbench,
         is_discovered=is_discovered,
+        tags=[str(tag) for tag in row.tags if str(tag).strip()],
     )
 
 
