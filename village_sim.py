@@ -121,6 +121,7 @@ class SimulationRuntime:
         }
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
+        self.bed_tiles = self._find_bed_tiles()
 
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -128,6 +129,15 @@ class SimulationRuntime:
             key = entity.key.lower()
             name = entity.name.lower()
             if "dining" in key or "식탁" in name:
+                out.append((entity.x, entity.y))
+        return out
+
+    def _find_bed_tiles(self) -> List[Tuple[int, int]]:
+        out: List[Tuple[int, int]] = []
+        for entity in self.world.entities:
+            key = entity.key.lower()
+            name = entity.name.lower()
+            if "bed" in key or "침대" in name:
                 out.append((entity.x, entity.y))
         return out
 
@@ -308,6 +318,19 @@ class SimulationRuntime:
                 state.path = self._find_path_to_nearest_target(
                     (npc.x, npc.y),
                     self.dining_tiles,
+                    width_tiles,
+                    height_tiles,
+                )
+            if state.path:
+                next_x, next_y = state.path.pop(0)
+                npc.x, npc.y = next_x, next_y
+                return
+
+        if state.current_action == "취침" and self.bed_tiles:
+            if not state.path:
+                state.path = self._find_path_to_nearest_target(
+                    (npc.x, npc.y),
+                    self.bed_tiles,
                     width_tiles,
                     height_tiles,
                 )
@@ -518,7 +541,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))
                     arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=selected_font)
 
-            hud = f"WASD/Arrow: move | Q/E: zoom | {simulation.display_clock_by_interval(30)} | sim_tick={simulation.ticks}"
+            hud = f"WASD/Arrow: move | Q/E: zoom | {simulation.display_clock_by_interval(30)}"
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
 
     VillageArcadeWindow()
