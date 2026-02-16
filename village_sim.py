@@ -88,30 +88,30 @@ class SimulationNpcState(BaseModel):
 
     current_action: str = "대기"
     ticks_remaining: int = 0
+    decision_ticks_until_check: int = 0
     path: List[Tuple[int, int]] = Field(default_factory=list)
 
 
 class SimulationRuntime:
-    """렌더 루프와 분리된 고정 틱(10분 단위) 시뮬레이터."""
+    """렌더 루프와 분리된 고정 틱(1분 단위) 시뮬레이터."""
 
-    TICK_MINUTES = 10
+    TICK_MINUTES = 1
     TICKS_PER_HOUR = 60 // TICK_MINUTES
+    DECISION_INTERVAL_TICKS = 10
 
     def __init__(
         self,
         world: GameWorld,
         npcs: List[RenderNpc],
-        tick_seconds: float = 0.25,
+        tick_seconds: float = 0.1,
         seed: int = 42,
-        start_hour: int = 8,
     ):
         self.world = world
         self.npcs = npcs
-        self.tick_seconds = max(0.05, float(tick_seconds))
+        self.tick_seconds = max(0.1, float(tick_seconds))
         self._accumulator = 0.0
         self.ticks = 0
         self.rng = Random(seed)
-        self.start_hour = int(start_hour) % 24
         self.planner = DailyPlanner()
 
         self.job_actions = self._job_actions_map()
@@ -136,8 +136,8 @@ class SimulationRuntime:
         try:
             parsed = int(minutes)
         except Exception:
-            parsed = 10
-        return max(1, parsed // 10)
+            parsed = 1
+        return max(1, parsed)
 
     def _job_actions_map(self) -> Dict[str, List[str]]:
         out: Dict[str, List[str]] = {}
@@ -165,7 +165,7 @@ class SimulationRuntime:
 
     def _current_hour(self) -> int:
         hours_elapsed = self.ticks // self.TICKS_PER_HOUR
-        return (self.start_hour + hours_elapsed) % 24
+        return hours_elapsed % 24
 
     def _pick_next_work_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
         """업무 시간에만 호출되는 업무 선택 로직."""
@@ -274,20 +274,24 @@ class SimulationRuntime:
 
     def _step_npc(self, npc: RenderNpc) -> None:
         state = self.state_by_name[npc.name]
-        planned = self.planner.activity_for_hour(self._current_hour())
-        if planned == ScheduledActivity.MEAL:
-            if state.current_action != "식사":
-                state.current_action = "식사"
-                state.path = []
-            state.ticks_remaining = 1
-        elif planned == ScheduledActivity.SLEEP:
-            if state.current_action != "취침":
-                state.current_action = "취침"
-                state.path = []
-            state.ticks_remaining = 1
-        elif state.ticks_remaining <= 0:
-            self._pick_next_work_action(npc, state)
 
+        if state.decision_ticks_until_check <= 0:
+            planned = self.planner.activity_for_hour(self._current_hour())
+            if planned == ScheduledActivity.MEAL:
+                if state.current_action != "식사":
+                    state.current_action = "식사"
+                    state.path = []
+                state.ticks_remaining = 1
+            elif planned == ScheduledActivity.SLEEP:
+                if state.current_action != "취침":
+                    state.current_action = "취침"
+                    state.path = []
+                state.ticks_remaining = 1
+            elif state.ticks_remaining <= 0:
+                self._pick_next_work_action(npc, state)
+            state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
+
+        state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
         state.ticks_remaining = max(0, state.ticks_remaining - 1)
 
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
