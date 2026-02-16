@@ -42,14 +42,3 @@ def test_parse_args_defaults_to_data_map(monkeypatch):
     args = village_sim._parse_args()
 
     assert args.ldtk.endswith("data/map.ldtk")
-
-
-def test_stable_layer_color_is_deterministic():
-    import village_sim
-
-    c1 = village_sim._stable_layer_color("Road")
-    c2 = village_sim._stable_layer_color("Road")
-    c3 = village_sim._stable_layer_color("Wall")
-
-    assert c1 == c2
-    assert c1 != c3

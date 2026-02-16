@@ -19,7 +19,7 @@ from typing import List
 from pydantic import BaseModel, ConfigDict, Field
 
 from editable_data import DATA_DIR, load_entities
-from ldtk_integration import GameEntity, GameTile, GameWorld, build_world_from_ldtk
+from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
 
 class RuntimeConfig(BaseModel):

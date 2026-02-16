@@ -131,7 +131,6 @@ def test_load_ldtk_project_and_build_world(tmp_path: Path):
     tile_rows = world_tiles_as_rows(world)
     assert len(tile_rows) == 2
     assert tile_rows[0]["layer"] == "Road"
-    assert tile_rows[0]["name"] == "Road"
     assert tile_rows[0]["x"] == 1
     assert tile_rows[0]["y"] == 2
 

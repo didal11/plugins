@@ -87,7 +87,6 @@ class GameTile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     layer: str
-    name: str
     tile_id: int
     x: int
     y: int
@@ -157,7 +156,6 @@ def _tiles_from_layer(layer: LdtkLayerInstance, *, fallback_grid_size: int) -> L
     return [
         GameTile(
             layer=layer.identifier,
-            name=layer.identifier,
             tile_id=row.tile_id,
             x=int(row.px[0] // layer_grid),
             y=int(row.px[1] // layer_grid),
@@ -207,11 +205,6 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
     entities: List[GameEntity] = []
     if entity_layer_row is not None:
         entities = [_entity_from_ldtk(row, grid_size=resolved_grid_size) for row in entity_layer_row.entity_instances]
-
-    tiles: List[GameTile] = []
-    for layer in layer_instances:
-        if layer.layer_type in {"Tiles", "AutoLayer"}:
-            tiles.extend(_tiles_from_layer(layer, fallback_grid_size=resolved_grid_size))
 
     return GameWorld(
         level_id=level.identifier,
