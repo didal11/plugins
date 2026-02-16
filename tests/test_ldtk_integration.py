@@ -9,7 +9,6 @@ import pytest
 HAS_DEPS = importlib.util.find_spec("pydantic") is not None and importlib.util.find_spec("orjson") is not None
 
 if HAS_DEPS:
-    from editable_data import import_entities_from_ldtk
     from ldtk_integration import build_world_from_ldtk, load_ldtk_project, world_entities_as_rows, world_tiles_as_rows
 
 
@@ -176,28 +175,6 @@ def test_load_ldtk_project_and_build_world(tmp_path: Path):
     assert tile_rows[0]["layer"] == "Road"
     assert tile_rows[0]["x"] == 1
     assert tile_rows[0]["y"] == 2
-
-
-@pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
-def test_import_entities_from_ldtk_writes_entities_file(tmp_path: Path, monkeypatch):
-    project_dir = tmp_path / "project"
-    data_dir = project_dir / "data"
-    data_dir.mkdir(parents=True)
-
-    ldtk_file = project_dir / "sample.ldtk"
-    ldtk_file.write_text(json.dumps(SAMPLE_LDTK), encoding="utf-8")
-
-    import editable_data
-
-    monkeypatch.setattr(editable_data, "DATA_DIR", data_dir)
-    monkeypatch.setattr(editable_data, "ENTITIES_FILE", data_dir / "entities.json")
-
-    rows = import_entities_from_ldtk(str(ldtk_file))
-    assert len(rows) == 2
-
-    raw = json.loads((data_dir / "entities.json").read_text(encoding="utf-8"))
-    assert raw[0]["key"] == "guild_board"
-    assert raw[1]["key"] == "field"
 
 
 @pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")

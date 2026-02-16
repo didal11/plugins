@@ -5,7 +5,7 @@
 
 이 모듈은 기존 pygame 루프를 폐기하고 아래 스택으로 단순화했다.
 - rendering/runtime: arcade
-- world source: LDtk(optional) + data/entities.json
+- world source: LDtk(optional)
 - schema validation: pydantic
 - JSON I/O: orjson
 """
@@ -23,7 +23,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from editable_data import (
     DATA_DIR,
     load_action_defs,
-    load_entities,
     load_job_defs,
     load_npc_templates,
 )
@@ -50,20 +49,6 @@ class CameraState(BaseModel):
     x: float = 0.0
     y: float = 0.0
     zoom: float = 1.0
-
-
-class JsonEntity(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    key: str
-    name: str
-    x: int
-    y: int
-    max_quantity: int = Field(default=1, ge=1)
-    current_quantity: int = Field(default=0, ge=0)
-    is_workbench: bool = False
-    is_discovered: bool = False
-    tags: List[str] = Field(default_factory=list)
 
 
 class JsonNpc(BaseModel):
@@ -357,39 +342,6 @@ class SimulationRuntime:
         while self._accumulator >= self.tick_seconds:
             self._accumulator -= self.tick_seconds
             self.tick_once()
-
-def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) -> GameWorld:
-    entities = [JsonEntity.model_validate(row) for row in load_entities()]
-    if not entities:
-        raise ValueError("entities.json has no entities")
-
-    max_x = max(e.x for e in entities) + 1
-    max_y = max(e.y for e in entities) + 1
-
-    game_entities: List[GameEntity] = [
-        GameEntity(
-            key=e.key,
-            name=e.name,
-            x=e.x,
-            y=e.y,
-            max_quantity=e.max_quantity,
-            current_quantity=min(e.max_quantity, e.current_quantity),
-            is_workbench=e.is_workbench,
-            is_discovered=True if e.is_workbench else e.is_discovered,
-            tags=[str(tag) for tag in e.tags if str(tag).strip()],
-        )
-        for e in entities
-    ]
-
-    return GameWorld(
-        level_id=level_id,
-        grid_size=grid_size,
-        width_px=max_x * grid_size,
-        height_px=max_y * grid_size,
-        entities=game_entities,
-    )
-
-
 
 
 def _stable_layer_color(layer_name: str) -> tuple[int, int, int, int]:
