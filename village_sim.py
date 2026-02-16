@@ -63,6 +63,7 @@ class JsonEntity(BaseModel):
     current_quantity: int = Field(default=0, ge=0)
     is_workbench: bool = False
     is_discovered: bool = False
+    tags: List[str] = Field(default_factory=list)
 
 
 class JsonNpc(BaseModel):
@@ -88,30 +89,31 @@ class SimulationNpcState(BaseModel):
 
     current_action: str = "대기"
     ticks_remaining: int = 0
+    decision_ticks_until_check: int = 0
+    sleep_path_initialized: bool = False
     path: List[Tuple[int, int]] = Field(default_factory=list)
 
 
 class SimulationRuntime:
-    """렌더 루프와 분리된 고정 틱(10분 단위) 시뮬레이터."""
+    """렌더 루프와 분리된 고정 틱(1분 단위) 시뮬레이터."""
 
-    TICK_MINUTES = 10
+    TICK_MINUTES = 1
     TICKS_PER_HOUR = 60 // TICK_MINUTES
+    DECISION_INTERVAL_TICKS = 10
 
     def __init__(
         self,
         world: GameWorld,
         npcs: List[RenderNpc],
-        tick_seconds: float = 0.25,
+        tick_seconds: float = 0.1,
         seed: int = 42,
-        start_hour: int = 8,
     ):
         self.world = world
         self.npcs = npcs
-        self.tick_seconds = max(0.05, float(tick_seconds))
+        self.tick_seconds = max(0.1, float(tick_seconds))
         self._accumulator = 0.0
         self.ticks = 0
         self.rng = Random(seed)
-        self.start_hour = int(start_hour) % 24
         self.planner = DailyPlanner()
 
         self.job_actions = self._job_actions_map()
@@ -121,6 +123,7 @@ class SimulationRuntime:
         }
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
+        self.bed_tiles = self._find_bed_tiles()
 
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -131,13 +134,22 @@ class SimulationRuntime:
                 out.append((entity.x, entity.y))
         return out
 
+    def _find_bed_tiles(self) -> List[Tuple[int, int]]:
+        out: List[Tuple[int, int]] = []
+        for entity in self.world.entities:
+            key = entity.key.lower()
+            name = entity.name.lower()
+            if "bed" in key or "침대" in name:
+                out.append((entity.x, entity.y))
+        return out
+
     @staticmethod
     def _duration_to_ticks(minutes: object) -> int:
         try:
             parsed = int(minutes)
         except Exception:
-            parsed = 10
-        return max(1, parsed // 10)
+            parsed = 1
+        return max(1, parsed)
 
     def _job_actions_map(self) -> Dict[str, List[str]]:
         out: Dict[str, List[str]] = {}
@@ -165,7 +177,7 @@ class SimulationRuntime:
 
     def _current_hour(self) -> int:
         hours_elapsed = self.ticks // self.TICKS_PER_HOUR
-        return (self.start_hour + hours_elapsed) % 24
+        return hours_elapsed % 24
 
     def _pick_next_work_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
         """업무 시간에만 호출되는 업무 선택 로직."""
@@ -272,22 +284,36 @@ class SimulationRuntime:
     def display_clock(self) -> str:
         return self._format_sim_datetime(self.ticks)
 
+    def display_clock_by_interval(self, interval_minutes: int = 30) -> str:
+        safe_interval = max(1, int(interval_minutes))
+        total_minutes = max(0, self.ticks) * self.TICK_MINUTES
+        rounded_minutes = total_minutes - (total_minutes % safe_interval)
+        rounded_ticks = rounded_minutes // self.TICK_MINUTES
+        return self._format_sim_datetime(rounded_ticks)
+
     def _step_npc(self, npc: RenderNpc) -> None:
         state = self.state_by_name[npc.name]
-        planned = self.planner.activity_for_hour(self._current_hour())
-        if planned == ScheduledActivity.MEAL:
-            if state.current_action != "식사":
-                state.current_action = "식사"
-                state.path = []
-            state.ticks_remaining = 1
-        elif planned == ScheduledActivity.SLEEP:
-            if state.current_action != "취침":
-                state.current_action = "취침"
-                state.path = []
-            state.ticks_remaining = 1
-        elif state.ticks_remaining <= 0:
-            self._pick_next_work_action(npc, state)
 
+        if state.decision_ticks_until_check <= 0:
+            planned = self.planner.activity_for_hour(self._current_hour())
+            if planned == ScheduledActivity.MEAL:
+                if state.current_action != "식사":
+                    state.current_action = "식사"
+                    state.path = []
+                state.sleep_path_initialized = False
+                state.ticks_remaining = 1
+            elif planned == ScheduledActivity.SLEEP:
+                if state.current_action != "취침":
+                    state.current_action = "취침"
+                    state.path = []
+                    state.sleep_path_initialized = False
+                state.ticks_remaining = 1
+            elif state.ticks_remaining <= 0:
+                state.sleep_path_initialized = False
+                self._pick_next_work_action(npc, state)
+            state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
+
+        state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
         state.ticks_remaining = max(0, state.ticks_remaining - 1)
 
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
@@ -300,6 +326,20 @@ class SimulationRuntime:
                     width_tiles,
                     height_tiles,
                 )
+            if state.path:
+                next_x, next_y = state.path.pop(0)
+                npc.x, npc.y = next_x, next_y
+                return
+
+        if state.current_action == "취침" and self.bed_tiles:
+            if not state.sleep_path_initialized:
+                state.path = self._find_path_to_nearest_target(
+                    (npc.x, npc.y),
+                    self.bed_tiles,
+                    width_tiles,
+                    height_tiles,
+                )
+                state.sleep_path_initialized = True
             if state.path:
                 next_x, next_y = state.path.pop(0)
                 npc.x, npc.y = next_x, next_y
@@ -336,6 +376,7 @@ def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) 
             current_quantity=min(e.max_quantity, e.current_quantity),
             is_workbench=e.is_workbench,
             is_discovered=True if e.is_workbench else e.is_discovered,
+            tags=[str(tag) for tag in e.tags if str(tag).strip()],
         )
         for e in entities
     ]
@@ -365,6 +406,16 @@ def _npc_color(job_name: str) -> tuple[int, int, int, int]:
     g = 120 + (seed * 29) % 110
     b = 130 + (seed * 43) % 95
     return int(r), int(g), int(b), 255
+
+
+def _collect_non_resource_entities(entities: List[GameEntity]) -> List[GameEntity]:
+    out: List[GameEntity] = []
+    for entity in entities:
+        tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
+        if "resource" in tags:
+            continue
+        out.append(entity)
+    return out
 
 
 FONT_CANDIDATES: tuple[str, ...] = (
@@ -418,6 +469,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     npcs = _build_render_npcs(world)
     simulation = SimulationRuntime(world, npcs)
     selected_font = _pick_font_name()
+    render_entities = _collect_non_resource_entities(world.entities)
 
     class VillageArcadeWindow(arcade.Window):
         def __init__(self):
@@ -433,6 +485,14 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             if not entity.is_discovered:
                 return 95, 108, 95, 255
             return 86, 176, 132, 255
+
+        @staticmethod
+        def _tile_bottom_left_y(grid_y: int) -> float:
+            return world.height_px - ((grid_y + 1) * world.grid_size)
+
+        @staticmethod
+        def _tile_center_y(grid_y: int) -> float:
+            return world.height_px - (grid_y * world.grid_size + world.grid_size / 2)
 
         def on_update(self, delta_time: float):
             dx = dy = 0.0
@@ -471,7 +531,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
                 for tile_row in world.tiles:
                     tx = tile_row.x * tile
-                    ty = tile_row.y * tile
+                    ty = self._tile_bottom_left_y(tile_row.y)
                     arcade.draw_lrbt_rectangle_filled(
                         tx,
                         tx + tile,
@@ -487,19 +547,19 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
                 for npc in npcs:
                     nx = npc.x * tile + tile / 2
-                    ny = npc.y * tile + tile / 2
+                    ny = self._tile_center_y(npc.y)
                     arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
                     sim_state = simulation.state_by_name.get(npc.name)
                     label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
 
-                for entity in world.entities:
+                for entity in render_entities:
                     ex = entity.x * tile + tile / 2
-                    ey = entity.y * tile + tile / 2
+                    ey = self._tile_center_y(entity.y)
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))
                     arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=selected_font)
 
-            hud = f"WASD/Arrow: move | Q/E: zoom | {simulation.display_clock()} | sim_tick={simulation.ticks}"
+            hud = f"WASD/Arrow: move | Q/E: zoom | {simulation.display_clock_by_interval(30)}"
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
 
     VillageArcadeWindow()
