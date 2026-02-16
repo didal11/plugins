@@ -332,16 +332,16 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
                     sim_state = simulation.state_by_name.get(npc.name)
                     label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action})"
-                    arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=_font_candidates())
+                    arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=FONT_CANDIDATES)
 
                 for entity in world.entities:
                     ex = entity.x * tile + tile / 2
                     ey = entity.y * tile + tile / 2
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))
-                    arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=_font_candidates())
+                    arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=FONT_CANDIDATES)
 
             hud = f"WASD/Arrow: move | Q/E: zoom | sim_tick={simulation.ticks}"
-            arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=_font_candidates())
+            arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=FONT_CANDIDATES)
 
     VillageArcadeWindow()
     arcade.run()
