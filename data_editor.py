@@ -10,7 +10,6 @@ from tkinter import messagebox, ttk
 
 from editable_data import (
     VALID_GENDERS,
-    load_entities,
     load_item_defs,
     load_job_defs,
     load_action_defs,
@@ -19,7 +18,6 @@ from editable_data import (
     load_npc_templates,
     load_races,
     load_sim_settings,
-    save_entities,
     save_item_defs,
     save_job_defs,
     save_action_defs,
@@ -43,7 +41,6 @@ class EditorApp(tk.Tk):
         self.npcs = load_npc_templates()
         self.monsters = load_monster_templates()
         self.races = load_races()
-        self.entities = load_entities()
         self.jobs = load_job_defs()
         self.actions = load_action_defs()
         self.job_names = load_job_names()
@@ -58,7 +55,6 @@ class EditorApp(tk.Tk):
         self.npc_tab = ttk.Frame(notebook)
         self.monster_tab = ttk.Frame(notebook)
         self.race_tab = ttk.Frame(notebook)
-        self.entity_tab = ttk.Frame(notebook)
         self.job_tab = ttk.Frame(notebook)
         self.action_tab = ttk.Frame(notebook)
         self.sim_tab = ttk.Frame(notebook)
@@ -68,7 +64,6 @@ class EditorApp(tk.Tk):
         notebook.add(self.npc_tab, text="NPC")
         notebook.add(self.monster_tab, text="몬스터")
         notebook.add(self.race_tab, text="종족")
-        notebook.add(self.entity_tab, text="엔티티")
         notebook.add(self.job_tab, text="직업")
         notebook.add(self.action_tab, text="행동")
         notebook.add(self.sim_tab, text="시뮬 설정")
@@ -78,7 +73,6 @@ class EditorApp(tk.Tk):
         self._build_person_tab(self.npc_tab, mode="npc")
         self._build_person_tab(self.monster_tab, mode="monster")
         self._build_race_tab()
-        self._build_entity_tab()
         self._build_job_tab()
         self._build_action_tab()
         self._build_sim_tab()
@@ -480,103 +474,6 @@ class EditorApp(tk.Tk):
     def _save_races(self) -> None:
         RACES_FILE.write_text(json.dumps(self.races, ensure_ascii=False, indent=2), encoding="utf-8")
         messagebox.showinfo("저장 완료", "종족 데이터를 저장했습니다.")
-
-    # ---------- Entity tab ----------
-    def _build_entity_tab(self) -> None:
-        left = ttk.Frame(self.entity_tab)
-        left.pack(side="left", fill="y", padx=8, pady=8)
-        right = ttk.Frame(self.entity_tab)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        self.entity_list = tk.Listbox(left, width=36, height=30, exportselection=False)
-        self.entity_list.pack(fill="y")
-        self.entity_list.bind("<<ListboxSelect>>", self._on_entity_select)
-        for row in self.entities:
-            self.entity_list.insert("end", f"{row.get('type','')}:{row.get('name','')} ({row.get('x',0)},{row.get('y',0)})")
-
-        labels = ["유형", "이름", "X", "Y", "재고(자원형만)"]
-        for idx, label in enumerate(labels):
-            ttk.Label(right, text=label).grid(row=idx, column=0, sticky="w", pady=2)
-
-        self.entity_type = ttk.Combobox(right, values=["workbench", "resource"], state="readonly", width=40)
-        self.entity_name = ttk.Entry(right, width=43)
-        self.entity_x = ttk.Entry(right, width=43)
-        self.entity_y = ttk.Entry(right, width=43)
-        self.entity_stock = ttk.Entry(right, width=43)
-
-        self.entity_type.grid(row=0, column=1, sticky="w", pady=2)
-        self.entity_name.grid(row=1, column=1, sticky="w", pady=2)
-        self.entity_x.grid(row=2, column=1, sticky="w", pady=2)
-        self.entity_y.grid(row=3, column=1, sticky="w", pady=2)
-        self.entity_stock.grid(row=4, column=1, sticky="w", pady=2)
-
-        btns = ttk.Frame(right)
-        btns.grid(row=5, column=0, columnspan=2, sticky="w", pady=10)
-        ttk.Button(btns, text="추가", command=self._add_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="수정", command=self._update_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="삭제", command=self._delete_entity).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=self._save_entities).pack(side="left", padx=3)
-
-    def _entity_from_form(self) -> dict[str, object] | None:
-        try:
-            out = {
-                "type": self.entity_type.get().strip() or "workbench",
-                "name": self.entity_name.get().strip(),
-                "x": int(self.entity_x.get().strip() or "0"),
-                "y": int(self.entity_y.get().strip() or "0"),
-            }
-            if out["type"] == "resource":
-                out["stock"] = max(0, int(self.entity_stock.get().strip() or "0"))
-            return out if out["name"] else None
-        except ValueError:
-            messagebox.showwarning("경고", "좌표/재고는 숫자로 입력하세요.")
-            return None
-
-    def _on_entity_select(self, _=None) -> None:
-        sel = self.entity_list.curselection()
-        if not sel:
-            return
-        row = self.entities[sel[0]]
-        self.entity_type.set(str(row.get("type", "workbench")))
-        self.entity_name.delete(0, "end")
-        self.entity_name.insert(0, str(row.get("name", "")))
-        self.entity_x.delete(0, "end")
-        self.entity_x.insert(0, str(row.get("x", 0)))
-        self.entity_y.delete(0, "end")
-        self.entity_y.insert(0, str(row.get("y", 0)))
-        self.entity_stock.delete(0, "end")
-        self.entity_stock.insert(0, str(row.get("stock", 0)))
-
-    def _add_entity(self) -> None:
-        row = self._entity_from_form()
-        if not row:
-            return
-        self.entities.append(row)
-        self.entity_list.insert("end", f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
-
-    def _update_entity(self) -> None:
-        sel = self.entity_list.curselection()
-        if not sel:
-            return
-        row = self._entity_from_form()
-        if not row:
-            return
-        idx = sel[0]
-        self.entities[idx] = row
-        self.entity_list.delete(idx)
-        self.entity_list.insert(idx, f"{row['type']}:{row['name']} ({row['x']},{row['y']})")
-
-    def _delete_entity(self) -> None:
-        sel = self.entity_list.curselection()
-        if not sel:
-            return
-        idx = sel[0]
-        self.entity_list.delete(idx)
-        self.entities.pop(idx)
-
-    def _save_entities(self) -> None:
-        save_entities(self.entities)
-        messagebox.showinfo("저장 완료", "엔티티 데이터를 저장했습니다.")
 
     # ---------- Job tab ----------
     def _build_job_tab(self) -> None:

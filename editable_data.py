@@ -7,14 +7,11 @@ import orjson
 from pathlib import Path
 from typing import Dict, List
 
-from ldtk_integration import build_world_from_ldtk, world_entities_as_rows
-
 DATA_DIR = Path(__file__).parent / "data"
 ITEMS_FILE = DATA_DIR / "items.json"
 NPCS_FILE = DATA_DIR / "npcs.json"
 MONSTERS_FILE = DATA_DIR / "monsters.json"
 RACES_FILE = DATA_DIR / "races.json"
-ENTITIES_FILE = DATA_DIR / "entities.json"
 JOBS_FILE = DATA_DIR / "jobs.json"
 ACTIONS_FILE = DATA_DIR / "actions.json"
 SIM_SETTINGS_FILE = DATA_DIR / "sim_settings.json"
@@ -86,17 +83,6 @@ DEFAULT_RACES: List[Dict[str, object]] = [
     {"name": "엘프", "is_hostile": False, "str_bonus": 0, "agi_bonus": 1, "hp_bonus": 0, "speed_bonus": 0.05},
     {"name": "드워프", "is_hostile": False, "str_bonus": 1, "agi_bonus": 0, "hp_bonus": 2, "speed_bonus": -0.03},
 ]
-DEFAULT_ENTITIES: List[Dict[str, object]] = [
-    {"key": "alchemy_table", "name": "약제작대", "x": 188, "y": 151, "max_quantity": 120, "current_quantity": 120, "is_workbench": True, "is_discovered": True},
-    {"key": "guild_board", "name": "길드 게시판", "x": 198, "y": 151, "max_quantity": 9999, "current_quantity": 9999, "is_workbench": True, "is_discovered": True},
-    {"key": "field", "is_discovered": False, "name": "밭", "x": 183, "y": 162, "max_quantity": 200, "current_quantity": 200, "is_workbench": False},
-    {"key": "fish_spot", "is_discovered": False, "name": "물고기", "x": 193, "y": 162, "max_quantity": 160, "current_quantity": 160, "is_workbench": False},
-    {"key": "forge_workbench", "name": "대장장이 작업대", "x": 183, "y": 151, "max_quantity": 140, "current_quantity": 140, "is_workbench": True, "is_discovered": True},
-    {"key": "herb_cluster", "is_discovered": False, "name": "약초군락", "x": 176, "y": 170, "max_quantity": 90, "current_quantity": 90, "is_workbench": False},
-    {"key": "tree_grove", "is_discovered": False, "name": "나무", "x": 173, "y": 177, "max_quantity": 120, "current_quantity": 120, "is_workbench": False},
-    {"key": "ore_vein", "is_discovered": False, "name": "광석", "x": 171, "y": 182, "max_quantity": 100, "current_quantity": 100, "is_workbench": False},
-    {"key": "animal_habitat", "is_discovered": False, "name": "동물 서식지", "x": 198, "y": 178, "max_quantity": 80, "current_quantity": 80, "is_workbench": False}
-]
 
 
 def _write_json(path: Path, obj: object) -> None:
@@ -147,7 +133,6 @@ def ensure_data_files() -> None:
         NPCS_FILE: DEFAULT_NPCS,
         MONSTERS_FILE: DEFAULT_MONSTERS,
         RACES_FILE: DEFAULT_RACES,
-        ENTITIES_FILE: DEFAULT_ENTITIES,
         JOBS_FILE: DEFAULT_JOB_DEFS,
         ACTIONS_FILE: DEFAULT_ACTION_DEFS,
         SIM_SETTINGS_FILE: DEFAULT_SIM_SETTINGS,
@@ -155,25 +140,6 @@ def ensure_data_files() -> None:
     for path, value in defaults.items():
         if not path.exists():
             _write_json(path, value)
-
-
-def _normalize_entity(row: Dict[str, object]) -> Dict[str, object]:
-    key = str(row.get("key", "")).strip()
-    name = str(row.get("name", "")).strip()
-    if not key or not name:
-        return {}
-    max_q = max(1, int(row.get("max_quantity", 1)))
-    current_q = max(0, min(max_q, int(row.get("current_quantity", max_q))))
-    return {
-        "key": key,
-        "name": name,
-        "x": int(row.get("x", 0)),
-        "y": int(row.get("y", 0)),
-        "max_quantity": max_q,
-        "current_quantity": current_q,
-        "is_workbench": bool(row.get("is_workbench", False)),
-        "is_discovered": True if bool(row.get("is_workbench", False)) else bool(row.get("is_discovered", False)),
-    }
 
 
 def load_item_defs() -> List[Dict[str, object]]:
@@ -277,43 +243,6 @@ def load_races() -> List[Dict[str, object]]:
     return _seed_if_empty(RACES_FILE, out, DEFAULT_RACES)
 
 
-def load_entities() -> List[Dict[str, object]]:
-    ensure_data_files()
-    raw = _read_json(ENTITIES_FILE, DEFAULT_ENTITIES)
-    out: List[Dict[str, object]] = []
-    for row in raw if isinstance(raw, list) else []:
-        if not isinstance(row, dict):
-            continue
-        norm = _normalize_entity(row)
-        if norm:
-            out.append(norm)
-    return out
-
-
-def save_entities(entities: List[Dict[str, object]]) -> None:
-    ensure_data_files()
-    _write_json(ENTITIES_FILE, [e for e in (_normalize_entity(x) for x in entities if isinstance(x, dict)) if e])
-
-
-def import_entities_from_ldtk(ldtk_path: str, level_identifier: str | None = None, layer_identifier: str = "Entities") -> List[Dict[str, object]]:
-    """Import entity rows from LDtk into the current entities data file."""
-
-    ensure_data_files()
-    world = build_world_from_ldtk(
-        ldtk_path,
-        level_identifier=level_identifier,
-        entity_layer=layer_identifier,
-    )
-    imported = world_entities_as_rows(world)
-    normalized = [
-        norm for norm in (_normalize_entity(row) for row in imported if isinstance(row, dict)) if norm
-    ]
-    if not normalized:
-        raise ValueError("No valid entities imported from LDtk")
-    _write_json(ENTITIES_FILE, normalized)
-    return normalized
-
-
 def load_job_defs() -> List[Dict[str, object]]:
     ensure_data_files()
     raw = _read_json(JOBS_FILE, DEFAULT_JOB_DEFS)
@@ -404,7 +333,6 @@ def load_all_data() -> Dict[str, object]:
         "npcs": load_npc_templates(),
         "monsters": load_monster_templates(),
         "races": load_races(),
-        "entities": load_entities(),
         "jobs": load_job_defs(),
         "actions": load_action_defs(),
         "sim": load_sim_settings(),
