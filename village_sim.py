@@ -220,15 +220,18 @@ def _npc_color(job_name: str) -> tuple[int, int, int, int]:
     return int(r), int(g), int(b), 255
 
 
-FONT_CANDIDATES: tuple[str, ...] = (
-    "Noto Sans CJK KR",
-    "Noto Sans KR",
-    "NanumGothic",
-    "NanumBarunGothic",
-    "NanumSquare",
-    "Arial Unicode MS",
-    "sans-serif",
-)
+def _font_candidates() -> list[str]:
+    """한국어 라벨 렌더링 시도용 폰트 후보 목록."""
+
+    return [
+        "Noto Sans CJK KR",
+        "Noto Sans KR",
+        "Apple SD Gothic Neo",
+        "Malgun Gothic",
+        "NanumGothic",
+        "Arial Unicode MS",
+        "sans-serif",
+    ]
 
 
 def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
