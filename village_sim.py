@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import List
+from random import Random
+from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -73,6 +74,96 @@ class RenderNpc(BaseModel):
     x: int
     y: int
 
+
+class SimulationNpcState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_action: str = "대기"
+    ticks_remaining: int = 0
+
+
+class SimulationRuntime:
+    """렌더 루프와 분리된 고정 틱(10분 단위) 시뮬레이터."""
+
+    def __init__(self, world: GameWorld, npcs: List[RenderNpc], tick_seconds: float = 0.25, seed: int = 42):
+        self.world = world
+        self.npcs = npcs
+        self.tick_seconds = max(0.05, float(tick_seconds))
+        self._accumulator = 0.0
+        self.ticks = 0
+        self.rng = Random(seed)
+
+        self.job_actions = self._job_actions_map()
+        self.action_duration_ticks = self._action_duration_map()
+        self.state_by_name: Dict[str, SimulationNpcState] = {
+            npc.name: SimulationNpcState() for npc in self.npcs
+        }
+
+    @staticmethod
+    def _duration_to_ticks(minutes: object) -> int:
+        try:
+            parsed = int(minutes)
+        except Exception:
+            parsed = 10
+        return max(1, parsed // 10)
+
+    def _job_actions_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for row in load_job_defs():
+            if not isinstance(row, dict):
+                continue
+            job = str(row.get("job", "")).strip()
+            if not job:
+                continue
+            actions = [str(x).strip() for x in row.get("work_actions", []) if str(x).strip()]
+            if actions:
+                out[job] = actions
+        return out
+
+    def _action_duration_map(self) -> Dict[str, int]:
+        out: Dict[str, int] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            out[name] = self._duration_to_ticks(row.get("duration_minutes", 10))
+        return out
+
+    def _pick_next_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
+        candidates = self.job_actions.get(npc.job, [])
+        if not candidates:
+            state.current_action = "배회"
+            state.ticks_remaining = 1
+            return
+        action = self.rng.choice(candidates)
+        state.current_action = action
+        state.ticks_remaining = self.action_duration_ticks.get(action, 1)
+
+    def _step_npc(self, npc: RenderNpc) -> None:
+        state = self.state_by_name[npc.name]
+        if state.ticks_remaining <= 0:
+            self._pick_next_action(npc, state)
+
+        state.ticks_remaining = max(0, state.ticks_remaining - 1)
+
+        width_tiles = max(1, self.world.width_px // self.world.grid_size)
+        height_tiles = max(1, self.world.height_px // self.world.grid_size)
+        dx, dy = self.rng.choice([(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)])
+        npc.x = min(max(0, npc.x + dx), width_tiles - 1)
+        npc.y = min(max(0, npc.y + dy), height_tiles - 1)
+
+    def tick_once(self) -> None:
+        self.ticks += 1
+        for npc in self.npcs:
+            self._step_npc(npc)
+
+    def advance(self, delta_time: float) -> None:
+        self._accumulator += max(0.0, float(delta_time))
+        while self._accumulator >= self.tick_seconds:
+            self._accumulator -= self.tick_seconds
+            self.tick_once()
 
 def world_from_entities_json(level_id: str = "json_world", grid_size: int = 16) -> GameWorld:
     entities = [JsonEntity.model_validate(row) for row in load_entities()]
@@ -147,6 +238,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
 
     npcs = _build_render_npcs(world)
+    simulation = SimulationRuntime(world, npcs)
 
     class VillageArcadeWindow(arcade.Window):
         def __init__(self):
@@ -173,12 +265,12 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 dy += 1.0
             if self._keys.get(arcade.key.S) or self._keys.get(arcade.key.DOWN):
                 dy -= 1.0
-            if dx == 0 and dy == 0:
-                return
-            magnitude = (dx * dx + dy * dy) ** 0.5
-            self.state.x += (dx / magnitude) * config.camera_speed * delta_time
-            self.state.y += (dy / magnitude) * config.camera_speed * delta_time
-            self.camera.position = (self.state.x, self.state.y)
+            if dx != 0 or dy != 0:
+                magnitude = (dx * dx + dy * dy) ** 0.5
+                self.state.x += (dx / magnitude) * config.camera_speed * delta_time
+                self.state.y += (dy / magnitude) * config.camera_speed * delta_time
+                self.camera.position = (self.state.x, self.state.y)
+            simulation.advance(delta_time)
 
         def on_key_press(self, key: int, modifiers: int):
             self._keys[key] = True
@@ -218,15 +310,18 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     nx = npc.x * tile + tile / 2
                     ny = npc.y * tile + tile / 2
                     arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
-                    arcade.draw_text(npc.name, nx + 5, ny - 12, (240, 240, 240, 255), 9)
+                    sim_state = simulation.state_by_name.get(npc.name)
+                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action})"
+                    arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=_font_candidates())
 
                 for entity in world.entities:
                     ex = entity.x * tile + tile / 2
                     ey = entity.y * tile + tile / 2
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))
-                    arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10)
+                    arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=_font_candidates())
 
-            arcade.draw_text("WASD/Arrow: move | Q/E: zoom", 12, self.height - 24, (220, 220, 220, 255), 12)
+            hud = f"WASD/Arrow: move | Q/E: zoom | sim_tick={simulation.ticks}"
+            arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=_font_candidates())
 
     VillageArcadeWindow()
     arcade.run()
