@@ -368,7 +368,7 @@ class SimulationRuntime:
 
     def _flush_exploration_buffer(self, npc_name: str) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
-        if not buffer.new_known_cells and not buffer.intel_updates:
+        if not buffer.new_known_cells and not buffer.known_resource_updates and not buffer.known_resource_removals and not buffer.known_monster_discoveries:
             return
         self.guild_board_exploration_state.apply_npc_buffer(buffer, self.rng)
         buffer.clear()
@@ -400,8 +400,12 @@ class SimulationRuntime:
         )
         if delta.new_known_cells:
             buffer.new_known_cells.update(delta.new_known_cells)
-        if delta.intel_updates:
-            buffer.intel_updates.update(delta.intel_updates)
+        if delta.known_resource_updates:
+            buffer.known_resource_updates.update(delta.known_resource_updates)
+        if delta.known_resource_removals:
+            buffer.known_resource_removals.update(delta.known_resource_removals)
+        if delta.known_monster_discoveries:
+            buffer.known_monster_discoveries.update(delta.known_monster_discoveries)
 
     def _handle_board_report(self, npc_name: str) -> None:
         self._flush_exploration_buffer(npc_name)
