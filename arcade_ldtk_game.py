@@ -70,6 +70,24 @@ class LdtkArcadeWindow(arcade.Window):
             arcade.draw_lrbt_rectangle_filled(0, self.world.width_px, 0, self.world.height_px, (38, 42, 50, 255))
 
             tile = self.world.grid_size
+            for world_tile in self.world.tiles:
+                tx = world_tile.x * tile
+                ty = world_tile.y * tile
+                layer_name = world_tile.layer.strip().lower()
+                if layer_name == "road":
+                    color = (95, 126, 162, 255)
+                elif layer_name == "wall":
+                    color = (116, 96, 86, 255)
+                else:
+                    shade = 72 + (world_tile.tile_id % 5) * 18
+                    color = (shade, min(255, shade + 20), min(255, shade + 38), 255)
+                arcade.draw_lrbt_rectangle_filled(tx, tx + tile, ty, ty + tile, color)
+
+            for x, y in self.world.blocked_tiles:
+                bx = int(x) * tile
+                by = int(y) * tile
+                arcade.draw_lrbt_rectangle_filled(bx, bx + tile, by, by + tile, (120, 68, 68, 110))
+
             for y in range(0, self.world.height_px, tile):
                 arcade.draw_line(0, y, self.world.width_px, y, (46, 52, 60, 80), 1)
             for x in range(0, self.world.width_px, tile):
@@ -86,6 +104,13 @@ class LdtkArcadeWindow(arcade.Window):
             self.height - 24,
             (220, 220, 220, 255),
             12,
+        )
+        arcade.draw_text(
+            f"level={self.world.level_id} tiles={len(self.world.tiles)} blocked={len(self.world.blocked_tiles)} entities={len(self.world.entities)}",
+            12,
+            self.height - 44,
+            (232, 232, 232, 255),
+            11,
         )
 
     def on_key_press(self, key: int, modifiers: int):
@@ -118,7 +143,15 @@ def main():
     parser.add_argument("--level", default=None, help="Level identifier")
     args = parser.parse_args()
 
-    world = build_world_from_ldtk(args.ldtk, level_identifier=args.level)
+    world = build_world_from_ldtk(
+        args.ldtk,
+        level_identifier=args.level,
+        merge_all_levels=args.level is None,
+    )
+    print(
+        f"[LDTK] level={world.level_id} size={world.width_px}x{world.height_px} "
+        f"tiles={len(world.tiles)} blocked={len(world.blocked_tiles)} entities={len(world.entities)}"
+    )
     window = LdtkArcadeWindow(world)
     window.setup()
     arcade.run()
