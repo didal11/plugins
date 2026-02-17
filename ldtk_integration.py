@@ -84,6 +84,9 @@ class LdtkLevel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     identifier: str
+    world_x: int = Field(default=0, alias="worldX")
+    world_y: int = Field(default=0, alias="worldY")
+    world_depth: int = Field(default=0, alias="worldDepth")
     world_grid_size: Optional[int] = Field(default=None, alias="worldGridSize")
     px_wid: int = Field(alias="pxWid")
     px_hei: int = Field(alias="pxHei")
@@ -242,24 +245,23 @@ def _tiles_from_layer(layer: LdtkLayerInstance, *, fallback_grid_size: int) -> L
     ]
 
 
-def load_ldtk_project(path: str | Path) -> LdtkProject:
-    payload = orjson.loads(Path(path).read_bytes())
-    return LdtkProject.model_validate(payload)
 
 
-def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] = None, entity_layer: str = "Entities") -> GameWorld:
-    project = load_ldtk_project(path)
-    if not project.levels:
-        raise ValueError("LDtk project has no levels")
+def _offset_entity(entity: GameEntity, dx_tiles: int, dy_tiles: int) -> GameEntity:
+    payload = entity.model_dump()
+    payload["x"] = int(payload["x"]) + dx_tiles
+    payload["y"] = int(payload["y"]) + dy_tiles
+    return type(entity).model_validate(payload)
 
-    level = (
-        next((lv for lv in project.levels if lv.identifier == level_identifier), None)
-        if level_identifier
-        else project.levels[0]
-    )
-    if level is None:
-        raise ValueError(f"Level not found: {level_identifier}")
 
+def _offset_tile(tile: GameTile, dx_tiles: int, dy_tiles: int) -> GameTile:
+    payload = tile.model_dump()
+    payload["x"] = int(payload["x"]) + dx_tiles
+    payload["y"] = int(payload["y"]) + dy_tiles
+    return GameTile.model_validate(payload)
+
+
+def _build_level_world(level: LdtkLevel, project: LdtkProject, entity_layer: str) -> GameWorld:
     layer_instances = level.layer_instances or []
     entity_layer_row = next(
         (
@@ -319,6 +321,82 @@ def build_world_from_ldtk(path: str | Path, *, level_identifier: Optional[str] =
         grid_size=resolved_grid_size,
         width_px=level.px_wid,
         height_px=level.px_hei,
+        entities=entities,
+        tiles=tiles,
+        blocked_tiles=[[x, y] for x, y in sorted(blocked_set)],
+    )
+
+def load_ldtk_project(path: str | Path) -> LdtkProject:
+    payload = orjson.loads(Path(path).read_bytes())
+    return LdtkProject.model_validate(payload)
+
+
+def build_world_from_ldtk(
+    path: str | Path,
+    *,
+    level_identifier: Optional[str] = None,
+    entity_layer: str = "Entities",
+    merge_all_levels: bool = False,
+) -> GameWorld:
+    project = load_ldtk_project(path)
+    if not project.levels:
+        raise ValueError("LDtk project has no levels")
+
+    if level_identifier:
+        level = next((lv for lv in project.levels if lv.identifier == level_identifier), None)
+        if level is None:
+            raise ValueError(f"Level not found: {level_identifier}")
+        return _build_level_world(level, project, entity_layer)
+
+    if not merge_all_levels:
+        return _build_level_world(project.levels[0], project, entity_layer)
+
+    level_world_pairs = [
+        (level, _build_level_world(level, project, entity_layer))
+        for level in project.levels
+    ]
+    grid_size = max(1, min(world.grid_size for _, world in level_world_pairs))
+
+    offset_pairs: List[tuple[LdtkLevel, GameWorld, int, int]] = []
+    for level, world in level_world_pairs:
+        dx_tiles = int(level.world_x // grid_size)
+        dy_tiles = int(level.world_y // grid_size)
+        offset_pairs.append((level, world, dx_tiles, dy_tiles))
+
+    min_x = 0
+    min_y = 0
+    max_x = 0
+    max_y = 0
+    for level, _world, dx_tiles, dy_tiles in offset_pairs:
+        level_w = max(1, int(level.px_wid // grid_size))
+        level_h = max(1, int(level.px_hei // grid_size))
+        min_x = min(min_x, dx_tiles)
+        min_y = min(min_y, dy_tiles)
+        max_x = max(max_x, dx_tiles + level_w)
+        max_y = max(max_y, dy_tiles + level_h)
+
+    shift_x = -min_x
+    shift_y = -min_y
+
+    entities: List[GameEntity] = []
+    tiles: List[GameTile] = []
+    blocked_set: set[tuple[int, int]] = set()
+
+    for _level, world, dx_tiles, dy_tiles in offset_pairs:
+        final_dx = dx_tiles + shift_x
+        final_dy = dy_tiles + shift_y
+        entities.extend(_offset_entity(entity, final_dx, final_dy) for entity in world.entities)
+        tiles.extend(_offset_tile(tile, final_dx, final_dy) for tile in world.tiles)
+        blocked_set.update((int(x) + final_dx, int(y) + final_dy) for x, y in world.blocked_tiles)
+
+    width_px = max(1, max_x - min_x) * grid_size
+    height_px = max(1, max_y - min_y) * grid_size
+
+    return GameWorld(
+        level_id="ALL_LEVELS",
+        grid_size=grid_size,
+        width_px=width_px,
+        height_px=height_px,
         entities=entities,
         tiles=tiles,
         blocked_tiles=[[x, y] for x, y in sorted(blocked_set)],

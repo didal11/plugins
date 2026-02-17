@@ -30,6 +30,16 @@ def test_parse_args_defaults_to_data_map(monkeypatch):
     args = village_sim._parse_args()
 
     assert args.ldtk.endswith("data/map.ldtk")
+    assert args.all_levels is False
+
+
+def test_parse_args_all_levels_flag(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(sys, "argv", ["village_sim.py", "--all-levels"])
+    args = village_sim._parse_args()
+
+    assert args.all_levels is True
 
 
 def test_build_render_npcs_uses_defaults_and_clamps(monkeypatch):
@@ -514,3 +524,63 @@ def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
 
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
     assert sim.state_by_name["A"].current_action != "벌목"
+
+
+def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "탐색", "약초채집"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+            {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.StructureEntity(
+                key="guild_board",
+                name="길드 게시판",
+                x=2,
+                y=1,
+                min_duration=1,
+                max_duration=1,
+                current_duration=1,
+            ),
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=3,
+                y=3,
+                max_quantity=5,
+                current_quantity=5,
+                is_discovered=True,
+            ),
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    sim.target_stock_by_key = {"herb": 7}
+    sim.target_available_by_key = {"herb": 7}
+
+    _set_sim_time(sim, 9)
+    sim.tick_once()
+    assert sim.state_by_name["A"].current_action == "게시판확인"
+
+    sim.state_by_name["A"].ticks_remaining = 0
+    sim.state_by_name["A"].decision_ticks_until_check = 0
+    sim.tick_once()
+    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}

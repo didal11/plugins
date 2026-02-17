@@ -250,3 +250,75 @@ def test_build_world_collects_blocked_tiles_from_collision_and_wall(tmp_path: Pa
 
     world = build_world_from_ldtk(ldtk_file)
     assert sorted(world.blocked_tiles) == [[0, 0], [1, 1]]
+
+
+@pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
+def test_build_world_can_merge_all_levels_using_world_offsets(tmp_path: Path):
+    sample = {
+        "defs": {"layers": []},
+        "levels": [
+            {
+                "identifier": "L0",
+                "worldX": 0,
+                "worldY": 0,
+                "worldGridSize": 16,
+                "pxWid": 32,
+                "pxHei": 32,
+                "layerInstances": [
+                    {
+                        "__identifier": "Entities",
+                        "__type": "Entities",
+                        "entityInstances": [
+                            {
+                                "__identifier": "tree",
+                                "px": [0, 0],
+                                "fieldInstances": [
+                                    {"__identifier": "name", "__value": "나무"},
+                                    {"__identifier": "max_quantity", "__value": 1},
+                                    {"__identifier": "current_quantity", "__value": 1},
+                                    {"__identifier": "is_discovered", "__value": True},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "identifier": "L1",
+                "worldX": 32,
+                "worldY": 16,
+                "worldGridSize": 16,
+                "pxWid": 32,
+                "pxHei": 32,
+                "layerInstances": [
+                    {
+                        "__identifier": "Entities",
+                        "__type": "Entities",
+                        "entityInstances": [
+                            {
+                                "__identifier": "ore",
+                                "px": [16, 16],
+                                "fieldInstances": [
+                                    {"__identifier": "name", "__value": "광석"},
+                                    {"__identifier": "max_quantity", "__value": 1},
+                                    {"__identifier": "current_quantity", "__value": 1},
+                                    {"__identifier": "is_discovered", "__value": True},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        ],
+    }
+    ldtk_file = tmp_path / "sample_merge.ldtk"
+    ldtk_file.write_text(json.dumps(sample), encoding="utf-8")
+
+    world = build_world_from_ldtk(ldtk_file, merge_all_levels=True)
+    assert world.level_id == "ALL_LEVELS"
+    assert world.grid_size == 16
+    assert world.width_px == 64
+    assert world.height_px == 48
+
+    coords = sorted((e.key, e.x, e.y) for e in world.entities)
+    assert coords == [("ore", 3, 2), ("tree", 0, 0)]
