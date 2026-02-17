@@ -223,6 +223,78 @@ def test_display_clock_starts_from_year_zero_and_advances_1_minute(monkeypatch):
     sim.tick_once()
     assert sim.display_clock() == "0000년 01월 01일 00:01"
 
+
+def test_is_guild_board_entity_matches_board_keyword():
+    import village_sim
+
+    board = village_sim.GameEntity(key="guild_board", name="모험가 게시판", x=0, y=0)
+    not_board = village_sim.GameEntity(key="tree_oak", name="참나무", x=1, y=1)
+
+    assert village_sim._is_guild_board_entity(board) is True
+    assert village_sim._is_guild_board_entity(not_board) is False
+
+
+def test_format_guild_issue_lines_returns_readable_rows(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "탐색", "약초채집"]}],
+    )
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [{"name": "탐색", "duration_minutes": 10}])
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=1,
+                y=1,
+                max_quantity=1,
+                current_quantity=1,
+                is_discovered=False,
+            )
+        ],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)], seed=1)
+    sim.target_available_by_key = {"herb": 2}
+    sim.target_stock_by_key = {"herb": 0}
+
+    lines = village_sim._format_guild_issue_lines(sim)
+    assert lines
+    assert "탐색" in lines[0]
+    assert "자원:herb" in lines[0]
+
+
+def test_pick_entity_near_world_point_prefers_nearest_entity():
+    import village_sim
+
+    entities = [
+        village_sim.GameEntity(key="guild_board", name="게시판", x=2, y=2),
+        village_sim.GameEntity(key="tree_oak", name="나무", x=4, y=2),
+    ]
+    tile = 16
+    world_h = 128
+
+    board_center_x = (2 * tile) + (tile / 2)
+    board_center_y = world_h - ((2 * tile) + (tile / 2))
+    selected = village_sim._pick_entity_near_world_point(
+        entities,
+        board_center_x + 2,
+        board_center_y - 1,
+        tile_size=tile,
+        world_height_px=world_h,
+    )
+
+    assert selected is not None
+    assert selected.name == "게시판"
+
 def test_display_clock_hud_rounds_down_to_30_minutes(monkeypatch):
     import village_sim
 
