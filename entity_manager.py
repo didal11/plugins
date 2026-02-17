@@ -7,7 +7,7 @@ from random import Random
 from typing import Dict, List, Optional, Tuple
 
 
-def _is_workbench_entity(ent: Dict[str, object]) -> bool:
+def _has_workbench_trait(ent: Dict[str, object]) -> bool:
     tags = ent.get("tags", [])
     normalized_tags = {str(tag).strip().lower() for tag in tags} if isinstance(tags, list) else set()
     key = str(ent.get("key", "")).strip().lower()
@@ -59,7 +59,7 @@ class EntityManager:
         if not candidates:
             return False
         ent = self.rng.choice(candidates)
-        if _is_workbench_entity(ent):
+        if _has_workbench_trait(ent):
             return True
         current = max(0, int(ent.get("current_quantity", 0)))
         if current <= 0:
@@ -70,13 +70,13 @@ class EntityManager:
         return True
 
     def remove_depleted(self) -> None:
-        self.entities[:] = [e for e in self.entities if _is_workbench_entity(e) or int(e.get("current_quantity", 0)) > 0]
+        self.entities[:] = [e for e in self.entities if _has_workbench_trait(e) or int(e.get("current_quantity", 0)) > 0]
 
     def discover_near(self, center: Tuple[int, int], radius: int = 1) -> Optional[Dict[str, object]]:
         cx, cy = center
         candidates: List[Dict[str, object]] = []
         for ent in self.entities:
-            if _is_workbench_entity(ent):
+            if _has_workbench_trait(ent):
                 continue
             if bool(ent.get("is_discovered", False)):
                 continue

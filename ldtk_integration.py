@@ -163,8 +163,8 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
     current_q = max(0, min(max_q, current_q))
 
     tags = [str(tag) for tag in row.tags if str(tag).strip()]
-    is_workbench = any(tag.strip().lower() == "workbench" for tag in tags) or key.endswith("_workbench")
-    is_discovered = True if is_workbench else _as_bool(f.get("is_discovered", f.get("isDiscovered", False)), False)
+    workbench_tagged = any(tag.strip().lower() == "workbench" for tag in tags) or key.endswith("_workbench")
+    is_discovered = True if workbench_tagged else _as_bool(f.get("is_discovered", f.get("isDiscovered", False)), False)
 
     tx = int(row.px[0] // grid_size)
     ty = int(row.px[1] // grid_size)

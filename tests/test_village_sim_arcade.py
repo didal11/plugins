@@ -153,7 +153,6 @@ def test_simulation_runtime_work_moves_towards_required_entity(monkeypatch):
                 y=1,
                 max_quantity=5,
                 current_quantity=5,
-                is_workbench=False,
                 is_discovered=True,
                 tags=[],
             )
