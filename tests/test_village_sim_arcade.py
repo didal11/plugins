@@ -115,8 +115,8 @@ def test_simulation_runtime_uses_daily_planning_for_actions(monkeypatch):
 
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
-    _set_sim_time(sim, 8)
-    sim.tick_once()  # 08시, 식사 시간
+    _set_sim_time(sim, 6)
+    sim.tick_once()  # 06시, 식사 시간
     assert sim.state_by_name["A"].current_action == "식사"
 
     _set_sim_time(sim, 9)
@@ -158,7 +158,7 @@ def test_simulation_runtime_meal_moves_towards_dining_table(monkeypatch):
     npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
-    _set_sim_time(sim, 8)
+    _set_sim_time(sim, 6)
     sim.tick_once()
     assert sim.state_by_name["A"].current_action == "식사"
     assert (npcs[0].x, npcs[0].y) == (1, 0)
@@ -418,8 +418,8 @@ def test_simulation_runtime_does_not_select_work_during_meal_or_sleep(monkeypatc
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
     sim._pick_next_work_action = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("업무 선택 로직 호출되면 안됨"))
 
-    _set_sim_time(sim, 8)
-    sim.tick_once()  # 08시 식사
+    _set_sim_time(sim, 6)
+    sim.tick_once()  # 06시 식사
     assert sim.state_by_name["A"].current_action == "식사"
 
     _set_sim_time(sim, 22)
