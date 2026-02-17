@@ -856,12 +856,16 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 self.board_modal_tab = "minimap" if self.board_modal_tab == "issues" else "issues"
 
         def _screen_to_world(self, x: float, y: float) -> tuple[float, float]:
-            # Camera2D.unproject 동작이 Arcade 버전에 따라 달라질 수 있어,
-            # 카메라 상태 기반 계산을 우선 사용한다.
-            zoom = max(1e-6, float(self.state.zoom))
-            world_x = ((float(x) - (self.width / 2.0)) / zoom) + float(self.state.x)
-            world_y = ((float(y) - (self.height / 2.0)) / zoom) + float(self.state.y)
-            return world_x, world_y
+            # resize/fullscreen 이후 클릭 오프셋을 피하기 위해
+            # 카메라 변환(unproject)을 우선 사용한다.
+            try:
+                wx, wy = self.camera.unproject((x, y))
+                return float(wx), float(wy)
+            except Exception:
+                zoom = max(1e-6, float(self.state.zoom))
+                world_x = ((float(x) - (self.width / 2.0)) / zoom) + float(self.state.x)
+                world_y = ((float(y) - (self.height / 2.0)) / zoom) + float(self.state.y)
+                return world_x, world_y
 
         def _screen_to_world_via_unproject(self, x: float, y: float) -> tuple[float, float]:
             try:
