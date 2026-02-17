@@ -805,3 +805,38 @@ def test_simulation_runtime_marks_town_cells_known_on_start():
     assert (1, 1) in sim.guild_board_exploration_state.known_cells
     assert (3, 3) in sim.guild_board_exploration_state.known_cells
     assert (2, 2) not in sim.guild_board_exploration_state.known_cells
+
+
+def test_exploration_reveals_surrounding_8_cells_after_move(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "탐색", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=96,
+        height_px=96,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=3, y=3)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    npc = npcs[0]
+    state = sim.state_by_name["A"]
+    moved = sim._step_exploration_action(npc, state, 6, 6)
+
+    assert moved is True
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            assert (npc.x + dx, npc.y + dy) in sim.guild_board_exploration_state.known_cells
