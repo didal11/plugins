@@ -29,7 +29,7 @@ from editable_data import (
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 from planning import DailyPlanner, ScheduledActivity
 
-def _is_workbench_entity(entity: GameEntity) -> bool:
+def _has_workbench_trait(entity: GameEntity) -> bool:
     tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
     return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
 
@@ -194,7 +194,7 @@ class SimulationRuntime:
         for entity in self.world.entities:
             if not self._entity_matches_key(entity, required_key):
                 continue
-            if not entity.is_workbench and entity.current_quantity <= 0:
+            if not _has_workbench_trait(entity) and entity.current_quantity <= 0:
                 continue
             out.append((entity.x, entity.y))
         return out
@@ -494,7 +494,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
-            if _is_workbench_entity(entity):
+            if _has_workbench_trait(entity):
                 return 198, 140, 80, 255
             if not entity.is_discovered:
                 return 95, 108, 95, 255
