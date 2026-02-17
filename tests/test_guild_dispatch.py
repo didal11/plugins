@@ -116,3 +116,25 @@ def test_dispatcher_with_explicit_empty_registration_emits_no_issues():
     assert dispatcher.available_by_key == {}
     assert dispatcher.stock_by_key == {}
     assert dispatcher.issue_for_targets({"herb": 9}, {"herb": 9}) == []
+
+
+def test_dispatcher_can_count_available_from_discovered_only_while_keeping_registered_keys():
+    from guild_dispatch import GuildDispatcher
+    from ldtk_integration import ResourceEntity
+
+    entities = [
+        ResourceEntity(key="herb", name="약초", x=1, y=1, max_quantity=10, current_quantity=5, is_discovered=False),
+    ]
+    dispatcher = GuildDispatcher(
+        entities,
+        registered_resource_keys=["herb"],
+        stock_by_key={"herb": 0},
+        count_available_only_discovered=True,
+    )
+
+    assert dispatcher.resource_keys == ["herb"]
+    assert dispatcher.available_by_key == {"herb": 0}
+
+    issues = dispatcher.issue_for_targets({"herb": 0}, {"herb": 2})
+    got = {(row.resource_key, row.action_name, row.amount) for row in issues}
+    assert ("herb", "탐색", 2) in got

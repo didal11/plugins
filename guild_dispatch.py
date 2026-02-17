@@ -48,6 +48,7 @@ class GuildDispatcher:
         *,
         registered_resource_keys: Optional[Iterable[str]] = None,
         stock_by_key: Optional[Dict[str, int]] = None,
+        count_available_only_discovered: bool = False,
     ):
         self.resource_keys: List[str] = []
         self.stock_by_key: Dict[str, int] = {}
@@ -84,7 +85,10 @@ class GuildDispatcher:
                 self.stock_by_key[key] = 0
                 self.available_by_key[key] = 0
 
-            current_quantity = max(0, int(entity.current_quantity))
+            if count_available_only_discovered and not bool(entity.is_discovered):
+                current_quantity = 0
+            else:
+                current_quantity = max(0, int(entity.current_quantity))
             self.available_by_key[key] += current_quantity
 
         provided_stock = stock_by_key or {}

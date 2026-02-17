@@ -586,7 +586,7 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
 
 
-def test_dynamic_registered_resources_follow_discovery_and_inventory_seeded(monkeypatch):
+def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(
@@ -623,10 +623,13 @@ def test_dynamic_registered_resources_follow_discovery_and_inventory_seeded(monk
     )
     sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)], seed=1)
 
-    assert sim.guild_dispatcher.resource_keys == []
+    assert sim.guild_dispatcher.resource_keys == ["herb"]
+    assert sim.guild_dispatcher.available_by_key["herb"] == 0
+    assert sim.guild_inventory_by_key["herb"] == 0
 
     world.entities[0].is_discovered = True
     sim.tick_once()
 
     assert sim.guild_dispatcher.resource_keys == ["herb"]
+    assert sim.guild_dispatcher.available_by_key["herb"] == 5
     assert sim.guild_inventory_by_key["herb"] == 0

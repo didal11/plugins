@@ -134,8 +134,6 @@ class SimulationRuntime:
         for entity in self.world.entities:
             if not isinstance(entity, ResourceEntity):
                 continue
-            if not bool(entity.is_discovered):
-                continue
             key = entity.key.strip().lower()
             if not key or key in seen:
                 continue
@@ -153,6 +151,7 @@ class SimulationRuntime:
             self.world.entities,
             registered_resource_keys=registered_resources,
             stock_by_key=self.guild_inventory_by_key,
+            count_available_only_discovered=True,
         )
 
         target_stock, target_available = self._default_guild_targets()
