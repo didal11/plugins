@@ -306,12 +306,13 @@ class SimulationRuntime:
         return coord in self.guild_board_exploration_state.known_cells or coord in buffer.new_known_cells
 
     def _frontier_cells_from_known_view(self, buffer: NPCExplorationBuffer) -> Set[Tuple[int, int]]:
-        """Compute frontier cells at runtime from known cells.
+        """Compute frontier cells at runtime from buffer-known cells only.
 
-        frontier 정의: known 셀의 8방향 이웃 중 아직 known이 아닌 셀.
+        frontier 정의: 버퍼 known 셀의 8방향 이웃 중 아직 known이 아닌 셀.
+        게시판 확인을 통해 버퍼 known은 전역 known을 포함하게 된다.
         """
 
-        known_view = self.guild_board_exploration_state.known_cells.union(buffer.new_known_cells)
+        known_view = set(buffer.new_known_cells)
         width_tiles, height_tiles = self._grid_bounds()
         frontier: Set[Tuple[int, int]] = set()
         for x, y in known_view:

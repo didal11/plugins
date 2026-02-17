@@ -876,7 +876,7 @@ def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch
     assert (2, 2) in sim.exploration_buffer_by_name["A"].new_known_cells
 
 
-def test_runtime_frontier_is_computed_from_global_and_buffer_known(monkeypatch):
+def test_runtime_frontier_is_computed_from_buffer_known_only(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(
@@ -907,7 +907,7 @@ def test_runtime_frontier_is_computed_from_global_and_buffer_known(monkeypatch):
 
     frontier = sim._frontier_cells_from_known_view(buffer)
 
-    assert (1, 0) in frontier
+    assert (1, 0) not in frontier
     assert (4, 0) in frontier
     assert (4, 2) in frontier
 
