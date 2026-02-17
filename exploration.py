@@ -44,19 +44,16 @@ class NPCExplorationBuffer:
     """NPC가 들고 다니는 탐색 증분."""
 
     new_known_cells: Set[Coord] = field(default_factory=set)
-    new_frontier_cells: Set[Coord] = field(default_factory=set)
     intel_updates: Dict[Coord, CellIntel] = field(default_factory=dict)
 
     def clear(self) -> None:
         self.new_known_cells.clear()
-        self.new_frontier_cells.clear()
         self.intel_updates.clear()
 
 
 @dataclass
 class GuildBoardExplorationState:
     known_cells: Set[Coord] = field(default_factory=set)
-    frontier_cells: Set[Coord] = field(default_factory=set)
     cell_intel: Dict[Coord, CellIntel] = field(default_factory=dict)
 
     @classmethod
@@ -74,14 +71,12 @@ class GuildBoardExplorationState:
     def apply_npc_buffer(self, buffer: NPCExplorationBuffer, rng: Random) -> None:
         """Apply only delta updates from a NPC buffer.
 
-        - known/frontier는 set union
+        - known은 set union
         - intel 충돌은 랜덤 선택
         """
 
         if buffer.new_known_cells:
             self.known_cells.update(buffer.new_known_cells)
-        if buffer.new_frontier_cells:
-            self.frontier_cells.update(buffer.new_frontier_cells)
 
         for coord, incoming in buffer.intel_updates.items():
             existing = self.cell_intel.get(coord)
@@ -101,7 +96,6 @@ class GuildBoardExplorationState:
         }
         return NPCExplorationBuffer(
             new_known_cells=self.known_cells.intersection(cells),
-            new_frontier_cells=self.frontier_cells.intersection(cells),
             intel_updates=intel_updates,
         )
 

@@ -292,7 +292,6 @@ class SimulationRuntime:
 
     def _initialize_exploration_state(self) -> None:
         self.guild_board_exploration_state.known_cells.clear()
-        self.guild_board_exploration_state.frontier_cells.clear()
         for coord in self._town_walkable_cells():
             self._mark_cell_discovered(coord, force=True)
         for npc in self.npcs:
@@ -306,8 +305,25 @@ class SimulationRuntime:
     def _is_known_from_view(self, coord: Tuple[int, int], buffer: NPCExplorationBuffer) -> bool:
         return coord in self.guild_board_exploration_state.known_cells or coord in buffer.new_known_cells
 
-    def _is_frontier_from_view(self, coord: Tuple[int, int], buffer: NPCExplorationBuffer) -> bool:
-        return coord in self.guild_board_exploration_state.frontier_cells or coord in buffer.new_frontier_cells
+    def _frontier_cells_from_known_view(self, buffer: NPCExplorationBuffer) -> Set[Tuple[int, int]]:
+        """Compute frontier cells at runtime from buffer-known cells only.
+
+        frontier 정의: 버퍼 known 셀의 8방향 이웃 중 아직 known이 아닌 셀.
+        게시판 확인을 통해 버퍼 known은 전역 known을 포함하게 된다.
+        """
+
+        known_view = set(buffer.new_known_cells)
+        width_tiles, height_tiles = self._grid_bounds()
+        frontier: Set[Tuple[int, int]] = set()
+        for x, y in known_view:
+            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
+                nb = (nx, ny)
+                if nb in self.blocked_tiles:
+                    continue
+                if nb in known_view:
+                    continue
+                frontier.add(nb)
+        return frontier
 
     def _mark_cell_discovered_to_buffer(
         self,
@@ -325,19 +341,13 @@ class SimulationRuntime:
             return
 
         if not force:
-            has_adjacent_frontier = self._has_adjacent_frontier_8(x, y, width_tiles, height_tiles, buffer)
-            if not self._is_frontier_from_view(coord, buffer) and not has_adjacent_frontier:
+            has_adjacent_known = self._has_adjacent_known_8(x, y, width_tiles, height_tiles, buffer)
+            if not has_adjacent_known:
                 return
 
         buffer.new_known_cells.add(coord)
-        buffer.new_frontier_cells.discard(coord)
 
-        for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
-            nb = (nx, ny)
-            if not self._is_known_from_view(nb, buffer):
-                buffer.new_frontier_cells.add(nb)
-
-    def _has_adjacent_frontier_8(
+    def _has_adjacent_known_8(
         self,
         x: int,
         y: int,
@@ -352,13 +362,13 @@ class SimulationRuntime:
                 nx, ny = x + dx, y + dy
                 if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
                     continue
-                if self._is_frontier_from_view((nx, ny), buffer):
+                if self._is_known_from_view((nx, ny), buffer):
                     return True
         return False
 
     def _flush_exploration_buffer(self, npc_name: str) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
-        if not buffer.new_known_cells and not buffer.new_frontier_cells and not buffer.intel_updates:
+        if not buffer.new_known_cells and not buffer.intel_updates:
             return
         self.guild_board_exploration_state.apply_npc_buffer(buffer, self.rng)
         buffer.clear()
@@ -385,14 +395,11 @@ class SimulationRuntime:
 
     def _handle_board_check(self, npc_name: str) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
-        requested_cells = self.guild_board_exploration_state.known_cells.union(
-            self.guild_board_exploration_state.frontier_cells
+        delta = self.guild_board_exploration_state.export_delta_for_known_cells(
+            self.guild_board_exploration_state.known_cells
         )
-        delta = self.guild_board_exploration_state.export_delta_for_known_cells(requested_cells)
         if delta.new_known_cells:
             buffer.new_known_cells.update(delta.new_known_cells)
-        if delta.new_frontier_cells:
-            buffer.new_frontier_cells.update(delta.new_frontier_cells)
         if delta.intel_updates:
             buffer.intel_updates.update(delta.intel_updates)
 
@@ -429,7 +436,7 @@ class SimulationRuntime:
         self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
 
         if not state.work_path_initialized or not state.path:
-            frontier_view = buffer.new_frontier_cells or self.guild_board_exploration_state.frontier_cells
+            frontier_view = self._frontier_cells_from_known_view(buffer)
             target = choose_next_frontier(frontier_view, self.rng)
             if target is None:
                 return False
@@ -441,8 +448,6 @@ class SimulationRuntime:
             )
             state.work_path_initialized = True
             if not state.path:
-                buffer.new_frontier_cells.discard(target)
-                self.guild_board_exploration_state.frontier_cells.discard(target)
                 return False
 
         next_x, next_y = state.path.pop(0)

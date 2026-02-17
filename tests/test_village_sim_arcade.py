@@ -869,16 +869,14 @@ def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
     sim.guild_board_exploration_state.known_cells = {(2, 2)}
-    sim.guild_board_exploration_state.frontier_cells = {(3, 3)}
     sim.exploration_buffer_by_name["A"].clear()
 
     sim._handle_board_check("A")
 
     assert (2, 2) in sim.exploration_buffer_by_name["A"].new_known_cells
-    assert (3, 3) in sim.exploration_buffer_by_name["A"].new_frontier_cells
 
 
-def test_exploration_prefers_npc_buffer_frontier_after_board_check(monkeypatch):
+def test_runtime_frontier_is_computed_from_buffer_known_only(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(
@@ -902,24 +900,16 @@ def test_exploration_prefers_npc_buffer_frontier_after_board_check(monkeypatch):
     )
     npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
-    state = sim.state_by_name["A"]
 
-    sim.guild_board_exploration_state.frontier_cells = {(4, 4)}
-    sim.exploration_buffer_by_name["A"].new_frontier_cells = {(4, 0)}
+    buffer = sim.exploration_buffer_by_name["A"]
+    sim.guild_board_exploration_state.known_cells = {(0, 0)}
+    buffer.new_known_cells = {(4, 1)}
 
-    captured: dict[str, set[tuple[int, int]]] = {}
+    frontier = sim._frontier_cells_from_known_view(buffer)
 
-    def _pick_frontier(cells, rng):
-        captured["cells"] = set(cells)
-        ordered = sorted(captured["cells"])
-        return ordered[0] if ordered else None
-
-    monkeypatch.setattr(village_sim, "choose_next_frontier", _pick_frontier)
-
-    sim._step_exploration_action(npcs[0], state, width_tiles=5, height_tiles=5)
-
-    assert (4, 0) in captured["cells"]
-    assert (4, 4) not in captured["cells"]
+    assert (1, 0) not in frontier
+    assert (4, 0) in frontier
+    assert (4, 2) in frontier
 
 
 def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
@@ -1081,7 +1071,7 @@ def test_exploration_reveals_surrounding_8_cells_after_move(monkeypatch):
             assert coord in buffer.new_known_cells or coord in sim.guild_board_exploration_state.known_cells
 
 
-def test_mark_cell_discovered_updates_known_only_when_adjacent_frontier_exists():
+def test_mark_cell_discovered_updates_known_only_when_adjacent_known_exists():
     import village_sim
 
     world = village_sim.GameWorld(
@@ -1095,11 +1085,11 @@ def test_mark_cell_discovered_updates_known_only_when_adjacent_frontier_exists()
     npcs = [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)]
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
 
-    sim.guild_board_exploration_state.frontier_cells.clear()
+    sim.guild_board_exploration_state.known_cells = {(0, 0)}
 
     sim._mark_cell_discovered((5, 5))
     assert (5, 5) not in sim.guild_board_exploration_state.known_cells
 
-    sim.guild_board_exploration_state.frontier_cells.add((4, 4))
+    sim._mark_cell_discovered((4, 4), force=True)
     sim._mark_cell_discovered((5, 5))
     assert (5, 5) in sim.guild_board_exploration_state.known_cells
