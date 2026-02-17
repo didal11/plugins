@@ -257,7 +257,25 @@ class SimulationRuntime:
                 out.append((entity.x, entity.y))
         return out
 
+    def _town_walkable_cells(self) -> List[Tuple[int, int]]:
+        bounds = _town_bounds_tiles(self.world)
+        if bounds is None:
+            return []
+        x0, y0, w, h = bounds
+        width_tiles, height_tiles = self._grid_bounds()
+        out: List[Tuple[int, int]] = []
+        for y in range(y0, y0 + max(1, h)):
+            for x in range(x0, x0 + max(1, w)):
+                if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
+                    continue
+                if (x, y) in self.blocked_tiles:
+                    continue
+                out.append((x, y))
+        return out
+
     def _initialize_exploration_state(self) -> None:
+        for coord in self._town_walkable_cells():
+            self._mark_cell_discovered(coord)
         for npc in self.npcs:
             self._mark_cell_discovered((npc.x, npc.y))
 
@@ -648,6 +666,13 @@ def _collect_render_entities(entities: List[GameEntity]) -> List[GameEntity]:
     return list(entities)
 
 
+def _town_bounds_tiles(world: GameWorld) -> Tuple[int, int, int, int] | None:
+    for region in world.level_regions:
+        if region.level_id.strip().lower() == "town":
+            return region.x, region.y, region.width, region.height
+    return None
+
+
 FONT_CANDIDATES: tuple[str, ...] = (
     "Noto Sans CJK KR",
     "Noto Sans KR",
@@ -680,11 +705,45 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
 
     width_tiles = max(1, world.width_px // world.grid_size)
     height_tiles = max(1, world.height_px // world.grid_size)
+    blocked_tiles = {tuple(row) for row in world.blocked_tiles}
+
+    town_bounds = _town_bounds_tiles(world)
+    if town_bounds is None:
+        spawn_x0, spawn_y0, spawn_w, spawn_h = 0, 0, width_tiles, height_tiles
+    else:
+        spawn_x0, spawn_y0, spawn_w, spawn_h = town_bounds
+
+    spawn_candidates = [
+        (x, y)
+        for y in range(spawn_y0, spawn_y0 + max(1, spawn_h))
+        for x in range(spawn_x0, spawn_x0 + max(1, spawn_w))
+        if 0 <= x < width_tiles and 0 <= y < height_tiles and (x, y) not in blocked_tiles
+    ]
+    fallback_candidates = [
+        (x, y)
+        for y in range(height_tiles)
+        for x in range(width_tiles)
+        if (x, y) not in blocked_tiles
+    ]
+    if not spawn_candidates:
+        spawn_candidates = fallback_candidates
+
+    rng = Random(42)
+    remaining_candidates = list(spawn_candidates)
 
     out: List[RenderNpc] = []
-    for idx, npc in enumerate(raw_npcs):
-        default_x = 1 + (idx % max(1, width_tiles - 2))
-        default_y = 1 + ((idx // max(1, width_tiles - 2)) % max(1, height_tiles - 2))
+    for npc in raw_npcs:
+        if npc.x is None or npc.y is None:
+            if remaining_candidates:
+                default_x, default_y = remaining_candidates.pop(rng.randrange(len(remaining_candidates)))
+            elif spawn_candidates:
+                default_x, default_y = rng.choice(spawn_candidates)
+            elif fallback_candidates:
+                default_x, default_y = rng.choice(fallback_candidates)
+            else:
+                default_x, default_y = 0, 0
+        else:
+            default_x, default_y = npc.x, npc.y
         x = npc.x if npc.x is not None else default_x
         y = npc.y if npc.y is not None else default_y
         x = min(max(0, int(x)), width_tiles - 1)
@@ -711,6 +770,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.selected_entity: GameEntity | None = None
             self.last_click_world: tuple[float, float] | None = None
             self.show_board_modal = False
+            self.board_modal_tab = "issues"
 
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
@@ -756,6 +816,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             elif key == arcade.key.I:
                 if self.selected_entity is not None and _is_guild_board_entity(self.selected_entity):
                     self.show_board_modal = not self.show_board_modal
+            elif key == arcade.key.TAB and self.show_board_modal:
+                self.board_modal_tab = "minimap" if self.board_modal_tab == "issues" else "issues"
 
         def _screen_to_world(self, x: float, y: float) -> tuple[float, float]:
             # Camera2D.unproject 동작이 Arcade 버전에 따라 달라질 수 있어,
@@ -787,6 +849,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.selected_entity = selected
             if selected is None or not _is_guild_board_entity(selected):
                 self.show_board_modal = False
+                self.board_modal_tab = "issues"
 
         def on_key_release(self, key: int, modifiers: int):
             self._keys[key] = False
@@ -852,15 +915,65 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
                 arcade.draw_text("게시판 발행 의뢰", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
                 arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
-                lines = _format_guild_issue_lines(simulation)
-                for idx, line in enumerate(lines[:10]):
-                    arcade.draw_text(
-                        line,
-                        left + 18,
-                        bottom + modal_h - 64 - (idx * 24),
-                        (230, 230, 230, 255),
-                        12,
-                        font_name=selected_font,
+                arcade.draw_text(
+                    f"탭: {'의뢰 목록' if self.board_modal_tab == 'issues' else '미니맵'} (TAB 전환)",
+                    left + 18,
+                    bottom + modal_h - 54,
+                    (210, 210, 210, 255),
+                    11,
+                    font_name=selected_font,
+                )
+
+                if self.board_modal_tab == "issues":
+                    lines = _format_guild_issue_lines(simulation)
+                    for idx, line in enumerate(lines[:9]):
+                        arcade.draw_text(
+                            line,
+                            left + 18,
+                            bottom + modal_h - 84 - (idx * 24),
+                            (230, 230, 230, 255),
+                            12,
+                            font_name=selected_font,
+                        )
+                else:
+                    mini_left = left + 18
+                    mini_bottom = bottom + 18
+                    mini_w = modal_w - 36
+                    mini_h = modal_h - 96
+                    arcade.draw_lrbt_rectangle_filled(
+                        mini_left,
+                        mini_left + mini_w,
+                        mini_bottom,
+                        mini_bottom + mini_h,
+                        (18, 20, 26, 255),
+                    )
+
+                    width_tiles = max(1, world.width_px // world.grid_size)
+                    height_tiles = max(1, world.height_px // world.grid_size)
+                    cell_size = min(mini_w / width_tiles, mini_h / height_tiles)
+                    map_w = width_tiles * cell_size
+                    map_h = height_tiles * cell_size
+                    map_left = mini_left + (mini_w - map_w) / 2
+                    map_bottom = mini_bottom + (mini_h - map_h) / 2
+
+                    known_cells = simulation.guild_board_exploration_state.known_cells
+                    for cx, cy in known_cells:
+                        px = map_left + (cx * cell_size)
+                        py = map_bottom + ((height_tiles - cy - 1) * cell_size)
+                        arcade.draw_lrbt_rectangle_filled(px, px + cell_size, py, py + cell_size, (110, 198, 135, 230))
+
+                    for npc in npcs:
+                        px = map_left + ((npc.x + 0.5) * cell_size)
+                        py = map_bottom + ((height_tiles - npc.y - 0.5) * cell_size)
+                        arcade.draw_circle_filled(px, py, max(1.2, cell_size * 0.2), (248, 226, 110, 255))
+
+                    arcade.draw_lrbt_rectangle_outline(
+                        map_left,
+                        map_left + map_w,
+                        map_bottom,
+                        map_bottom + map_h,
+                        (220, 220, 220, 255),
+                        1,
                     )
 
     VillageArcadeWindow()
