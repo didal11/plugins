@@ -118,7 +118,11 @@ def main():
     parser.add_argument("--level", default=None, help="Level identifier")
     args = parser.parse_args()
 
-    world = build_world_from_ldtk(args.ldtk, level_identifier=args.level)
+    world = build_world_from_ldtk(
+        args.ldtk,
+        level_identifier=args.level,
+        merge_all_levels=args.level is None,
+    )
     window = LdtkArcadeWindow(world)
     window.setup()
     arcade.run()
