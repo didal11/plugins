@@ -89,6 +89,7 @@ class SimulationNpcState(BaseModel):
     sleep_path_initialized: bool = False
     work_path_initialized: bool = False
     path: List[Tuple[int, int]] = Field(default_factory=list)
+    last_board_check_day: int = -1
 
 
 class SimulationRuntime:
@@ -222,6 +223,15 @@ class SimulationRuntime:
 
         candidates = self.job_actions.get(npc.job, [])
         if npc.job.strip() == "모험가":
+            day_index = self.ticks // (24 * self.TICKS_PER_HOUR)
+            if state.last_board_check_day != day_index and "게시판확인" in candidates:
+                state.current_action = "게시판확인"
+                state.ticks_remaining = self.action_duration_ticks.get("게시판확인", 1)
+                state.path = []
+                state.work_path_initialized = False
+                state.last_board_check_day = day_index
+                return
+
             issued = self.guild_dispatcher.issue_for_targets(
                 self.target_stock_by_key,
                 self.target_available_by_key,
