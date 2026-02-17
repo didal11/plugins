@@ -117,12 +117,18 @@ class SimulationRuntime:
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
+        self.target_stock_by_key, self.target_available_by_key = self._default_guild_targets()
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+
+    def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
+        target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
+        target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
+        return target_stock_by_key, target_available_by_key
 
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -216,7 +222,10 @@ class SimulationRuntime:
 
         candidates = self.job_actions.get(npc.job, [])
         if npc.job.strip() == "모험가":
-            issued = self.guild_dispatcher.issue_bootstrap_for_all_resources()
+            issued = self.guild_dispatcher.issue_for_targets(
+                self.target_stock_by_key,
+                self.target_available_by_key,
+            )
             issued_actions: List[str] = []
             allowed = set(candidates)
             for row in issued:

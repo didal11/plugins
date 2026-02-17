@@ -506,6 +506,8 @@ def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
     )
     npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
     sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    sim.target_stock_by_key = {"herb": 7}
+    sim.target_available_by_key = {"herb": 7}
 
     _set_sim_time(sim, 9)
     sim.tick_once()
