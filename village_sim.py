@@ -629,7 +629,7 @@ def main() -> None:
     world = build_world_from_ldtk(
         Path(args.ldtk),
         level_identifier=args.level,
-        merge_all_levels=bool(args.all_levels and not args.level),
+        merge_all_levels=args.level is None,
     )
     run_arcade(world, config)
 
