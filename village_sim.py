@@ -961,9 +961,13 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     for cx, cy in known_cells:
                         px = map_left + (cx * cell_size)
                         py = map_bottom + ((height_tiles - cy - 1) * cell_size)
-                        arcade.draw_lrbt_rectangle_filled(px, px + cell_size, py, py + cell_size, (110, 198, 135, 230))
+                        arcade.draw_lrbt_rectangle_filled(px, px + cell_size, py, py + cell_size, (245, 245, 245, 230))
 
                     for entity in render_entities:
+                        if isinstance(entity, ResourceEntity) and not entity.is_discovered:
+                            continue
+                        if (entity.x, entity.y) not in known_cells:
+                            continue
                         px = map_left + ((entity.x + 0.5) * cell_size)
                         py = map_bottom + ((height_tiles - entity.y - 0.5) * cell_size)
                         arcade.draw_circle_filled(px, py, max(1.0, cell_size * 0.16), self._entity_color(entity))
