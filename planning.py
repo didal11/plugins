@@ -19,14 +19,14 @@ class ScheduledActivity(Enum):
 class DailyPlanner:
     """고정 일과 플래너.
 
-    - 08시: 기상 및 식사
+    - 06시: 기상 및 식사
     - 12시: 식사
     - 18시: 식사
-    - 20시~익일 07시: 취침
+    - 20시~익일 05시: 취침
     - 그 외 시간: 업무
     """
 
-    wake_and_meal_hour: int = 8
+    wake_and_meal_hour: int = 6
     lunch_hour: int = 12
     dinner_hour: int = 18
     sleep_hour: int = 20
