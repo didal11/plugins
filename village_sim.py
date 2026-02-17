@@ -459,13 +459,8 @@ def _npc_color(job_name: str) -> tuple[int, int, int, int]:
     return int(r), int(g), int(b), 255
 
 
-def _collect_non_resource_entities(entities: List[GameEntity]) -> List[GameEntity]:
-    out: List[GameEntity] = []
-    for entity in entities:
-        if isinstance(entity, ResourceEntity):
-            continue
-        out.append(entity)
-    return out
+def _collect_render_entities(entities: List[GameEntity]) -> List[GameEntity]:
+    return list(entities)
 
 
 FONT_CANDIDATES: tuple[str, ...] = (
@@ -519,7 +514,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     npcs = _build_render_npcs(world)
     simulation = SimulationRuntime(world, npcs)
     selected_font = _pick_font_name()
-    render_entities = _collect_non_resource_entities(world.entities)
+    render_entities = _collect_render_entities(world.entities)
 
     class VillageArcadeWindow(arcade.Window):
         def __init__(self):
@@ -530,6 +525,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
+            if isinstance(entity, ResourceEntity):
+                return 92, 176, 112, 255
             if _has_workbench_trait(entity):
                 return 198, 140, 80, 255
             return 112, 120, 156, 255
