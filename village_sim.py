@@ -771,18 +771,33 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.last_click_world: tuple[float, float] | None = None
             self.show_board_modal = False
             self.board_modal_tab = "issues"
+            self._sync_camera_after_viewport_change()
 
         def _sync_camera_after_viewport_change(self) -> None:
             half_w = (self.width / max(1e-6, self.state.zoom)) / 2.0
             half_h = (self.height / max(1e-6, self.state.zoom)) / 2.0
 
-            min_x = half_w
-            max_x = max(half_w, float(world.width_px) - half_w)
-            min_y = half_h
-            max_y = max(half_h, float(world.height_px) - half_h)
+            world_w = float(world.width_px)
+            world_h = float(world.height_px)
+            visible_w = half_w * 2.0
+            visible_h = half_h * 2.0
 
-            self.state.x = min(max(self.state.x, min_x), max_x)
-            self.state.y = min(max(self.state.y, min_y), max_y)
+            if visible_w >= world_w:
+                # 화면이 월드보다 넓으면 경계 클램프 대신 월드 중심 고정
+                self.state.x = world_w / 2.0
+            else:
+                min_x = half_w
+                max_x = world_w - half_w
+                self.state.x = min(max(self.state.x, min_x), max_x)
+
+            if visible_h >= world_h:
+                # 화면이 월드보다 높으면 경계 클램프 대신 월드 중심 고정
+                self.state.y = world_h / 2.0
+            else:
+                min_y = half_h
+                max_y = world_h - half_h
+                self.state.y = min(max(self.state.y, min_y), max_y)
+
             self.camera.position = (self.state.x, self.state.y)
             self.camera.zoom = self.state.zoom
 
