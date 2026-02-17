@@ -194,7 +194,7 @@ class SimulationRuntime:
         for entity in self.world.entities:
             if not self._entity_matches_key(entity, required_key):
                 continue
-            if not _is_workbench_entity(entity) and entity.current_quantity <= 0:
+            if not entity.is_workbench and entity.current_quantity <= 0:
                 continue
             out.append((entity.x, entity.y))
         return out
