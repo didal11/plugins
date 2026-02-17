@@ -680,7 +680,7 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
 
     _set_sim_time(sim, 9)
     sim.tick_once()
-    assert sim.state_by_name["A"].current_action == "게시판보고"
+    assert sim.state_by_name["A"].current_action in {"게시판확인", "게시판보고"}
 
     sim.state_by_name["A"].ticks_remaining = 0
     sim.state_by_name["A"].decision_ticks_until_check = 0
@@ -688,6 +688,71 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
     if sim.state_by_name["A"].current_action == "탐색":
         assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
+
+
+def test_adventurer_board_cycle_is_check_work_report(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.StructureEntity(
+                key="guild_board",
+                name="길드 게시판",
+                x=1,
+                y=1,
+                min_duration=1,
+                max_duration=1,
+                current_duration=1,
+            ),
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=3,
+                y=3,
+                max_quantity=5,
+                current_quantity=0,
+                is_discovered=False,
+            ),
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    sim.target_stock_by_key = {"herb": 1}
+    sim.target_available_by_key = {"herb": 2}
+
+    state = sim.state_by_name["A"]
+
+    sim._pick_next_work_action(npcs[0], state)
+    assert state.current_action == "게시판확인"
+
+    state.ticks_remaining = 0
+    sim._pick_next_work_action(npcs[0], state)
+    assert state.current_action == "탐색"
+
+    state.ticks_remaining = 0
+    sim._pick_next_work_action(npcs[0], state)
+    assert state.current_action == "게시판보고"
+
 
 
 def test_exploration_buffer_flushes_only_when_board_reported(monkeypatch):
