@@ -308,6 +308,12 @@ class SimulationRuntime:
             if nb not in self.guild_board_exploration_state.known_cells:
                 self.guild_board_exploration_state.frontier_cells.add(nb)
 
+    def _mark_visible_area_discovered(self, coord: Tuple[int, int]) -> None:
+        x, y = coord
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                self._mark_cell_discovered((x + dx, y + dy))
+
     def _step_exploration_action(
         self,
         npc: RenderNpc,
@@ -315,7 +321,7 @@ class SimulationRuntime:
         width_tiles: int,
         height_tiles: int,
     ) -> bool:
-        self._mark_cell_discovered((npc.x, npc.y))
+        self._mark_visible_area_discovered((npc.x, npc.y))
 
         if not state.work_path_initialized or not state.path:
             target = choose_next_frontier(self.guild_board_exploration_state.frontier_cells, self.rng)
@@ -334,7 +340,7 @@ class SimulationRuntime:
 
         next_x, next_y = state.path.pop(0)
         npc.x, npc.y = next_x, next_y
-        self._mark_cell_discovered((npc.x, npc.y))
+        self._mark_visible_area_discovered((npc.x, npc.y))
         return True
 
     @staticmethod
