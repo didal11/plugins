@@ -38,6 +38,11 @@ from guild_dispatch import GuildDispatcher
 from exploration import GuildBoardExplorationState, choose_next_frontier
 from planning import DailyPlanner, ScheduledActivity
 
+try:
+    import torch
+except ImportError:  # optional dependency
+    torch = None
+
 def _has_workbench_trait(entity: GameEntity) -> bool:
     return isinstance(entity, WorkbenchEntity) or entity.key.strip().lower().endswith("_workbench")
 
@@ -99,6 +104,7 @@ class RuntimeConfig(BaseModel):
     zoom_max: float = 3.0
     zoom_in_step: float = 1.08
     zoom_out_step: float = 0.92
+    use_torch_for_npc: bool = False
 
 
 class CameraState(BaseModel):
@@ -153,6 +159,7 @@ class SimulationRuntime:
         npcs: List[RenderNpc],
         tick_seconds: float = 0.1,
         seed: int = 42,
+        use_torch_for_npc: bool = False,
     ):
         self.world = world
         self.npcs = npcs
@@ -161,6 +168,7 @@ class SimulationRuntime:
         self.ticks = 0
         self.rng = Random(seed)
         self.planner = DailyPlanner()
+        self.use_torch_for_npc = bool(use_torch_for_npc and torch is not None)
 
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
@@ -501,9 +509,50 @@ class SimulationRuntime:
 
         return []
 
+    def _torch_decision_code(self, planned: ScheduledActivity, ticks_remaining: int) -> int:
+        if not self.use_torch_for_npc or torch is None:
+            if planned == ScheduledActivity.MEAL:
+                return 1
+            if planned == ScheduledActivity.SLEEP:
+                return 2
+            if ticks_remaining <= 0:
+                return 3
+            return 0
+
+        planned_code = 0
+        if planned == ScheduledActivity.MEAL:
+            planned_code = 1
+        elif planned == ScheduledActivity.SLEEP:
+            planned_code = 2
+
+        decision = torch.tensor([planned_code, int(ticks_remaining)], dtype=torch.int64)
+        if int(decision[0].item()) == 1:
+            return 1
+        if int(decision[0].item()) == 2:
+            return 2
+        if int(decision[1].item()) <= 0:
+            return 3
+        return 0
+
+    def _apply_next_path_step(self, npc: RenderNpc, state: SimulationNpcState) -> bool:
+        if not state.path:
+            return False
+        next_x, next_y = state.path.pop(0)
+        if self.use_torch_for_npc and torch is not None:
+            pos = torch.tensor([next_x, next_y], dtype=torch.int64)
+            npc.x = int(pos[0].item())
+            npc.y = int(pos[1].item())
+            return True
+        npc.x, npc.y = next_x, next_y
+        return True
+
     def _step_random(self, npc: RenderNpc, width_tiles: int, height_tiles: int) -> None:
         candidates = self._neighbors(npc.x, npc.y, width_tiles, height_tiles) + [(npc.x, npc.y)]
-        next_x, next_y = self.rng.choice(candidates)
+        if self.use_torch_for_npc and torch is not None:
+            idx = int(torch.randint(0, len(candidates), (1,)).item())
+            next_x, next_y = candidates[idx]
+        else:
+            next_x, next_y = self.rng.choice(candidates)
         npc.x, npc.y = next_x, next_y
 
     @staticmethod
@@ -552,7 +601,8 @@ class SimulationRuntime:
 
         if state.decision_ticks_until_check <= 0:
             planned = self.planner.activity_for_hour(self._current_hour())
-            if planned == ScheduledActivity.MEAL:
+            decision_code = self._torch_decision_code(planned, state.ticks_remaining)
+            if decision_code == 1:
                 if state.current_action != "식사":
                     state.current_action = "식사"
                     state.current_action_display = "식사"
@@ -560,7 +610,7 @@ class SimulationRuntime:
                 state.sleep_path_initialized = False
                 state.work_path_initialized = False
                 state.ticks_remaining = 1
-            elif planned == ScheduledActivity.SLEEP:
+            elif decision_code == 2:
                 if state.current_action != "취침":
                     state.current_action = "취침"
                     state.current_action_display = "취침"
@@ -568,7 +618,7 @@ class SimulationRuntime:
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
                 state.ticks_remaining = 1
-            elif state.ticks_remaining <= 0:
+            elif decision_code == 3:
                 state.sleep_path_initialized = False
                 self._pick_next_work_action(npc, state)
             state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
@@ -586,9 +636,7 @@ class SimulationRuntime:
                     width_tiles,
                     height_tiles,
                 )
-            if state.path:
-                next_x, next_y = state.path.pop(0)
-                npc.x, npc.y = next_x, next_y
+            if self._apply_next_path_step(npc, state):
                 return
 
         if state.current_action == "취침" and self.bed_tiles:
@@ -600,9 +648,7 @@ class SimulationRuntime:
                     height_tiles,
                 )
                 state.sleep_path_initialized = True
-            if state.path:
-                next_x, next_y = state.path.pop(0)
-                npc.x, npc.y = next_x, next_y
+            if self._apply_next_path_step(npc, state):
                 return
             if (npc.x, npc.y) in self.bed_tiles:
                 return
@@ -624,9 +670,7 @@ class SimulationRuntime:
                         height_tiles,
                     )
                     state.work_path_initialized = True
-                if state.path:
-                    next_x, next_y = state.path.pop(0)
-                    npc.x, npc.y = next_x, next_y
+                if self._apply_next_path_step(npc, state):
                     return
                 if (npc.x, npc.y) in work_tiles:
                     return
@@ -756,7 +800,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
 
     npcs = _build_render_npcs(world)
-    simulation = SimulationRuntime(world, npcs)
+    simulation = SimulationRuntime(world, npcs, use_torch_for_npc=config.use_torch_for_npc)
     selected_font = _pick_font_name()
     render_entities = _collect_render_entities(world.entities)
 
@@ -1040,12 +1084,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ldtk", default=str(default_ldtk), help=f"Path to LDtk project (default: {default_ldtk})")
     parser.add_argument("--level", default=None, help="LDtk level identifier")
     parser.add_argument("--all-levels", action="store_true", help="Merge all LDtk levels using worldX/worldY")
+    parser.add_argument("--torch-npc", action="store_true", help="Use torch-backed decision/movement for NPC logic")
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    config = RuntimeConfig()
+    config = RuntimeConfig(use_torch_for_npc=bool(args.torch_npc))
     world = build_world_from_ldtk(
         Path(args.ldtk),
         level_identifier=args.level,
