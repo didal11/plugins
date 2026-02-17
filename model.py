@@ -65,9 +65,7 @@ class NPCTab(Enum):
 
 class BoardTab(Enum):
     ENTITIES = "자원 목록"
-    CELLS = "탐색 기록"
     INVENTORY = "길드 인벤토리"
-    EXPLORE = "탐색 설정"
 
 
 @dataclass
@@ -203,10 +201,6 @@ class NPC:
     current_work_action: Optional[str] = None
     work_ticks_remaining: int = 0
     adventurer_board_visited: bool = False
-    explore_target_tile: Optional[Tuple[int, int]] = None
-    explore_known_buffer: Dict[str, Dict[str, object]] = field(default_factory=dict)
-    explore_duration_ticks: int = 0
-    explore_chain_remaining: int = 0
     home_sleep_tile: Optional[Tuple[int, int]] = None
     hunger_tick_buffer: float = 0.0
     fatigue_tick_buffer: float = 0.0
