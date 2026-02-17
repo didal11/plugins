@@ -584,3 +584,49 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     sim.state_by_name["A"].decision_ticks_until_check = 0
     sim.tick_once()
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+
+
+def test_dynamic_registered_resources_follow_discovery_and_inventory_seeded(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색", "약초채집"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "탐색", "duration_minutes": 10},
+            {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=1,
+                y=1,
+                max_quantity=5,
+                current_quantity=5,
+                is_discovered=False,
+            )
+        ],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)], seed=1)
+
+    assert sim.guild_dispatcher.resource_keys == []
+
+    world.entities[0].is_discovered = True
+    sim.tick_once()
+
+    assert sim.guild_dispatcher.resource_keys == ["herb"]
+    assert sim.guild_inventory_by_key["herb"] == 0

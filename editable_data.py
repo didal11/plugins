@@ -69,6 +69,7 @@ DEFAULT_SIM_SETTINGS: Dict[str, float] = {
     "explore_duration_ticks": 6,
 }
 
+
 DEFAULT_NPCS: List[Dict[str, object]] = [
     {"name": "엘린", "race": "인간", "gender": "여", "age": 24, "job": "모험가"},
     {"name": "보른", "race": "드워프", "gender": "남", "age": 39, "job": "대장장이"},
