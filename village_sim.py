@@ -35,6 +35,7 @@ from ldtk_integration import (
     build_world_from_ldtk,
 )
 from guild_dispatch import GuildDispatcher
+from exploration import GuildBoardExplorationState, choose_next_frontier
 from planning import DailyPlanner, ScheduledActivity
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
@@ -56,7 +57,9 @@ def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
         return ["발행된 의뢰가 없습니다."]
     out: List[str] = []
     for row in issued:
-        out.append(f"- {row.action_name} | 자원:{row.resource_key} | 수량:{int(row.amount)}")
+        display_action = simulation.display_action_name(row.action_name, row.resource_key)
+        display_resource = simulation.display_resource_name(row.resource_key)
+        out.append(f"- {display_action} | 자원:{display_resource} | 수량:{int(row.amount)}")
     return out
 
 
@@ -128,6 +131,7 @@ class SimulationNpcState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_action: str = "대기"
+    current_action_display: str = "대기"
     ticks_remaining: int = 0
     decision_ticks_until_check: int = 0
     sleep_path_initialized: bool = False
@@ -171,6 +175,8 @@ class SimulationRuntime:
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+        self.guild_board_exploration_state = GuildBoardExplorationState()
+        self._initialize_exploration_state()
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
         keys: List[str] = []
@@ -213,6 +219,26 @@ class SimulationRuntime:
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
 
+    def _resource_name_map(self) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for entity in self.world.entities:
+            if not isinstance(entity, ResourceEntity):
+                continue
+            key = entity.key.strip().lower()
+            if not key:
+                continue
+            out.setdefault(key, entity.name.strip() or key)
+        return out
+
+    def display_resource_name(self, resource_key: str) -> str:
+        key = resource_key.strip().lower()
+        return self._resource_name_map().get(key, key)
+
+    def display_action_name(self, action_name: str, resource_key: str) -> str:
+        if action_name.strip() == "탐색":
+            return f"{self.display_resource_name(resource_key)} 탐색"
+        return action_name
+
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
         for entity in self.world.entities:
@@ -230,6 +256,60 @@ class SimulationRuntime:
             if "bed" in key or "침대" in name:
                 out.append((entity.x, entity.y))
         return out
+
+    def _initialize_exploration_state(self) -> None:
+        for npc in self.npcs:
+            self._mark_cell_discovered((npc.x, npc.y))
+
+    def _grid_bounds(self) -> Tuple[int, int]:
+        width_tiles = max(1, self.world.width_px // self.world.grid_size)
+        height_tiles = max(1, self.world.height_px // self.world.grid_size)
+        return width_tiles, height_tiles
+
+    def _mark_cell_discovered(self, coord: Tuple[int, int]) -> None:
+        x, y = coord
+        width_tiles, height_tiles = self._grid_bounds()
+        if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
+            return
+        if coord in self.blocked_tiles:
+            return
+
+        self.guild_board_exploration_state.known_cells.add(coord)
+        self.guild_board_exploration_state.frontier_cells.discard(coord)
+
+        for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
+            nb = (nx, ny)
+            if nb not in self.guild_board_exploration_state.known_cells:
+                self.guild_board_exploration_state.frontier_cells.add(nb)
+
+    def _step_exploration_action(
+        self,
+        npc: RenderNpc,
+        state: SimulationNpcState,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> bool:
+        self._mark_cell_discovered((npc.x, npc.y))
+
+        if not state.work_path_initialized or not state.path:
+            target = choose_next_frontier(self.guild_board_exploration_state.frontier_cells, self.rng)
+            if target is None:
+                return False
+            state.path = self._find_path_to_nearest_target(
+                (npc.x, npc.y),
+                [target],
+                width_tiles,
+                height_tiles,
+            )
+            state.work_path_initialized = True
+            if not state.path:
+                self.guild_board_exploration_state.frontier_cells.discard(target)
+                return False
+
+        next_x, next_y = state.path.pop(0)
+        npc.x, npc.y = next_x, next_y
+        self._mark_cell_discovered((npc.x, npc.y))
+        return True
 
     @staticmethod
     def _duration_to_ticks(minutes: object) -> int:
@@ -310,6 +390,7 @@ class SimulationRuntime:
             day_index = self.ticks // (24 * self.TICKS_PER_HOUR)
             if state.last_board_check_day != day_index and "게시판확인" in candidates:
                 state.current_action = "게시판확인"
+                state.current_action_display = "게시판확인"
                 state.ticks_remaining = self.action_duration_ticks.get("게시판확인", 1)
                 state.path = []
                 state.work_path_initialized = False
@@ -320,21 +401,32 @@ class SimulationRuntime:
                 self.target_stock_by_key,
                 self.target_available_by_key,
             )
-            issued_actions: List[str] = []
+            issued_actions: List[Tuple[str, str]] = []
             allowed = set(candidates)
             for row in issued:
                 if row.action_name not in allowed:
                     continue
-                issued_actions.extend([row.action_name] * max(1, int(row.amount)))
-            candidates = issued_actions
+                display_action = self.display_action_name(row.action_name, row.resource_key)
+                issued_actions.extend([(row.action_name, display_action)] * max(1, int(row.amount)))
+            if issued_actions:
+                action, display_action = self.rng.choice(issued_actions)
+                state.current_action = action
+                state.current_action_display = display_action
+                state.ticks_remaining = self.action_duration_ticks.get(action, 1)
+                state.path = []
+                state.work_path_initialized = False
+                return
+            candidates = []
 
         if not candidates:
             state.current_action = "배회"
+            state.current_action_display = "배회"
             state.ticks_remaining = 1
             state.path = []
             return
         action = self.rng.choice(candidates)
         state.current_action = action
+        state.current_action_display = action
         state.ticks_remaining = self.action_duration_ticks.get(action, 1)
         state.path = []
         state.work_path_initialized = False
@@ -445,6 +537,7 @@ class SimulationRuntime:
             if planned == ScheduledActivity.MEAL:
                 if state.current_action != "식사":
                     state.current_action = "식사"
+                    state.current_action_display = "식사"
                     state.path = []
                 state.sleep_path_initialized = False
                 state.work_path_initialized = False
@@ -452,6 +545,7 @@ class SimulationRuntime:
             elif planned == ScheduledActivity.SLEEP:
                 if state.current_action != "취침":
                     state.current_action = "취침"
+                    state.current_action_display = "취침"
                     state.path = []
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
@@ -496,6 +590,12 @@ class SimulationRuntime:
                 return
 
         if state.current_action not in {"식사", "취침"}:
+            if state.current_action == "탐색":
+                moved = self._step_exploration_action(npc, state, width_tiles, height_tiles)
+                if moved:
+                    return
+                state.work_path_initialized = False
+
             work_tiles = self._find_work_tiles(state.current_action)
             if work_tiles:
                 if not state.work_path_initialized:
@@ -718,7 +818,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     ny = self._tile_center_y(npc.y)
                     arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
                     sim_state = simulation.state_by_name.get(npc.name)
-                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action})"
+                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action_display})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
 
                 for entity in render_entities:

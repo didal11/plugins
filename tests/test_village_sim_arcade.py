@@ -268,8 +268,8 @@ def test_format_guild_issue_lines_returns_readable_rows(monkeypatch):
 
     lines = village_sim._format_guild_issue_lines(sim)
     assert lines
-    assert "탐색" in lines[0]
-    assert "자원:herb" in lines[0]
+    assert "약초 탐색" in lines[0]
+    assert "자원:약초" in lines[0]
 
 
 def test_pick_entity_near_world_point_prefers_nearest_entity():
@@ -595,6 +595,8 @@ def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
     sim.tick_once()
 
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    if sim.state_by_name["A"].current_action == "탐색":
+        assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
     assert sim.state_by_name["A"].current_action != "벌목"
 
 
@@ -656,6 +658,8 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     sim.state_by_name["A"].decision_ticks_until_check = 0
     sim.tick_once()
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    if sim.state_by_name["A"].current_action == "탐색":
+        assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
 
 
 def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
@@ -705,3 +709,49 @@ def test_registered_resources_include_world_keys_and_available_follows_discovery
     assert sim.guild_dispatcher.resource_keys == ["herb"]
     assert sim.guild_dispatcher.available_by_key["herb"] == 5
     assert sim.guild_inventory_by_key["herb"] == 0
+
+
+def test_exploration_action_is_linked_with_frontier_exploration_state(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "탐색", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=3,
+                y=3,
+                max_quantity=5,
+                current_quantity=5,
+                is_discovered=False,
+            )
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    initial_known_count = len(sim.guild_board_exploration_state.known_cells)
+    _set_sim_time(sim, 9)
+    sim.tick_once()
+    sim.tick_once()
+    sim.tick_once()
+
+    assert sim.state_by_name["A"].current_action == "탐색"
+    assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
+    assert len(sim.guild_board_exploration_state.known_cells) > initial_known_count
