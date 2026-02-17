@@ -70,6 +70,17 @@ class LdtkArcadeWindow(arcade.Window):
             arcade.draw_lrbt_rectangle_filled(0, self.world.width_px, 0, self.world.height_px, (38, 42, 50, 255))
 
             tile = self.world.grid_size
+            for world_tile in self.world.tiles:
+                tx = world_tile.x * tile
+                ty = world_tile.y * tile
+                shade = 48 + (world_tile.tile_id % 5) * 10
+                arcade.draw_lrbt_rectangle_filled(tx, tx + tile, ty, ty + tile, (shade, shade + 8, shade + 16, 255))
+
+            for x, y in self.world.blocked_tiles:
+                bx = int(x) * tile
+                by = int(y) * tile
+                arcade.draw_lrbt_rectangle_filled(bx, bx + tile, by, by + tile, (120, 68, 68, 110))
+
             for y in range(0, self.world.height_px, tile):
                 arcade.draw_line(0, y, self.world.width_px, y, (46, 52, 60, 80), 1)
             for x in range(0, self.world.width_px, tile):
