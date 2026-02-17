@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -31,8 +31,8 @@ class GuildDispatcher:
     """길드 중앙 발행기.
 
     정책 변수:
-    - Stock[R]: 현재 보유량(현재는 발견된 리소스의 current_quantity 합)
-    - Available[R]: 가용량(리소스 노드 current_quantity 합)
+    - Stock[R]: 길드 인벤토리 기반 보유량
+    - Available[R]: 길드 등록 리소스 기준 월드 가용량(current_quantity 합)
     - TargetStock[R]
     - TargetAvailable[R]
 
@@ -42,16 +42,42 @@ class GuildDispatcher:
     - 채집 발행량은 Available[R]를 초과할 수 없음
     """
 
-    def __init__(self, entities: Iterable[GameEntity]):
+    def __init__(
+        self,
+        entities: Iterable[GameEntity],
+        *,
+        registered_resource_keys: Optional[Iterable[str]] = None,
+        stock_by_key: Optional[Dict[str, int]] = None,
+    ):
         self.resource_keys: List[str] = []
         self.stock_by_key: Dict[str, int] = {}
         self.available_by_key: Dict[str, int] = {}
 
+        registered: List[str] = []
+        seen: set[str] = set()
+        apply_registration_filter = registered_resource_keys is not None
+        if registered_resource_keys is not None:
+            for raw in registered_resource_keys:
+                key = str(raw).strip().lower()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                registered.append(key)
+
+        if apply_registration_filter:
+            self.resource_keys.extend(registered)
+            for key in registered:
+                self.available_by_key[key] = 0
+                self.stock_by_key[key] = 0
+
+        allowed = set(registered)
         for entity in entities:
             if not isinstance(entity, ResourceEntity):
                 continue
             key = entity.key.strip().lower()
             if not key:
+                continue
+            if apply_registration_filter and key not in allowed:
                 continue
             if key not in self.available_by_key:
                 self.resource_keys.append(key)
@@ -60,8 +86,10 @@ class GuildDispatcher:
 
             current_quantity = max(0, int(entity.current_quantity))
             self.available_by_key[key] += current_quantity
-            if bool(entity.is_discovered):
-                self.stock_by_key[key] += current_quantity
+
+        provided_stock = stock_by_key or {}
+        for key in self.resource_keys:
+            self.stock_by_key[key] = max(0, int(provided_stock.get(key, 0)))
 
     @staticmethod
     def _gather_action_name(resource_key: str) -> str:
@@ -78,11 +106,7 @@ class GuildDispatcher:
     ) -> List[GuildIssue]:
         issues: List[GuildIssue] = []
 
-        keys = set(self.resource_keys) | {str(k).strip().lower() for k in target_stock_by_key.keys()} | {
-            str(k).strip().lower() for k in target_available_by_key.keys()
-        }
-
-        for key in sorted(k for k in keys if k):
+        for key in sorted(self.resource_keys):
             stock = max(0, int(self.stock_by_key.get(key, 0)))
             available = max(0, int(self.available_by_key.get(key, 0)))
             target_stock = max(0, int(target_stock_by_key.get(key, 0)))

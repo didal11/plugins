@@ -117,14 +117,53 @@ class SimulationRuntime:
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
+        self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
-        self.target_stock_by_key, self.target_available_by_key = self._default_guild_targets()
+        self.target_stock_by_key, self.target_available_by_key = {}, {}
+        self._refresh_guild_dispatcher()
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+
+    def _dynamic_registered_resource_keys(self) -> List[str]:
+        keys: List[str] = []
+        seen: set[str] = set()
+        for entity in self.world.entities:
+            if not isinstance(entity, ResourceEntity):
+                continue
+            if not bool(entity.is_discovered):
+                continue
+            key = entity.key.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+        return keys
+
+    def _refresh_guild_dispatcher(self) -> None:
+        registered_resources = self._dynamic_registered_resource_keys()
+        for key in registered_resources:
+            if key not in self.guild_inventory_by_key:
+                self.guild_inventory_by_key[key] = 0
+
+        self.guild_dispatcher = GuildDispatcher(
+            self.world.entities,
+            registered_resource_keys=registered_resources,
+            stock_by_key=self.guild_inventory_by_key,
+        )
+
+        target_stock, target_available = self._default_guild_targets()
+        self.target_stock_by_key = {
+            key: int(self.target_stock_by_key.get(key, target_stock.get(key, 1)))
+            for key in self.guild_dispatcher.resource_keys
+        }
+        self.target_available_by_key = {
+            key: int(self.target_available_by_key.get(key, target_available.get(key, 1)))
+            for key in self.guild_dispatcher.resource_keys
+        }
 
     def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
         target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
@@ -201,6 +240,8 @@ class SimulationRuntime:
         return key == required or key.startswith(f"{required}_")
 
     def _find_work_tiles(self, action_name: str) -> List[Tuple[int, int]]:
+        # 작업 좌표는 실시간 탐색 결과가 아니라 월드 엔티티 스냅샷(self.world.entities)에서 조회한다.
+        # self.world.entities 는 LDtk 로더가 entity px 값을 grid 좌표(x, y)로 변환해 채워 넣은 값이다.
         required_key = self.action_required_entity.get(action_name, "")
         if not required_key:
             return []
@@ -432,6 +473,7 @@ class SimulationRuntime:
         self._step_random(npc, width_tiles, height_tiles)
 
     def tick_once(self) -> None:
+        self._refresh_guild_dispatcher()
         self.ticks += 1
         for npc in self.npcs:
             self._step_npc(npc)
