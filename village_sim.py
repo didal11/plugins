@@ -16,7 +16,7 @@ import argparse
 from collections import deque
 from pathlib import Path
 from random import Random
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,8 +35,11 @@ from ldtk_integration import (
     build_world_from_ldtk,
 )
 from guild_dispatch import GuildDispatcher
-from exploration import GuildBoardExplorationState, choose_next_frontier
+from exploration import GuildBoardExplorationState, NPCExplorationBuffer, choose_next_frontier
 from planning import DailyPlanner, ScheduledActivity
+
+BOARD_REPORT_ACTION = "게시판보고"
+BOARD_CHECK_ACTION = "게시판확인"
 
 try:
     import torch
@@ -180,6 +183,10 @@ class SimulationRuntime:
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
+        self.exploration_buffer_by_name: Dict[str, NPCExplorationBuffer] = {
+            npc.name: NPCExplorationBuffer() for npc in self.npcs
+        }
+        self.minimap_known_cells_snapshot: Set[Tuple[int, int]] = set()
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
@@ -282,37 +289,111 @@ class SimulationRuntime:
         return out
 
     def _initialize_exploration_state(self) -> None:
+        self.guild_board_exploration_state.known_cells.clear()
+        self.guild_board_exploration_state.frontier_cells.clear()
         for coord in self._town_walkable_cells():
-            self._mark_cell_discovered(coord)
+            self._mark_cell_discovered(coord, force=True)
         for npc in self.npcs:
-            self._mark_cell_discovered((npc.x, npc.y))
+            self._mark_cell_discovered((npc.x, npc.y), force=True)
 
     def _grid_bounds(self) -> Tuple[int, int]:
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
         height_tiles = max(1, self.world.height_px // self.world.grid_size)
         return width_tiles, height_tiles
 
-    def _mark_cell_discovered(self, coord: Tuple[int, int]) -> None:
+    def _is_known_from_view(self, coord: Tuple[int, int], buffer: NPCExplorationBuffer) -> bool:
+        return coord in self.guild_board_exploration_state.known_cells or coord in buffer.new_known_cells
+
+    def _is_frontier_from_view(self, coord: Tuple[int, int], buffer: NPCExplorationBuffer) -> bool:
+        return coord in self.guild_board_exploration_state.frontier_cells or coord in buffer.new_frontier_cells
+
+    def _mark_cell_discovered_to_buffer(
+        self,
+        buffer: NPCExplorationBuffer,
+        coord: Tuple[int, int],
+        force: bool = False,
+    ) -> None:
         x, y = coord
         width_tiles, height_tiles = self._grid_bounds()
         if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
             return
         if coord in self.blocked_tiles:
             return
+        if self._is_known_from_view(coord, buffer):
+            return
 
-        self.guild_board_exploration_state.known_cells.add(coord)
-        self.guild_board_exploration_state.frontier_cells.discard(coord)
+        if not force:
+            has_adjacent_frontier = self._has_adjacent_frontier_8(x, y, width_tiles, height_tiles, buffer)
+            if not self._is_frontier_from_view(coord, buffer) and not has_adjacent_frontier:
+                return
+
+        buffer.new_known_cells.add(coord)
+        buffer.new_frontier_cells.discard(coord)
 
         for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
             nb = (nx, ny)
-            if nb not in self.guild_board_exploration_state.known_cells:
-                self.guild_board_exploration_state.frontier_cells.add(nb)
+            if not self._is_known_from_view(nb, buffer):
+                buffer.new_frontier_cells.add(nb)
 
-    def _mark_visible_area_discovered(self, coord: Tuple[int, int]) -> None:
+    def _has_adjacent_frontier_8(
+        self,
+        x: int,
+        y: int,
+        width_tiles: int,
+        height_tiles: int,
+        buffer: NPCExplorationBuffer,
+    ) -> bool:
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = x + dx, y + dy
+                if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
+                    continue
+                if self._is_frontier_from_view((nx, ny), buffer):
+                    return True
+        return False
+
+    def _flush_exploration_buffer(self, npc_name: str) -> None:
+        buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
+        if not buffer.new_known_cells and not buffer.new_frontier_cells and not buffer.intel_updates:
+            return
+        self.guild_board_exploration_state.apply_npc_buffer(buffer, self.rng)
+        buffer.clear()
+
+    @staticmethod
+    def _board_action_name_in_candidates(candidates: List[str]) -> str | None:
+        if BOARD_REPORT_ACTION in candidates:
+            return BOARD_REPORT_ACTION
+        if BOARD_CHECK_ACTION in candidates:
+            return BOARD_CHECK_ACTION
+        return None
+
+    @staticmethod
+    def _is_board_report_like_action(action_name: str) -> bool:
+        return action_name in {BOARD_REPORT_ACTION, BOARD_CHECK_ACTION}
+
+    def _handle_board_report(self, npc_name: str) -> None:
+        self._flush_exploration_buffer(npc_name)
+        self.minimap_known_cells_snapshot = set(self.guild_board_exploration_state.known_cells)
+
+    def _mark_cell_discovered(self, coord: Tuple[int, int], force: bool = False) -> None:
+        """Backward-compatible helper used by tests/system flows.
+
+        실제 known/frontier 반영은 버퍼를 통해서만 수행한다.
+        """
+
+        system_name = "__system__"
+        buffer = self.exploration_buffer_by_name.setdefault(system_name, NPCExplorationBuffer())
+        self._mark_cell_discovered_to_buffer(buffer, coord, force=force)
+        self._flush_exploration_buffer(system_name)
+
+    def _mark_visible_area_discovered(self, npc_name: str, coord: Tuple[int, int]) -> None:
+        buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
         x, y = coord
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
-                self._mark_cell_discovered((x + dx, y + dy))
+                self._mark_cell_discovered_to_buffer(buffer, (x + dx, y + dy))
 
     def _step_exploration_action(
         self,
@@ -321,7 +402,7 @@ class SimulationRuntime:
         width_tiles: int,
         height_tiles: int,
     ) -> bool:
-        self._mark_visible_area_discovered((npc.x, npc.y))
+        self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
 
         if not state.work_path_initialized or not state.path:
             target = choose_next_frontier(self.guild_board_exploration_state.frontier_cells, self.rng)
@@ -340,7 +421,7 @@ class SimulationRuntime:
 
         next_x, next_y = state.path.pop(0)
         npc.x, npc.y = next_x, next_y
-        self._mark_visible_area_discovered((npc.x, npc.y))
+        self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
         return True
 
     @staticmethod
@@ -420,10 +501,11 @@ class SimulationRuntime:
         candidates = self.job_actions.get(npc.job, [])
         if npc.job.strip() == "모험가":
             day_index = self.ticks // (24 * self.TICKS_PER_HOUR)
-            if state.last_board_check_day != day_index and "게시판확인" in candidates:
-                state.current_action = "게시판확인"
-                state.current_action_display = "게시판확인"
-                state.ticks_remaining = self.action_duration_ticks.get("게시판확인", 1)
+            board_action = self._board_action_name_in_candidates(candidates)
+            if state.last_board_check_day != day_index and board_action is not None:
+                state.current_action = board_action
+                state.current_action_display = board_action
+                state.ticks_remaining = self.action_duration_ticks.get(board_action, 1)
                 state.path = []
                 state.work_path_initialized = False
                 state.last_board_check_day = day_index
@@ -728,6 +810,8 @@ class SimulationRuntime:
                 if self._apply_next_path_step(npc, state):
                     return
                 if (npc.x, npc.y) in work_tiles:
+                    if self._is_board_report_like_action(state.current_action):
+                        self._handle_board_report(npc.name)
                     return
 
         self._step_random(npc, width_tiles, height_tiles)
@@ -824,6 +908,15 @@ class SimulationRuntime:
                 if step is None:
                     continue
                 npc.x, npc.y = step
+
+        for (request_key, target_key), rows in grouped_requests.items():
+            action_name = request_key.removeprefix("work:")
+            if not self._is_board_report_like_action(action_name):
+                continue
+            targets = set(target_key)
+            for npc, _ in rows:
+                if (npc.x, npc.y) in targets:
+                    self._handle_board_report(npc.name)
 
         for npc in fallback_random:
             self._step_random(npc, width_tiles, height_tiles)
@@ -1190,11 +1283,21 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     map_left = mini_left + (mini_w - map_w) / 2
                     map_bottom = mini_bottom + (mini_h - map_h) / 2
 
-                    known_cells = simulation.guild_board_exploration_state.known_cells
+                    known_cells = simulation.minimap_known_cells_snapshot
                     for cx, cy in known_cells:
                         px = map_left + (cx * cell_size)
                         py = map_bottom + ((height_tiles - cy - 1) * cell_size)
                         arcade.draw_lrbt_rectangle_filled(px, px + cell_size, py, py + cell_size, (245, 245, 245, 230))
+
+                    if not known_cells:
+                        arcade.draw_text(
+                            "게시판 보고 후 미니맵 갱신",
+                            map_left + 10,
+                            map_bottom + map_h - 24,
+                            (205, 205, 205, 255),
+                            10,
+                            font_name=selected_font,
+                        )
 
                     for entity in render_entities:
                         if isinstance(entity, ResourceEntity) and not entity.is_discovered:

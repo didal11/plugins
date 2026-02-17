@@ -633,12 +633,13 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     monkeypatch.setattr(
         village_sim,
         "load_job_defs",
-        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "탐색", "약초채집"]}],
+        lambda: [{"job": "모험가", "work_actions": ["게시판보고", "탐색", "약초채집"]}],
     )
     monkeypatch.setattr(
         village_sim,
         "load_action_defs",
         lambda: [
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
             {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
             {"name": "탐색", "duration_minutes": 10},
             {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
@@ -679,7 +680,7 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
 
     _set_sim_time(sim, 9)
     sim.tick_once()
-    assert sim.state_by_name["A"].current_action == "게시판확인"
+    assert sim.state_by_name["A"].current_action == "게시판보고"
 
     sim.state_by_name["A"].ticks_remaining = 0
     sim.state_by_name["A"].decision_ticks_until_check = 0
@@ -687,6 +688,55 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
     if sim.state_by_name["A"].current_action == "탐색":
         assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
+
+
+def test_exploration_buffer_flushes_only_when_board_reported(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[
+            village_sim.StructureEntity(
+                key="guild_board",
+                name="길드 게시판",
+                x=1,
+                y=1,
+                min_duration=1,
+                max_duration=1,
+                current_duration=1,
+            )
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    initial_known = len(sim.guild_board_exploration_state.known_cells)
+    sim._mark_visible_area_discovered("A", (1, 1))
+
+    assert len(sim.guild_board_exploration_state.known_cells) == initial_known
+    assert sim.exploration_buffer_by_name["A"].new_known_cells
+
+    sim._handle_board_report("A")
+    assert len(sim.guild_board_exploration_state.known_cells) > initial_known
+    assert sim.minimap_known_cells_snapshot == sim.guild_board_exploration_state.known_cells
 
 
 def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
@@ -781,6 +831,10 @@ def test_exploration_action_is_linked_with_frontier_exploration_state(monkeypatc
 
     assert sim.state_by_name["A"].current_action == "탐색"
     assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
+    assert len(sim.guild_board_exploration_state.known_cells) == initial_known_count
+    assert sim.exploration_buffer_by_name["A"].new_known_cells
+
+    sim._handle_board_report("A")
     assert len(sim.guild_board_exploration_state.known_cells) > initial_known_count
 
 
@@ -835,8 +889,34 @@ def test_exploration_reveals_surrounding_8_cells_after_move(monkeypatch):
     npc = npcs[0]
     state = sim.state_by_name["A"]
     moved = sim._step_exploration_action(npc, state, 6, 6)
+    buffer = sim.exploration_buffer_by_name["A"]
 
     assert moved is True
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
-            assert (npc.x + dx, npc.y + dy) in sim.guild_board_exploration_state.known_cells
+            coord = (npc.x + dx, npc.y + dy)
+            assert coord in buffer.new_known_cells or coord in sim.guild_board_exploration_state.known_cells
+
+
+def test_mark_cell_discovered_updates_known_only_when_adjacent_frontier_exists():
+    import village_sim
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=96,
+        height_px=96,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim.guild_board_exploration_state.frontier_cells.clear()
+
+    sim._mark_cell_discovered((5, 5))
+    assert (5, 5) not in sim.guild_board_exploration_state.known_cells
+
+    sim.guild_board_exploration_state.frontier_cells.add((4, 4))
+    sim._mark_cell_discovered((5, 5))
+    assert (5, 5) in sim.guild_board_exploration_state.known_cells
