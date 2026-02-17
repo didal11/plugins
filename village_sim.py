@@ -190,6 +190,8 @@ class SimulationRuntime:
             npc.name: NPCExplorationBuffer() for npc in self.npcs
         }
         self.minimap_known_cells_snapshot: Set[Tuple[int, int]] = set()
+        self.minimap_known_resources_snapshot: Dict[Tuple[str, Tuple[int, int]], int] = {}
+        self.minimap_known_monsters_snapshot: Set[Tuple[str, Tuple[int, int]]] = set()
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
@@ -424,6 +426,8 @@ class SimulationRuntime:
     def _handle_board_report(self, npc_name: str) -> None:
         self._flush_exploration_buffer(npc_name)
         self.minimap_known_cells_snapshot = set(self.guild_board_exploration_state.known_cells)
+        self.minimap_known_resources_snapshot = dict(self.guild_board_exploration_state.known_resources)
+        self.minimap_known_monsters_snapshot = set(self.guild_board_exploration_state.known_monsters)
 
     def _mark_cell_discovered(self, coord: Tuple[int, int], force: bool = False) -> None:
         """Backward-compatible helper used by tests/system flows.
@@ -1209,7 +1213,12 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 if self.selected_entity is not None and _is_guild_board_entity(self.selected_entity):
                     self.show_board_modal = not self.show_board_modal
             elif key == arcade.key.TAB and self.show_board_modal:
-                self.board_modal_tab = "minimap" if self.board_modal_tab == "issues" else "issues"
+                order = ["issues", "minimap", "known_resources"]
+                try:
+                    idx = order.index(self.board_modal_tab)
+                except ValueError:
+                    idx = 0
+                self.board_modal_tab = order[(idx + 1) % len(order)]
 
         def _screen_to_world(self, x: float, y: float) -> tuple[float, float]:
             # resize/fullscreen 이후 클릭 오프셋을 피하기 위해
@@ -1313,7 +1322,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 arcade.draw_text("게시판 발행 의뢰", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
                 arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
                 arcade.draw_text(
-                    f"탭: {'의뢰 목록' if self.board_modal_tab == 'issues' else '미니맵'} (TAB 전환)",
+                    f"탭: {('의뢰 목록' if self.board_modal_tab == 'issues' else ('미니맵' if self.board_modal_tab == 'minimap' else '노운 리소스'))} (TAB 전환)",
                     left + 18,
                     bottom + modal_h - 54,
                     (210, 210, 210, 255),
@@ -1332,6 +1341,33 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                             12,
                             font_name=selected_font,
                         )
+                elif self.board_modal_tab == "known_resources":
+                    rows = sorted(
+                        [
+                            (name, coord, amount)
+                            for (name, coord), amount in simulation.minimap_known_resources_snapshot.items()
+                        ],
+                        key=lambda row: (row[0], row[1][1], row[1][0]),
+                    )
+                    if not rows:
+                        arcade.draw_text(
+                            "게시판 보고 후 노운 리소스 갱신",
+                            left + 18,
+                            bottom + modal_h - 84,
+                            (205, 205, 205, 255),
+                            11,
+                            font_name=selected_font,
+                        )
+                    else:
+                        for idx, (name, coord, amount) in enumerate(rows[:16]):
+                            arcade.draw_text(
+                                f"- {name} @ {coord} : {int(amount)}",
+                                left + 18,
+                                bottom + modal_h - 84 - (idx * 22),
+                                (230, 230, 230, 255),
+                                11,
+                                font_name=selected_font,
+                            )
                 else:
                     mini_left = left + 18
                     mini_bottom = bottom + 18
@@ -1354,6 +1390,9 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     map_bottom = mini_bottom + (mini_h - map_h) / 2
 
                     known_cells = simulation.minimap_known_cells_snapshot
+                    known_resources = simulation.minimap_known_resources_snapshot
+                    known_monsters = simulation.minimap_known_monsters_snapshot
+
                     for cx, cy in known_cells:
                         px = map_left + (cx * cell_size)
                         py = map_bottom + ((height_tiles - cy - 1) * cell_size)
@@ -1369,14 +1408,20 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                             font_name=selected_font,
                         )
 
-                    for entity in render_entities:
-                        if isinstance(entity, ResourceEntity) and not entity.is_discovered:
+                    for (_name, (rx, ry)), amount in known_resources.items():
+                        if (rx, ry) not in known_cells or int(amount) <= 0:
                             continue
-                        if (entity.x, entity.y) not in known_cells:
+                        px = map_left + ((rx + 0.5) * cell_size)
+                        py = map_bottom + ((height_tiles - ry - 0.5) * cell_size)
+                        arcade.draw_circle_filled(px, py, max(1.0, cell_size * 0.16), (100, 220, 120, 255))
+
+                    for _monster_name, (mx, my) in known_monsters:
+                        if (mx, my) not in known_cells:
                             continue
-                        px = map_left + ((entity.x + 0.5) * cell_size)
-                        py = map_bottom + ((height_tiles - entity.y - 0.5) * cell_size)
-                        arcade.draw_circle_filled(px, py, max(1.0, cell_size * 0.16), self._entity_color(entity))
+                        px = map_left + ((mx + 0.5) * cell_size)
+                        py = map_bottom + ((height_tiles - my - 0.5) * cell_size)
+                        half = max(1.0, cell_size * 0.12)
+                        arcade.draw_lrbt_rectangle_filled(px - half, px + half, py - half, py + half, (235, 92, 92, 255))
 
                     for npc in npcs:
                         px = map_left + ((npc.x + 0.5) * cell_size)

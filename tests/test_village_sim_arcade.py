@@ -835,9 +835,14 @@ def test_exploration_buffer_flushes_only_when_board_reported(monkeypatch):
     assert len(sim.guild_board_exploration_state.known_cells) == initial_known
     assert sim.exploration_buffer_by_name["A"].new_known_cells
 
+    sim.guild_board_exploration_state.known_resources[("herb", (2, 2))] = 3
+    sim.guild_board_exploration_state.known_monsters.add(("slime", (3, 3)))
+
     sim._handle_board_report("A")
     assert len(sim.guild_board_exploration_state.known_cells) > initial_known
     assert sim.minimap_known_cells_snapshot == sim.guild_board_exploration_state.known_cells
+    assert sim.minimap_known_resources_snapshot == sim.guild_board_exploration_state.known_resources
+    assert sim.minimap_known_monsters_snapshot == sim.guild_board_exploration_state.known_monsters
 
 
 def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch):
