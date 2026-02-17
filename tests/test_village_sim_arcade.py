@@ -627,7 +627,7 @@ def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
     assert sim.state_by_name["A"].current_action != "벌목"
 
 
-def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
+def test_adventurer_does_not_report_first_when_check_action_not_configured(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(
@@ -680,14 +680,13 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
 
     _set_sim_time(sim, 9)
     sim.tick_once()
-    assert sim.state_by_name["A"].current_action in {"게시판확인", "게시판보고"}
+    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    assert sim.state_by_name["A"].current_action != "게시판보고"
 
     sim.state_by_name["A"].ticks_remaining = 0
     sim.state_by_name["A"].decision_ticks_until_check = 0
     sim.tick_once()
-    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
-    if sim.state_by_name["A"].current_action == "탐색":
-        assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
+    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집", "게시판보고"}
 
 
 def test_adventurer_board_cycle_is_check_work_report(monkeypatch):
@@ -747,11 +746,48 @@ def test_adventurer_board_cycle_is_check_work_report(monkeypatch):
 
     state.ticks_remaining = 0
     sim._pick_next_work_action(npcs[0], state)
-    assert state.current_action == "탐색"
+    assert state.current_action != "게시판보고"
 
     state.ticks_remaining = 0
     sim._pick_next_work_action(npcs[0], state)
     assert state.current_action == "게시판보고"
+
+
+def test_adventurer_does_not_start_with_board_report_when_check_action_missing(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    sim.target_stock_by_key = {"herb": 1}
+    sim.target_available_by_key = {"herb": 2}
+
+    state = sim.state_by_name["A"]
+    sim._pick_next_work_action(npcs[0], state)
+
+    assert state.current_action != "게시판보고"
 
 
 

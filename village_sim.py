@@ -367,16 +367,12 @@ class SimulationRuntime:
     def _board_check_action_name_in_candidates(candidates: List[str]) -> str | None:
         if BOARD_CHECK_ACTION in candidates:
             return BOARD_CHECK_ACTION
-        if BOARD_REPORT_ACTION in candidates:
-            return BOARD_REPORT_ACTION
         return None
 
     @staticmethod
     def _board_report_action_name_in_candidates(candidates: List[str]) -> str | None:
         if BOARD_REPORT_ACTION in candidates:
             return BOARD_REPORT_ACTION
-        if BOARD_CHECK_ACTION in candidates:
-            return BOARD_CHECK_ACTION
         return None
 
     @staticmethod
