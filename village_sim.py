@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import argparse
-import heapq
+from collections import deque
 from pathlib import Path
 from random import Random
 from typing import Dict, List, Tuple
@@ -480,34 +480,83 @@ class SimulationRuntime:
     ) -> List[Tuple[int, int]]:
         if not targets or start in targets:
             return []
+        distances = self._wavefront_distances(targets, width_tiles, height_tiles)
+        sx, sy = start
+        if distances[sy][sx] >= 10**9:
+            return []
 
-        open_heap: List[Tuple[int, int, Tuple[int, int]]] = []
-        heapq.heappush(open_heap, (self._distance_to_targets(start[0], start[1], targets), 0, start))
-        came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
-        g_cost: Dict[Tuple[int, int], int] = {start: 0}
-        target_set = set(targets)
-
-        while open_heap:
-            _, cost, current = heapq.heappop(open_heap)
-            if current in target_set:
-                path: List[Tuple[int, int]] = []
-                node = current
-                while node != start:
-                    path.append(node)
-                    node = came_from[node]
-                path.reverse()
-                return path
-
-            for nb in self._neighbors(current[0], current[1], width_tiles, height_tiles):
-                next_cost = cost + 1
-                if next_cost >= g_cost.get(nb, 10**9):
+        path: List[Tuple[int, int]] = []
+        cx, cy = sx, sy
+        while distances[cy][cx] > 0:
+            best_next: Tuple[int, int] | None = None
+            best_dist = distances[cy][cx]
+            for nx, ny in self._neighbors(cx, cy, width_tiles, height_tiles):
+                nb_dist = distances[ny][nx]
+                if nb_dist > best_dist:
                     continue
-                came_from[nb] = current
-                g_cost[nb] = next_cost
-                score = next_cost + self._distance_to_targets(nb[0], nb[1], targets)
-                heapq.heappush(open_heap, (score, next_cost, nb))
+                if nb_dist < best_dist or best_next is None or (ny, nx) < (best_next[1], best_next[0]):
+                    best_dist = nb_dist
+                    best_next = (nx, ny)
+            if best_next is None:
+                return []
+            path.append(best_next)
+            cx, cy = best_next
+        return path
 
-        return []
+    def _wavefront_distances(
+        self,
+        targets: List[Tuple[int, int]],
+        width_tiles: int,
+        height_tiles: int,
+    ) -> List[List[int]]:
+        inf = 10**9
+        distances = [[inf for _ in range(width_tiles)] for _ in range(height_tiles)]
+        q: deque[Tuple[int, int]] = deque()
+
+        for tx, ty in targets:
+            if tx < 0 or ty < 0 or tx >= width_tiles or ty >= height_tiles:
+                continue
+            if (tx, ty) in self.blocked_tiles:
+                continue
+            if distances[ty][tx] == 0:
+                continue
+            distances[ty][tx] = 0
+            q.append((tx, ty))
+
+        while q:
+            x, y = q.popleft()
+            next_dist = distances[y][x] + 1
+            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
+                if next_dist >= distances[ny][nx]:
+                    continue
+                distances[ny][nx] = next_dist
+                q.append((nx, ny))
+        return distances
+
+    def _batch_next_steps_by_wavefront(
+        self,
+        starts: List[Tuple[int, int]],
+        targets: List[Tuple[int, int]],
+        width_tiles: int,
+        height_tiles: int,
+    ) -> List[Tuple[int, int] | None]:
+        if not starts:
+            return []
+
+        distances = self._wavefront_distances(targets, width_tiles, height_tiles)
+        out: List[Tuple[int, int] | None] = []
+        for x, y in starts:
+            best_next: Tuple[int, int] | None = None
+            best_dist = distances[y][x] if 0 <= x < width_tiles and 0 <= y < height_tiles else 10**9
+            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
+                nb_dist = distances[ny][nx]
+                if nb_dist > best_dist:
+                    continue
+                if nb_dist < best_dist or best_next is None or (ny, nx) < (best_next[1], best_next[0]):
+                    best_dist = nb_dist
+                    best_next = (nx, ny)
+            out.append(best_next)
+        return out
 
     def _torch_decision_code(self, planned: ScheduledActivity, ticks_remaining: int) -> int:
         if not self.use_torch_for_npc or torch is None:
@@ -680,8 +729,98 @@ class SimulationRuntime:
     def tick_once(self) -> None:
         self._refresh_guild_dispatcher()
         self.ticks += 1
+        width_tiles = max(1, self.world.width_px // self.world.grid_size)
+        height_tiles = max(1, self.world.height_px // self.world.grid_size)
+
+        grouped_requests: Dict[Tuple[str, Tuple[Tuple[int, int], ...]], List[Tuple[RenderNpc, SimulationNpcState]]] = {}
+        fallback_random: List[RenderNpc] = []
+
         for npc in self.npcs:
-            self._step_npc(npc)
+            state = self.state_by_name[npc.name]
+
+            if state.decision_ticks_until_check <= 0:
+                planned = self.planner.activity_for_hour(self._current_hour())
+                decision_code = self._torch_decision_code(planned, state.ticks_remaining)
+                if decision_code == 1:
+                    if state.current_action != "식사":
+                        state.current_action = "식사"
+                        state.current_action_display = "식사"
+                        state.path = []
+                    state.sleep_path_initialized = False
+                    state.work_path_initialized = False
+                    state.ticks_remaining = 1
+                elif decision_code == 2:
+                    if state.current_action != "취침":
+                        state.current_action = "취침"
+                        state.current_action_display = "취침"
+                        state.path = []
+                        state.sleep_path_initialized = False
+                        state.work_path_initialized = False
+                    state.ticks_remaining = 1
+                elif decision_code == 3:
+                    state.sleep_path_initialized = False
+                    self._pick_next_work_action(npc, state)
+                state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
+
+            state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
+            state.ticks_remaining = max(0, state.ticks_remaining - 1)
+
+            if state.current_action == "식사" and self.dining_tiles:
+                key = ("meal", tuple(sorted(set(self.dining_tiles))))
+                grouped_requests.setdefault(key, []).append((npc, state))
+                continue
+
+            if state.current_action == "취침" and self.bed_tiles:
+                if not state.sleep_path_initialized:
+                    state.path = self._find_path_to_nearest_target(
+                        (npc.x, npc.y),
+                        self.bed_tiles,
+                        width_tiles,
+                        height_tiles,
+                    )
+                    state.sleep_path_initialized = True
+                key = ("sleep", tuple(sorted(set(self.bed_tiles))))
+                grouped_requests.setdefault(key, []).append((npc, state))
+                continue
+
+            if state.current_action == "탐색":
+                moved = self._step_exploration_action(npc, state, width_tiles, height_tiles)
+                if moved:
+                    continue
+                state.work_path_initialized = False
+
+            work_tiles = self._find_work_tiles(state.current_action)
+            if work_tiles:
+                if not state.work_path_initialized:
+                    state.path = self._find_path_to_nearest_target(
+                        (npc.x, npc.y),
+                        work_tiles,
+                        width_tiles,
+                        height_tiles,
+                    )
+                    state.work_path_initialized = True
+                key = (f"work:{state.current_action}", tuple(sorted(set(work_tiles))))
+                grouped_requests.setdefault(key, []).append((npc, state))
+                continue
+
+            fallback_random.append(npc)
+
+        for (_, target_key), rows in grouped_requests.items():
+            targets = list(target_key)
+            starts = [(npc.x, npc.y) for npc, _ in rows]
+            next_steps = self._batch_next_steps_by_wavefront(
+                starts,
+                targets,
+                width_tiles,
+                height_tiles,
+            )
+            for (npc, _), step in zip(rows, next_steps):
+                if step is None:
+                    continue
+                npc.x, npc.y = step
+
+        for npc in fallback_random:
+            self._step_random(npc, width_tiles, height_tiles)
 
     def advance(self, delta_time: float) -> None:
         self._accumulator += max(0.0, float(delta_time))
