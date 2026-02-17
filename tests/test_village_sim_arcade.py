@@ -627,7 +627,7 @@ def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
     assert sim.state_by_name["A"].current_action != "벌목"
 
 
-def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
+def test_adventurer_does_not_report_first_when_check_action_not_configured(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(
@@ -680,14 +680,13 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
 
     _set_sim_time(sim, 9)
     sim.tick_once()
-    assert sim.state_by_name["A"].current_action in {"게시판확인", "게시판보고"}
+    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    assert sim.state_by_name["A"].current_action != "게시판보고"
 
     sim.state_by_name["A"].ticks_remaining = 0
     sim.state_by_name["A"].decision_ticks_until_check = 0
     sim.tick_once()
-    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
-    if sim.state_by_name["A"].current_action == "탐색":
-        assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
+    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집", "게시판보고"}
 
 
 def test_adventurer_board_cycle_is_check_work_report(monkeypatch):
@@ -747,11 +746,48 @@ def test_adventurer_board_cycle_is_check_work_report(monkeypatch):
 
     state.ticks_remaining = 0
     sim._pick_next_work_action(npcs[0], state)
-    assert state.current_action == "탐색"
+    assert state.current_action != "게시판보고"
 
     state.ticks_remaining = 0
     sim._pick_next_work_action(npcs[0], state)
     assert state.current_action == "게시판보고"
+
+
+def test_adventurer_does_not_start_with_board_report_when_check_action_missing(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    sim.target_stock_by_key = {"herb": 1}
+    sim.target_available_by_key = {"herb": 2}
+
+    state = sim.state_by_name["A"]
+    sim._pick_next_work_action(npcs[0], state)
+
+    assert state.current_action != "게시판보고"
 
 
 
@@ -802,6 +838,88 @@ def test_exploration_buffer_flushes_only_when_board_reported(monkeypatch):
     sim._handle_board_report("A")
     assert len(sim.guild_board_exploration_state.known_cells) > initial_known
     assert sim.minimap_known_cells_snapshot == sim.guild_board_exploration_state.known_cells
+
+
+def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim.guild_board_exploration_state.known_cells = {(2, 2)}
+    sim.guild_board_exploration_state.frontier_cells = {(3, 3)}
+    sim.exploration_buffer_by_name["A"].clear()
+
+    sim._handle_board_check("A")
+
+    assert (2, 2) in sim.exploration_buffer_by_name["A"].new_known_cells
+    assert (3, 3) in sim.exploration_buffer_by_name["A"].new_frontier_cells
+
+
+def test_exploration_prefers_npc_buffer_frontier_after_board_check(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "탐색", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    sim.guild_board_exploration_state.frontier_cells = {(4, 4)}
+    sim.exploration_buffer_by_name["A"].new_frontier_cells = {(4, 0)}
+
+    captured: dict[str, set[tuple[int, int]]] = {}
+
+    def _pick_frontier(cells, rng):
+        captured["cells"] = set(cells)
+        ordered = sorted(captured["cells"])
+        return ordered[0] if ordered else None
+
+    monkeypatch.setattr(village_sim, "choose_next_frontier", _pick_frontier)
+
+    sim._step_exploration_action(npcs[0], state, width_tiles=5, height_tiles=5)
+
+    assert (4, 0) in captured["cells"]
+    assert (4, 4) not in captured["cells"]
 
 
 def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
