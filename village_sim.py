@@ -147,6 +147,8 @@ class SimulationNpcState(BaseModel):
     work_path_initialized: bool = False
     path: List[Tuple[int, int]] = Field(default_factory=list)
     last_board_check_day: int = -1
+    board_cycle_checked: bool = False
+    board_cycle_needs_report: bool = False
 
 
 class SimulationRuntime:
@@ -362,7 +364,15 @@ class SimulationRuntime:
         buffer.clear()
 
     @staticmethod
-    def _board_action_name_in_candidates(candidates: List[str]) -> str | None:
+    def _board_check_action_name_in_candidates(candidates: List[str]) -> str | None:
+        if BOARD_CHECK_ACTION in candidates:
+            return BOARD_CHECK_ACTION
+        if BOARD_REPORT_ACTION in candidates:
+            return BOARD_REPORT_ACTION
+        return None
+
+    @staticmethod
+    def _board_report_action_name_in_candidates(candidates: List[str]) -> str | None:
         if BOARD_REPORT_ACTION in candidates:
             return BOARD_REPORT_ACTION
         if BOARD_CHECK_ACTION in candidates:
@@ -500,15 +510,26 @@ class SimulationRuntime:
 
         candidates = self.job_actions.get(npc.job, [])
         if npc.job.strip() == "모험가":
-            day_index = self.ticks // (24 * self.TICKS_PER_HOUR)
-            board_action = self._board_action_name_in_candidates(candidates)
-            if state.last_board_check_day != day_index and board_action is not None:
-                state.current_action = board_action
-                state.current_action_display = board_action
-                state.ticks_remaining = self.action_duration_ticks.get(board_action, 1)
+            check_action = self._board_check_action_name_in_candidates(candidates)
+            report_action = self._board_report_action_name_in_candidates(candidates)
+
+            if not state.board_cycle_checked and check_action is not None:
+                state.current_action = check_action
+                state.current_action_display = check_action
+                state.ticks_remaining = self.action_duration_ticks.get(check_action, 1)
                 state.path = []
                 state.work_path_initialized = False
-                state.last_board_check_day = day_index
+                state.board_cycle_checked = True
+                return
+
+            if state.board_cycle_needs_report and report_action is not None:
+                state.current_action = report_action
+                state.current_action_display = report_action
+                state.ticks_remaining = self.action_duration_ticks.get(report_action, 1)
+                state.path = []
+                state.work_path_initialized = False
+                state.board_cycle_checked = False
+                state.board_cycle_needs_report = False
                 return
 
             issued = self.guild_dispatcher.issue_for_targets(
@@ -529,7 +550,10 @@ class SimulationRuntime:
                 state.ticks_remaining = self.action_duration_ticks.get(action, 1)
                 state.path = []
                 state.work_path_initialized = False
+                state.board_cycle_needs_report = True
                 return
+            state.board_cycle_checked = False
+            state.board_cycle_needs_report = False
             candidates = []
 
         if not candidates:
