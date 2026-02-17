@@ -772,6 +772,24 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.show_board_modal = False
             self.board_modal_tab = "issues"
 
+        def _sync_camera_after_viewport_change(self) -> None:
+            half_w = (self.width / max(1e-6, self.state.zoom)) / 2.0
+            half_h = (self.height / max(1e-6, self.state.zoom)) / 2.0
+
+            min_x = half_w
+            max_x = max(half_w, float(world.width_px) - half_w)
+            min_y = half_h
+            max_y = max(half_h, float(world.height_px) - half_h)
+
+            self.state.x = min(max(self.state.x, min_x), max_x)
+            self.state.y = min(max(self.state.y, min_y), max_y)
+            self.camera.position = (self.state.x, self.state.y)
+            self.camera.zoom = self.state.zoom
+
+        def on_resize(self, width: int, height: int):
+            super().on_resize(width, height)
+            self._sync_camera_after_viewport_change()
+
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
             if isinstance(entity, ResourceEntity):
@@ -802,17 +820,20 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 magnitude = (dx * dx + dy * dy) ** 0.5
                 self.state.x += (dx / magnitude) * config.camera_speed * delta_time
                 self.state.y += (dy / magnitude) * config.camera_speed * delta_time
-                self.camera.position = (self.state.x, self.state.y)
+                self._sync_camera_after_viewport_change()
             simulation.advance(delta_time)
 
         def on_key_press(self, key: int, modifiers: int):
             self._keys[key] = True
             if key == arcade.key.Q:
                 self.state.zoom = max(config.zoom_min, self.state.zoom * config.zoom_out_step)
-                self.camera.zoom = self.state.zoom
+                self._sync_camera_after_viewport_change()
             elif key == arcade.key.E:
                 self.state.zoom = min(config.zoom_max, self.state.zoom * config.zoom_in_step)
-                self.camera.zoom = self.state.zoom
+                self._sync_camera_after_viewport_change()
+            elif key == arcade.key.F11:
+                self.set_fullscreen(not self.fullscreen)
+                self._sync_camera_after_viewport_change()
             elif key == arcade.key.I:
                 if self.selected_entity is not None and _is_guild_board_entity(self.selected_entity):
                     self.show_board_modal = not self.show_board_modal
@@ -900,7 +921,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
             selected_name = "없음" if self.selected_entity is None else self.selected_entity.name
             hud = (
-                f"WASD/Arrow: move | Q/E: zoom | Click: 선택 | I: 게시판 의뢰 보기 | "
+                f"WASD/Arrow: move | Q/E: zoom | F11: fullscreen | Click: 선택 | I: 게시판 의뢰 보기 | "
                 f"선택:{selected_name} | {simulation.display_clock_by_interval(30)}"
             )
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
