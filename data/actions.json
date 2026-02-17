@@ -9,6 +9,15 @@
     "hunger": 1
   },
   {
+    "name": "게시판보고",
+    "duration_minutes": 60,
+    "required_tools": [],
+    "required_entity": "guild_board",
+    "outputs": {},
+    "fatigue": 2,
+    "hunger": 1
+  },
+  {
     "name": "탐색",
     "duration_minutes": 60,
     "required_tools": [
