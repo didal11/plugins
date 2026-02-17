@@ -619,13 +619,18 @@ def _parse_args() -> argparse.Namespace:
     default_ldtk = DATA_DIR / "map.ldtk"
     parser.add_argument("--ldtk", default=str(default_ldtk), help=f"Path to LDtk project (default: {default_ldtk})")
     parser.add_argument("--level", default=None, help="LDtk level identifier")
+    parser.add_argument("--all-levels", action="store_true", help="Merge all LDtk levels using worldX/worldY")
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
     config = RuntimeConfig()
-    world = build_world_from_ldtk(Path(args.ldtk), level_identifier=args.level)
+    world = build_world_from_ldtk(
+        Path(args.ldtk),
+        level_identifier=args.level,
+        merge_all_levels=bool(args.all_levels and not args.level),
+    )
     run_arcade(world, config)
 
 

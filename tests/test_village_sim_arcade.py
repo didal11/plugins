@@ -30,6 +30,16 @@ def test_parse_args_defaults_to_data_map(monkeypatch):
     args = village_sim._parse_args()
 
     assert args.ldtk.endswith("data/map.ldtk")
+    assert args.all_levels is False
+
+
+def test_parse_args_all_levels_flag(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(sys, "argv", ["village_sim.py", "--all-levels"])
+    args = village_sim._parse_args()
+
+    assert args.all_levels is True
 
 
 def test_build_render_npcs_uses_defaults_and_clamps(monkeypatch):
