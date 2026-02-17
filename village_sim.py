@@ -381,7 +381,24 @@ class SimulationRuntime:
 
     @staticmethod
     def _is_board_report_like_action(action_name: str) -> bool:
-        return action_name in {BOARD_REPORT_ACTION, BOARD_CHECK_ACTION}
+        return action_name == BOARD_REPORT_ACTION
+
+    @staticmethod
+    def _is_board_check_like_action(action_name: str) -> bool:
+        return action_name == BOARD_CHECK_ACTION
+
+    def _handle_board_check(self, npc_name: str) -> None:
+        buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
+        requested_cells = self.guild_board_exploration_state.known_cells.union(
+            self.guild_board_exploration_state.frontier_cells
+        )
+        delta = self.guild_board_exploration_state.export_delta_for_known_cells(requested_cells)
+        if delta.new_known_cells:
+            buffer.new_known_cells.update(delta.new_known_cells)
+        if delta.new_frontier_cells:
+            buffer.new_frontier_cells.update(delta.new_frontier_cells)
+        if delta.intel_updates:
+            buffer.intel_updates.update(delta.intel_updates)
 
     def _handle_board_report(self, npc_name: str) -> None:
         self._flush_exploration_buffer(npc_name)
@@ -412,10 +429,12 @@ class SimulationRuntime:
         width_tiles: int,
         height_tiles: int,
     ) -> bool:
+        buffer = self.exploration_buffer_by_name.setdefault(npc.name, NPCExplorationBuffer())
         self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
 
         if not state.work_path_initialized or not state.path:
-            target = choose_next_frontier(self.guild_board_exploration_state.frontier_cells, self.rng)
+            frontier_view = buffer.new_frontier_cells or self.guild_board_exploration_state.frontier_cells
+            target = choose_next_frontier(frontier_view, self.rng)
             if target is None:
                 return False
             state.path = self._find_path_to_nearest_target(
@@ -426,6 +445,7 @@ class SimulationRuntime:
             )
             state.work_path_initialized = True
             if not state.path:
+                buffer.new_frontier_cells.discard(target)
                 self.guild_board_exploration_state.frontier_cells.discard(target)
                 return False
 
@@ -834,7 +854,9 @@ class SimulationRuntime:
                 if self._apply_next_path_step(npc, state):
                     return
                 if (npc.x, npc.y) in work_tiles:
-                    if self._is_board_report_like_action(state.current_action):
+                    if self._is_board_check_like_action(state.current_action):
+                        self._handle_board_check(npc.name)
+                    elif self._is_board_report_like_action(state.current_action):
                         self._handle_board_report(npc.name)
                     return
 
@@ -936,10 +958,15 @@ class SimulationRuntime:
         for (request_key, target_key), rows in grouped_requests.items():
             action_name = request_key.removeprefix("work:")
             if not self._is_board_report_like_action(action_name):
-                continue
+                if not self._is_board_check_like_action(action_name):
+                    continue
             targets = set(target_key)
             for npc, _ in rows:
-                if (npc.x, npc.y) in targets:
+                if (npc.x, npc.y) not in targets:
+                    continue
+                if self._is_board_check_like_action(action_name):
+                    self._handle_board_check(npc.name)
+                else:
                     self._handle_board_report(npc.name)
 
         for npc in fallback_random:
