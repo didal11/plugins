@@ -59,6 +59,18 @@ class GuildBoardExplorationState:
     frontier_cells: Set[Coord] = field(default_factory=set)
     cell_intel: Dict[Coord, CellIntel] = field(default_factory=dict)
 
+    @classmethod
+    def with_all_cells_known(cls, width: int, height: int) -> "GuildBoardExplorationState":
+        """Create initial board state where every cell is already known.
+
+        town 레벨 초기화 시 사용한다.
+        """
+
+        safe_w = max(0, int(width))
+        safe_h = max(0, int(height))
+        known = {(x, y) for x in range(safe_w) for y in range(safe_h)}
+        return cls(known_cells=known)
+
     def apply_npc_buffer(self, buffer: NPCExplorationBuffer, rng: Random) -> None:
         """Apply only delta updates from a NPC buffer.
 
@@ -120,4 +132,3 @@ def _merge_record(
     if existing is None:
         return incoming
     return rng.choice([existing, incoming])
-

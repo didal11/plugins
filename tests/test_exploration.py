@@ -52,3 +52,12 @@ def test_export_delta_for_known_cells_filters_cells():
     assert delta.new_known_cells == {(0, 0)}
     assert delta.new_frontier_cells == {(0, 0)}
     assert set(delta.intel_updates.keys()) == {(0, 0)}
+
+def test_with_all_cells_known_initializes_full_grid():
+    board = GuildBoardExplorationState.with_all_cells_known(2, 3)
+
+    assert board.known_cells == {
+        (0, 0), (0, 1), (0, 2),
+        (1, 0), (1, 1), (1, 2),
+    }
+    assert board.frontier_cells == set()
