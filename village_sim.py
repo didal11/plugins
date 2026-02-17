@@ -181,6 +181,7 @@ class SimulationRuntime:
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.target_stock_by_key, self.target_available_by_key = {}, {}
+        self.guild_board_exploration_state = GuildBoardExplorationState()
         self._refresh_guild_dispatcher()
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
@@ -192,7 +193,6 @@ class SimulationRuntime:
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
-        self.guild_board_exploration_state = GuildBoardExplorationState()
         self._initialize_exploration_state()
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
@@ -220,6 +220,11 @@ class SimulationRuntime:
             stock_by_key=self.guild_inventory_by_key,
             count_available_only_discovered=True,
         )
+        known_available = self._known_available_by_key_from_board()
+        self.guild_dispatcher.available_by_key = {
+            key: int(known_available.get(key, 0))
+            for key in self.guild_dispatcher.resource_keys
+        }
 
         target_stock, target_available = self._default_guild_targets()
         self.target_stock_by_key = {
@@ -235,6 +240,15 @@ class SimulationRuntime:
         target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
+
+    def _known_available_by_key_from_board(self) -> Dict[str, int]:
+        out: Dict[str, int] = {}
+        for (name, _coord), amount in self.guild_board_exploration_state.known_resources.items():
+            key = str(name).strip().lower()
+            if not key:
+                continue
+            out[key] = out.get(key, 0) + max(0, int(amount))
+        return out
 
     def _resource_name_map(self) -> Dict[str, str]:
         out: Dict[str, str] = {}
