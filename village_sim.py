@@ -906,10 +906,11 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
 
             if self.show_board_modal:
-                modal_w = min(self.width - 40, 540)
-                modal_h = min(self.height - 80, 320)
-                left = (self.width - modal_w) / 2
-                bottom = (self.height - modal_h) / 2
+                # 화면을 세로 3등분했을 때, 오른쪽 1/3을 게시판 모달이 덮도록 배치
+                modal_w = max(260.0, self.width / 3.0)
+                modal_h = float(self.height)
+                left = self.width - modal_w
+                bottom = 0.0
                 arcade.draw_lrbt_rectangle_filled(0, self.width, 0, self.height, (0, 0, 0, 110))
                 arcade.draw_lrbt_rectangle_filled(left, left + modal_w, bottom, bottom + modal_h, (28, 32, 40, 245))
                 arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
@@ -961,6 +962,11 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                         px = map_left + (cx * cell_size)
                         py = map_bottom + ((height_tiles - cy - 1) * cell_size)
                         arcade.draw_lrbt_rectangle_filled(px, px + cell_size, py, py + cell_size, (110, 198, 135, 230))
+
+                    for entity in render_entities:
+                        px = map_left + ((entity.x + 0.5) * cell_size)
+                        py = map_bottom + ((height_tiles - entity.y - 0.5) * cell_size)
+                        arcade.draw_circle_filled(px, py, max(1.0, cell_size * 0.16), self._entity_color(entity))
 
                     for npc in npcs:
                         px = map_left + ((npc.x + 0.5) * cell_size)
