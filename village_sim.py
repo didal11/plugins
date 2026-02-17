@@ -283,22 +283,27 @@ class SimulationRuntime:
 
     def _initialize_exploration_state(self) -> None:
         for coord in self._town_walkable_cells():
-            self._mark_cell_discovered(coord)
+            self._mark_cell_discovered(coord, force=True)
         for npc in self.npcs:
-            self._mark_cell_discovered((npc.x, npc.y))
+            self._mark_cell_discovered((npc.x, npc.y), force=True)
 
     def _grid_bounds(self) -> Tuple[int, int]:
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
         height_tiles = max(1, self.world.height_px // self.world.grid_size)
         return width_tiles, height_tiles
 
-    def _mark_cell_discovered(self, coord: Tuple[int, int]) -> None:
+    def _mark_cell_discovered(self, coord: Tuple[int, int], force: bool = False) -> None:
         x, y = coord
         width_tiles, height_tiles = self._grid_bounds()
         if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
             return
         if coord in self.blocked_tiles:
             return
+
+        if not force and coord not in self.guild_board_exploration_state.known_cells:
+            has_adjacent_frontier = self._has_adjacent_frontier_8(x, y, width_tiles, height_tiles)
+            if coord not in self.guild_board_exploration_state.frontier_cells and not has_adjacent_frontier:
+                return
 
         self.guild_board_exploration_state.known_cells.add(coord)
         self.guild_board_exploration_state.frontier_cells.discard(coord)
@@ -307,6 +312,18 @@ class SimulationRuntime:
             nb = (nx, ny)
             if nb not in self.guild_board_exploration_state.known_cells:
                 self.guild_board_exploration_state.frontier_cells.add(nb)
+
+    def _has_adjacent_frontier_8(self, x: int, y: int, width_tiles: int, height_tiles: int) -> bool:
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = x + dx, y + dy
+                if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
+                    continue
+                if (nx, ny) in self.guild_board_exploration_state.frontier_cells:
+                    return True
+        return False
 
     def _mark_visible_area_discovered(self, coord: Tuple[int, int]) -> None:
         x, y = coord
