@@ -143,6 +143,16 @@ class GameTile(BaseModel):
     y: int
 
 
+class LevelRegion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    level_id: str
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 class GameWorld(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -153,6 +163,7 @@ class GameWorld(BaseModel):
     entities: List[GameEntity]
     tiles: List[GameTile] = Field(default_factory=list)
     blocked_tiles: List[List[int]] = Field(default_factory=list)
+    level_regions: List[LevelRegion] = Field(default_factory=list)
 
 
 def _fields_to_map(fields: List[LdtkFieldInstance]) -> Dict[str, Any]:
@@ -324,6 +335,15 @@ def _build_level_world(level: LdtkLevel, project: LdtkProject, entity_layer: str
         entities=entities,
         tiles=tiles,
         blocked_tiles=[[x, y] for x, y in sorted(blocked_set)],
+        level_regions=[
+            LevelRegion(
+                level_id=level.identifier,
+                x=0,
+                y=0,
+                width=max(1, int(level.px_wid // resolved_grid_size)),
+                height=max(1, int(level.px_hei // resolved_grid_size)),
+            )
+        ],
     )
 
 def load_ldtk_project(path: str | Path) -> LdtkProject:
@@ -381,6 +401,7 @@ def build_world_from_ldtk(
     entities: List[GameEntity] = []
     tiles: List[GameTile] = []
     blocked_set: set[tuple[int, int]] = set()
+    level_regions: List[LevelRegion] = []
 
     for _level, world, dx_tiles, dy_tiles in offset_pairs:
         final_dx = dx_tiles + shift_x
@@ -388,6 +409,15 @@ def build_world_from_ldtk(
         entities.extend(_offset_entity(entity, final_dx, final_dy) for entity in world.entities)
         tiles.extend(_offset_tile(tile, final_dx, final_dy) for tile in world.tiles)
         blocked_set.update((int(x) + final_dx, int(y) + final_dy) for x, y in world.blocked_tiles)
+        level_regions.append(
+            LevelRegion(
+                level_id=_level.identifier,
+                x=final_dx,
+                y=final_dy,
+                width=max(1, int(_level.px_wid // grid_size)),
+                height=max(1, int(_level.px_hei // grid_size)),
+            )
+        )
 
     width_px = max(1, max_x - min_x) * grid_size
     height_px = max(1, max_y - min_y) * grid_size
@@ -400,6 +430,7 @@ def build_world_from_ldtk(
         entities=entities,
         tiles=tiles,
         blocked_tiles=[[x, y] for x, y in sorted(blocked_set)],
+        level_regions=level_regions,
     )
 
 
