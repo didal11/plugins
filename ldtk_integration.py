@@ -107,7 +107,6 @@ class GameEntity(BaseModel):
     y: int
     max_quantity: int
     current_quantity: int
-    is_workbench: bool
     is_discovered: bool
     tags: List[str] = Field(default_factory=list)
 
@@ -163,7 +162,8 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
     current_q = int(f.get("current_quantity", f.get("currentQuantity", max_q)))
     current_q = max(0, min(max_q, current_q))
 
-    is_workbench = _as_bool(f.get("is_workbench", f.get("isWorkbench", False)), False)
+    tags = [str(tag) for tag in row.tags if str(tag).strip()]
+    is_workbench = any(tag.strip().lower() == "workbench" for tag in tags) or key.endswith("_workbench")
     is_discovered = True if is_workbench else _as_bool(f.get("is_discovered", f.get("isDiscovered", False)), False)
 
     tx = int(row.px[0] // grid_size)
@@ -176,9 +176,8 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
         y=ty,
         max_quantity=max_q,
         current_quantity=current_q,
-        is_workbench=is_workbench,
         is_discovered=is_discovered,
-        tags=[str(tag) for tag in row.tags if str(tag).strip()],
+        tags=tags,
     )
 
 

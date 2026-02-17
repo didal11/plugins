@@ -29,6 +29,10 @@ from editable_data import (
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 from planning import DailyPlanner, ScheduledActivity
 
+def _is_workbench_entity(entity: GameEntity) -> bool:
+    tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
+    return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
+
 
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -76,6 +80,7 @@ class SimulationNpcState(BaseModel):
     ticks_remaining: int = 0
     decision_ticks_until_check: int = 0
     sleep_path_initialized: bool = False
+    work_path_initialized: bool = False
     path: List[Tuple[int, int]] = Field(default_factory=list)
 
 
@@ -103,6 +108,7 @@ class SimulationRuntime:
 
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
+        self.action_required_entity = self._action_required_entity_map()
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
@@ -160,6 +166,39 @@ class SimulationRuntime:
             out[name] = self._duration_to_ticks(row.get("duration_minutes", 10))
         return out
 
+    def _action_required_entity_map(self) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            out[name] = str(row.get("required_entity", "")).strip()
+        return out
+
+    @staticmethod
+    def _entity_matches_key(entity: GameEntity, required_key: str) -> bool:
+        required = required_key.strip().lower()
+        key = entity.key.strip().lower()
+        if not required or not key:
+            return False
+        return key == required or key.startswith(f"{required}_")
+
+    def _find_work_tiles(self, action_name: str) -> List[Tuple[int, int]]:
+        required_key = self.action_required_entity.get(action_name, "")
+        if not required_key:
+            return []
+
+        out: List[Tuple[int, int]] = []
+        for entity in self.world.entities:
+            if not self._entity_matches_key(entity, required_key):
+                continue
+            if not _is_workbench_entity(entity) and entity.current_quantity <= 0:
+                continue
+            out.append((entity.x, entity.y))
+        return out
+
     def _current_hour(self) -> int:
         hours_elapsed = self.ticks // self.TICKS_PER_HOUR
         return hours_elapsed % 24
@@ -177,6 +216,7 @@ class SimulationRuntime:
         state.current_action = action
         state.ticks_remaining = self.action_duration_ticks.get(action, 1)
         state.path = []
+        state.work_path_initialized = False
 
     def _neighbors(self, x: int, y: int, width_tiles: int, height_tiles: int) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -286,12 +326,14 @@ class SimulationRuntime:
                     state.current_action = "식사"
                     state.path = []
                 state.sleep_path_initialized = False
+                state.work_path_initialized = False
                 state.ticks_remaining = 1
             elif planned == ScheduledActivity.SLEEP:
                 if state.current_action != "취침":
                     state.current_action = "취침"
                     state.path = []
                     state.sleep_path_initialized = False
+                    state.work_path_initialized = False
                 state.ticks_remaining = 1
             elif state.ticks_remaining <= 0:
                 state.sleep_path_initialized = False
@@ -331,6 +373,24 @@ class SimulationRuntime:
                 return
             if (npc.x, npc.y) in self.bed_tiles:
                 return
+
+        if state.current_action not in {"식사", "취침"}:
+            work_tiles = self._find_work_tiles(state.current_action)
+            if work_tiles:
+                if not state.work_path_initialized:
+                    state.path = self._find_path_to_nearest_target(
+                        (npc.x, npc.y),
+                        work_tiles,
+                        width_tiles,
+                        height_tiles,
+                    )
+                    state.work_path_initialized = True
+                if state.path:
+                    next_x, next_y = state.path.pop(0)
+                    npc.x, npc.y = next_x, next_y
+                    return
+                if (npc.x, npc.y) in work_tiles:
+                    return
 
         self._step_random(npc, width_tiles, height_tiles)
 
@@ -434,7 +494,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
-            if entity.is_workbench:
+            if _is_workbench_entity(entity):
                 return 198, 140, 80, 255
             if not entity.is_discovered:
                 return 95, 108, 95, 255

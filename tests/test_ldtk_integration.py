@@ -31,7 +31,6 @@ SAMPLE_LDTK = {
                                 {"__identifier": "name", "__value": "길드 게시판"},
                                 {"__identifier": "key", "__value": "guild_board"},
                                 {"__identifier": "max_quantity", "__value": 9999},
-                                {"__identifier": "is_workbench", "__value": True},
                             ],
                         },
                         {
@@ -165,7 +164,6 @@ def test_load_ldtk_project_and_build_world(tmp_path: Path):
     rows = world_entities_as_rows(world)
     assert rows[0]["x"] == 20
     assert rows[0]["y"] == 10
-    assert rows[0]["is_workbench"] is True
     assert rows[1]["x"] == 30
     assert rows[1]["y"] == 13
     assert rows[1]["current_quantity"] == 150
