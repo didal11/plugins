@@ -912,7 +912,7 @@ def test_runtime_frontier_is_computed_from_buffer_known_only(monkeypatch):
     assert (4, 2) in frontier
 
 
-def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
+def test_registered_resources_include_world_keys_and_available_follows_global_known_resources(monkeypatch):
     import village_sim
 
     monkeypatch.setattr(
@@ -942,7 +942,7 @@ def test_registered_resources_include_world_keys_and_available_follows_discovery
                 y=1,
                 max_quantity=5,
                 current_quantity=5,
-                is_discovered=False,
+                is_discovered=True,
             )
         ],
         tiles=[],
@@ -953,7 +953,8 @@ def test_registered_resources_include_world_keys_and_available_follows_discovery
     assert sim.guild_dispatcher.available_by_key["herb"] == 0
     assert sim.guild_inventory_by_key["herb"] == 0
 
-    world.entities[0].is_discovered = True
+    sim.guild_board_exploration_state.known_resources[("herb", (1, 1))] = 2
+    sim.guild_board_exploration_state.known_resources[("herb", (2, 2))] = 3
     sim.tick_once()
 
     assert sim.guild_dispatcher.resource_keys == ["herb"]

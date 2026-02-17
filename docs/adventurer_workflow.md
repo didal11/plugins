@@ -33,8 +33,9 @@
 - `Stock < TargetStock` 이면 채집 발행
 - 채집 발행량은 `Available`을 넘지 못함
 
-또한 런타임에서는 `count_available_only_discovered=True`로 디스패처를 갱신하므로,
-**발견되지 않은 자원은 가용량 0으로 계산**됩니다. 이 상태에서는 `탐색` 발행이 우선적으로 늘어납니다.
+또한 런타임에서는 길드보드 전역 상태(`guild_board_exploration_state.known_resources`)를
+리소스 키별로 합산해 `Available`로 사용합니다.
+즉 **게시판에 보고된 known resource만 가용량으로 계산**되며, 아직 공유되지 않은 발견 정보는 반영되지 않습니다.
 
 ## 4) 실제 이동/행동 처리 방식
 
