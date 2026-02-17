@@ -56,7 +56,9 @@ def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
         return ["발행된 의뢰가 없습니다."]
     out: List[str] = []
     for row in issued:
-        out.append(f"- {row.action_name} | 자원:{row.resource_key} | 수량:{int(row.amount)}")
+        display_action = simulation.display_action_name(row.action_name, row.resource_key)
+        display_resource = simulation.display_resource_name(row.resource_key)
+        out.append(f"- {display_action} | 자원:{display_resource} | 수량:{int(row.amount)}")
     return out
 
 
@@ -128,6 +130,7 @@ class SimulationNpcState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_action: str = "대기"
+    current_action_display: str = "대기"
     ticks_remaining: int = 0
     decision_ticks_until_check: int = 0
     sleep_path_initialized: bool = False
@@ -212,6 +215,26 @@ class SimulationRuntime:
         target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
+
+    def _resource_name_map(self) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for entity in self.world.entities:
+            if not isinstance(entity, ResourceEntity):
+                continue
+            key = entity.key.strip().lower()
+            if not key:
+                continue
+            out.setdefault(key, entity.name.strip() or key)
+        return out
+
+    def display_resource_name(self, resource_key: str) -> str:
+        key = resource_key.strip().lower()
+        return self._resource_name_map().get(key, key)
+
+    def display_action_name(self, action_name: str, resource_key: str) -> str:
+        if action_name.strip() == "탐색":
+            return f"{self.display_resource_name(resource_key)} 탐색"
+        return action_name
 
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -310,6 +333,7 @@ class SimulationRuntime:
             day_index = self.ticks // (24 * self.TICKS_PER_HOUR)
             if state.last_board_check_day != day_index and "게시판확인" in candidates:
                 state.current_action = "게시판확인"
+                state.current_action_display = "게시판확인"
                 state.ticks_remaining = self.action_duration_ticks.get("게시판확인", 1)
                 state.path = []
                 state.work_path_initialized = False
@@ -320,21 +344,32 @@ class SimulationRuntime:
                 self.target_stock_by_key,
                 self.target_available_by_key,
             )
-            issued_actions: List[str] = []
+            issued_actions: List[Tuple[str, str]] = []
             allowed = set(candidates)
             for row in issued:
                 if row.action_name not in allowed:
                     continue
-                issued_actions.extend([row.action_name] * max(1, int(row.amount)))
-            candidates = issued_actions
+                display_action = self.display_action_name(row.action_name, row.resource_key)
+                issued_actions.extend([(row.action_name, display_action)] * max(1, int(row.amount)))
+            if issued_actions:
+                action, display_action = self.rng.choice(issued_actions)
+                state.current_action = action
+                state.current_action_display = display_action
+                state.ticks_remaining = self.action_duration_ticks.get(action, 1)
+                state.path = []
+                state.work_path_initialized = False
+                return
+            candidates = []
 
         if not candidates:
             state.current_action = "배회"
+            state.current_action_display = "배회"
             state.ticks_remaining = 1
             state.path = []
             return
         action = self.rng.choice(candidates)
         state.current_action = action
+        state.current_action_display = action
         state.ticks_remaining = self.action_duration_ticks.get(action, 1)
         state.path = []
         state.work_path_initialized = False
@@ -445,6 +480,7 @@ class SimulationRuntime:
             if planned == ScheduledActivity.MEAL:
                 if state.current_action != "식사":
                     state.current_action = "식사"
+                    state.current_action_display = "식사"
                     state.path = []
                 state.sleep_path_initialized = False
                 state.work_path_initialized = False
@@ -452,6 +488,7 @@ class SimulationRuntime:
             elif planned == ScheduledActivity.SLEEP:
                 if state.current_action != "취침":
                     state.current_action = "취침"
+                    state.current_action_display = "취침"
                     state.path = []
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
@@ -718,7 +755,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     ny = self._tile_center_y(npc.y)
                     arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
                     sim_state = simulation.state_by_name.get(npc.name)
-                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action})"
+                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action_display})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
 
                 for entity in render_entities:

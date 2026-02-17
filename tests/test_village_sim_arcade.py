@@ -268,8 +268,8 @@ def test_format_guild_issue_lines_returns_readable_rows(monkeypatch):
 
     lines = village_sim._format_guild_issue_lines(sim)
     assert lines
-    assert "탐색" in lines[0]
-    assert "자원:herb" in lines[0]
+    assert "약초 탐색" in lines[0]
+    assert "자원:약초" in lines[0]
 
 
 def test_pick_entity_near_world_point_prefers_nearest_entity():
@@ -595,6 +595,8 @@ def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
     sim.tick_once()
 
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    if sim.state_by_name["A"].current_action == "탐색":
+        assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
     assert sim.state_by_name["A"].current_action != "벌목"
 
 
@@ -656,6 +658,8 @@ def test_adventurer_checks_board_first_when_work_starts(monkeypatch):
     sim.state_by_name["A"].decision_ticks_until_check = 0
     sim.tick_once()
     assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    if sim.state_by_name["A"].current_action == "탐색":
+        assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
 
 
 def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
