@@ -840,3 +840,27 @@ def test_exploration_reveals_surrounding_8_cells_after_move(monkeypatch):
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
             assert (npc.x + dx, npc.y + dy) in sim.guild_board_exploration_state.known_cells
+
+
+def test_mark_cell_discovered_updates_known_only_when_adjacent_frontier_exists():
+    import village_sim
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=96,
+        height_px=96,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim.guild_board_exploration_state.frontier_cells.clear()
+
+    sim._mark_cell_discovered((5, 5))
+    assert (5, 5) not in sim.guild_board_exploration_state.known_cells
+
+    sim.guild_board_exploration_state.frontier_cells.add((4, 4))
+    sim._mark_cell_discovered((5, 5))
+    assert (5, 5) in sim.guild_board_exploration_state.known_cells
