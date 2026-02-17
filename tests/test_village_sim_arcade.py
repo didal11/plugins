@@ -105,7 +105,7 @@ def test_simulation_runtime_meal_moves_towards_dining_table(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="dining_table",
                 name="식탁",
                 x=3,
@@ -146,15 +146,14 @@ def test_simulation_runtime_work_moves_towards_required_entity(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="field",
                 name="농지",
                 x=3,
                 y=1,
                 max_quantity=5,
                 current_quantity=5,
-                is_discovered=True,
-                tags=[],
+                is_discovered=True
             )
         ],
         tiles=[],
@@ -180,7 +179,7 @@ def test_simulation_runtime_sleep_moves_towards_bed(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="bed_single",
                 name="침대",
                 x=3,
@@ -370,15 +369,14 @@ def test_sleep_does_not_recalculate_bed_path_every_tick(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="bed_single",
                 name="침대",
                 x=3,
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_discovered=True,
-                tags=[],
+                is_discovered=True
             )
         ],
         tiles=[],
@@ -416,15 +414,14 @@ def test_sleep_stays_on_bed_after_arrival(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="bed_single",
                 name="침대",
                 x=3,
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_discovered=True,
-                tags=[],
+                is_discovered=True
             )
         ],
         tiles=[],
@@ -447,25 +444,23 @@ def test_collect_non_resource_entities_filters_resource_tag():
     import village_sim
 
     entities = [
-        village_sim.GameEntity(
+        village_sim.ResourceEntity(
             key="tree",
             name="나무",
             x=1,
             y=1,
             max_quantity=1,
             current_quantity=1,
-            is_discovered=True,
-            tags=["resource"],
+            is_discovered=True
         ),
-        village_sim.GameEntity(
+        village_sim.StructureEntity(
             key="bed",
             name="침대",
             x=2,
             y=2,
-            max_quantity=1,
-            current_quantity=1,
-            is_discovered=True,
-            tags=["furniture"],
+            min_duration=1,
+            max_duration=5,
+            current_duration=5,
         ),
     ]
 

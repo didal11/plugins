@@ -26,12 +26,18 @@ from editable_data import (
     load_job_defs,
     load_npc_templates,
 )
-from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
+from ldtk_integration import (
+    GameEntity,
+    GameWorld,
+    ResourceEntity,
+    StructureEntity,
+    WorkbenchEntity,
+    build_world_from_ldtk,
+)
 from planning import DailyPlanner, ScheduledActivity
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
-    tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
-    return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
+    return isinstance(entity, WorkbenchEntity) or entity.key.strip().lower().endswith("_workbench")
 
 
 class RuntimeConfig(BaseModel):
@@ -194,7 +200,7 @@ class SimulationRuntime:
         for entity in self.world.entities:
             if not self._entity_matches_key(entity, required_key):
                 continue
-            if not _has_workbench_trait(entity) and entity.current_quantity <= 0:
+            if isinstance(entity, ResourceEntity) and entity.current_quantity <= 0:
                 continue
             out.append((entity.x, entity.y))
         return out
@@ -425,8 +431,7 @@ def _npc_color(job_name: str) -> tuple[int, int, int, int]:
 def _collect_non_resource_entities(entities: List[GameEntity]) -> List[GameEntity]:
     out: List[GameEntity] = []
     for entity in entities:
-        tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
-        if "resource" in tags:
+        if isinstance(entity, ResourceEntity):
             continue
         out.append(entity)
     return out
@@ -496,9 +501,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
             if _has_workbench_trait(entity):
                 return 198, 140, 80, 255
-            if not entity.is_discovered:
-                return 95, 108, 95, 255
-            return 86, 176, 132, 255
+            return 112, 120, 156, 255
 
         @staticmethod
         def _tile_bottom_left_y(grid_y: int) -> float:

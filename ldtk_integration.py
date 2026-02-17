@@ -105,10 +105,30 @@ class GameEntity(BaseModel):
     name: str
     x: int
     y: int
+
+
+class ResourceEntity(GameEntity):
+    model_config = ConfigDict(extra="forbid")
+
     max_quantity: int
     current_quantity: int
     is_discovered: bool
-    tags: List[str] = Field(default_factory=list)
+
+
+class WorkbenchEntity(GameEntity):
+    model_config = ConfigDict(extra="forbid")
+
+    min_duration: int
+    max_duration: int
+    current_duration: int
+
+
+class StructureEntity(GameEntity):
+    model_config = ConfigDict(extra="forbid")
+
+    min_duration: int
+    max_duration: int
+    current_duration: int
 
 
 class GameTile(BaseModel):
@@ -158,18 +178,46 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
         raise ValueError("LDtk entity key cannot be empty")
 
     name = str(f.get("name") or key).strip() or key
-    max_q = max(1, int(f.get("max_quantity", f.get("maxQuantity", 1))))
-    current_q = int(f.get("current_quantity", f.get("currentQuantity", max_q)))
-    current_q = max(0, min(max_q, current_q))
-
-    tags = [str(tag) for tag in row.tags if str(tag).strip()]
-    workbench_tagged = any(tag.strip().lower() == "workbench" for tag in tags) or key.endswith("_workbench")
-    is_discovered = True if workbench_tagged else _as_bool(f.get("is_discovered", f.get("isDiscovered", False)), False)
+    tags = {str(tag).strip().lower() for tag in row.tags if str(tag).strip()}
 
     tx = int(row.px[0] // grid_size)
     ty = int(row.px[1] // grid_size)
 
-    return GameEntity(
+    if "workbench" in tags or key.endswith("_workbench"):
+        min_duration = max(1, int(f.get("min_duration", f.get("minDuration", 1))))
+        max_duration = max(min_duration, int(f.get("max_duration", f.get("maxDuration", min_duration))))
+        current_duration = int(f.get("current_duration", f.get("currentDuration", max_duration)))
+        current_duration = max(min_duration, min(max_duration, current_duration))
+        return WorkbenchEntity(
+            key=key,
+            name=name,
+            x=tx,
+            y=ty,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            current_duration=current_duration,
+        )
+
+    if "structure" in tags:
+        min_duration = max(1, int(f.get("min_duration", f.get("minDuration", 1))))
+        max_duration = max(min_duration, int(f.get("max_duration", f.get("maxDuration", min_duration))))
+        current_duration = int(f.get("current_duration", f.get("currentDuration", max_duration)))
+        current_duration = max(min_duration, min(max_duration, current_duration))
+        return StructureEntity(
+            key=key,
+            name=name,
+            x=tx,
+            y=ty,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            current_duration=current_duration,
+        )
+
+    max_q = max(1, int(f.get("max_quantity", f.get("maxQuantity", 1))))
+    current_q = int(f.get("current_quantity", f.get("currentQuantity", max_q)))
+    current_q = max(0, min(max_q, current_q))
+    is_discovered = _as_bool(f.get("is_discovered", f.get("isDiscovered", False)), False)
+    return ResourceEntity(
         key=key,
         name=name,
         x=tx,
@@ -177,7 +225,6 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
         max_quantity=max_q,
         current_quantity=current_q,
         is_discovered=is_discovered,
-        tags=tags,
     )
 
 
