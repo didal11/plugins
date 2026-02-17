@@ -112,7 +112,6 @@ def test_simulation_runtime_meal_moves_towards_dining_table(monkeypatch):
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_workbench=True,
                 is_discovered=True,
             )
         ],
@@ -189,7 +188,6 @@ def test_simulation_runtime_sleep_moves_towards_bed(monkeypatch):
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_workbench=False,
                 is_discovered=True,
             )
         ],
@@ -380,7 +378,6 @@ def test_sleep_does_not_recalculate_bed_path_every_tick(monkeypatch):
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_workbench=False,
                 is_discovered=True,
                 tags=[],
             )
@@ -427,7 +424,6 @@ def test_sleep_stays_on_bed_after_arrival(monkeypatch):
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_workbench=False,
                 is_discovered=True,
                 tags=[],
             )
@@ -459,7 +455,6 @@ def test_collect_non_resource_entities_filters_resource_tag():
             y=1,
             max_quantity=1,
             current_quantity=1,
-            is_workbench=False,
             is_discovered=True,
             tags=["resource"],
         ),
@@ -470,7 +465,6 @@ def test_collect_non_resource_entities_filters_resource_tag():
             y=2,
             max_quantity=1,
             current_quantity=1,
-            is_workbench=False,
             is_discovered=True,
             tags=["furniture"],
         ),

@@ -17,6 +17,10 @@ import arcade
 
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 
+def _is_workbench_entity(entity: GameEntity) -> bool:
+    tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
+    return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
+
 
 @dataclass
 class CameraState:
@@ -34,7 +38,7 @@ class LdtkArcadeWindow(arcade.Window):
         self.move_speed = 500.0
 
     def _entity_color(self, entity: GameEntity) -> tuple[int, int, int, int]:
-        if entity.is_workbench:
+        if _is_workbench_entity(entity):
             return 198, 140, 80, 255
         if not entity.is_discovered:
             return 90, 110, 90, 255

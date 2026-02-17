@@ -7,6 +7,13 @@ from random import Random
 from typing import Dict, List, Optional, Tuple
 
 
+def _is_workbench_entity(ent: Dict[str, object]) -> bool:
+    tags = ent.get("tags", [])
+    normalized_tags = {str(tag).strip().lower() for tag in tags} if isinstance(tags, list) else set()
+    key = str(ent.get("key", "")).strip().lower()
+    return "workbench" in normalized_tags or key.endswith("_workbench")
+
+
 class EntityManager:
     def __init__(self, entities: List[Dict[str, object]], rng: Random):
         self.entities = entities
@@ -52,7 +59,7 @@ class EntityManager:
         if not candidates:
             return False
         ent = self.rng.choice(candidates)
-        if bool(ent.get("is_workbench", False)):
+        if _is_workbench_entity(ent):
             return True
         current = max(0, int(ent.get("current_quantity", 0)))
         if current <= 0:
@@ -63,13 +70,13 @@ class EntityManager:
         return True
 
     def remove_depleted(self) -> None:
-        self.entities[:] = [e for e in self.entities if bool(e.get("is_workbench", False)) or int(e.get("current_quantity", 0)) > 0]
+        self.entities[:] = [e for e in self.entities if _is_workbench_entity(e) or int(e.get("current_quantity", 0)) > 0]
 
     def discover_near(self, center: Tuple[int, int], radius: int = 1) -> Optional[Dict[str, object]]:
         cx, cy = center
         candidates: List[Dict[str, object]] = []
         for ent in self.entities:
-            if bool(ent.get("is_workbench", False)):
+            if _is_workbench_entity(ent):
                 continue
             if bool(ent.get("is_discovered", False)):
                 continue

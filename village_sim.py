@@ -29,6 +29,10 @@ from editable_data import (
 from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
 from planning import DailyPlanner, ScheduledActivity
 
+def _is_workbench_entity(entity: GameEntity) -> bool:
+    tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
+    return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
+
 
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -490,7 +494,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
-            if entity.is_workbench:
+            if _is_workbench_entity(entity):
                 return 198, 140, 80, 255
             if not entity.is_discovered:
                 return 95, 108, 95, 255
