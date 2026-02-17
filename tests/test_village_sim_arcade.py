@@ -271,6 +271,30 @@ def test_format_guild_issue_lines_returns_readable_rows(monkeypatch):
     assert "탐색" in lines[0]
     assert "자원:herb" in lines[0]
 
+
+def test_pick_entity_near_world_point_prefers_nearest_entity():
+    import village_sim
+
+    entities = [
+        village_sim.GameEntity(key="guild_board", name="게시판", x=2, y=2),
+        village_sim.GameEntity(key="tree_oak", name="나무", x=4, y=2),
+    ]
+    tile = 16
+    world_h = 128
+
+    board_center_x = (2 * tile) + (tile / 2)
+    board_center_y = world_h - ((2 * tile) + (tile / 2))
+    selected = village_sim._pick_entity_near_world_point(
+        entities,
+        board_center_x + 2,
+        board_center_y - 1,
+        tile_size=tile,
+        world_height_px=world_h,
+    )
+
+    assert selected is not None
+    assert selected.name == "게시판"
+
 def test_display_clock_hud_rounds_down_to_30_minutes(monkeypatch):
     import village_sim
 

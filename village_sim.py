@@ -60,6 +60,31 @@ def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
     return out
 
 
+def _pick_entity_near_world_point(
+    entities: List[GameEntity],
+    world_x: float,
+    world_y: float,
+    *,
+    tile_size: int,
+    world_height_px: int,
+) -> GameEntity | None:
+    threshold = max(8.0, float(tile_size) * 0.55)
+    threshold_sq = threshold * threshold
+
+    nearest: GameEntity | None = None
+    nearest_sq = float("inf")
+    for entity in entities:
+        ex = entity.x * tile_size + tile_size / 2
+        ey = world_height_px - (entity.y * tile_size + tile_size / 2)
+        dist_sq = ((float(world_x) - ex) ** 2) + ((float(world_y) - ey) ** 2)
+        if dist_sq > threshold_sq:
+            continue
+        if dist_sq < nearest_sq:
+            nearest_sq = dist_sq
+            nearest = entity
+    return nearest
+
+
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -581,6 +606,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             super().__init__(config.window_width, config.window_height, config.title, resizable=True)
             self.camera = arcade.Camera2D(position=(0, 0), zoom=1.0)
             self.state = CameraState(x=world.width_px / 2, y=world.height_px / 2, zoom=1.0)
+            self.camera.position = (self.state.x, self.state.y)
             self._keys: dict[int, bool] = {}
             self.selected_entity: GameEntity | None = None
             self.show_board_modal = False
@@ -638,17 +664,16 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 return float(x), float(y)
 
         def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
+            if button != arcade.MOUSE_BUTTON_LEFT:
+                return
             world_x, world_y = self._screen_to_world(x, y)
-            tile = world.grid_size
-            gx = int(world_x // tile)
-            gy_from_bottom = int(world_y // tile)
-            gy = int((world.height_px // tile) - 1 - gy_from_bottom)
-
-            selected: GameEntity | None = None
-            for entity in render_entities:
-                if entity.x == gx and entity.y == gy:
-                    selected = entity
-                    break
+            selected = _pick_entity_near_world_point(
+                render_entities,
+                world_x,
+                world_y,
+                tile_size=world.grid_size,
+                world_height_px=world.height_px,
+            )
             self.selected_entity = selected
             if selected is None or not _is_guild_board_entity(selected):
                 self.show_board_modal = False
