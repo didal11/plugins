@@ -34,6 +34,7 @@ from ldtk_integration import (
     WorkbenchEntity,
     build_world_from_ldtk,
 )
+from guild_dispatch import GuildDispatcher
 from planning import DailyPlanner, ScheduledActivity
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
@@ -115,6 +116,7 @@ class SimulationRuntime:
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
+        self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
@@ -213,6 +215,16 @@ class SimulationRuntime:
         """업무 시간에만 호출되는 업무 선택 로직."""
 
         candidates = self.job_actions.get(npc.job, [])
+        if npc.job.strip() == "모험가":
+            issued = self.guild_dispatcher.issue_bootstrap_for_all_resources()
+            issued_actions: List[str] = []
+            allowed = set(candidates)
+            for row in issued:
+                if row.action_name not in allowed:
+                    continue
+                issued_actions.extend([row.action_name] * max(1, int(row.amount)))
+            candidates = issued_actions
+
         if not candidates:
             state.current_action = "배회"
             state.ticks_remaining = 1
