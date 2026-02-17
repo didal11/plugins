@@ -41,6 +41,25 @@ def _has_workbench_trait(entity: GameEntity) -> bool:
     return isinstance(entity, WorkbenchEntity) or entity.key.strip().lower().endswith("_workbench")
 
 
+def _is_guild_board_entity(entity: GameEntity) -> bool:
+    key = entity.key.strip().lower()
+    name = entity.name.strip().lower()
+    return "게시판" in entity.name or "board" in key or "board" in name
+
+
+def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
+    issued = simulation.guild_dispatcher.issue_for_targets(
+        simulation.target_stock_by_key,
+        simulation.target_available_by_key,
+    )
+    if not issued:
+        return ["발행된 의뢰가 없습니다."]
+    out: List[str] = []
+    for row in issued:
+        out.append(f"- {row.action_name} | 자원:{row.resource_key} | 수량:{int(row.amount)}")
+    return out
+
+
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -563,6 +582,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.camera = arcade.Camera2D(position=(0, 0), zoom=1.0)
             self.state = CameraState(x=world.width_px / 2, y=world.height_px / 2, zoom=1.0)
             self._keys: dict[int, bool] = {}
+            self.selected_entity: GameEntity | None = None
+            self.show_board_modal = False
 
         @staticmethod
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
@@ -605,6 +626,32 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             elif key == arcade.key.E:
                 self.state.zoom = min(config.zoom_max, self.state.zoom * config.zoom_in_step)
                 self.camera.zoom = self.state.zoom
+            elif key == arcade.key.I:
+                if self.selected_entity is not None and _is_guild_board_entity(self.selected_entity):
+                    self.show_board_modal = not self.show_board_modal
+
+        def _screen_to_world(self, x: float, y: float) -> tuple[float, float]:
+            try:
+                wx, wy = self.camera.unproject((x, y))
+                return float(wx), float(wy)
+            except Exception:
+                return float(x), float(y)
+
+        def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
+            world_x, world_y = self._screen_to_world(x, y)
+            tile = world.grid_size
+            gx = int(world_x // tile)
+            gy_from_bottom = int(world_y // tile)
+            gy = int((world.height_px // tile) - 1 - gy_from_bottom)
+
+            selected: GameEntity | None = None
+            for entity in render_entities:
+                if entity.x == gx and entity.y == gy:
+                    selected = entity
+                    break
+            self.selected_entity = selected
+            if selected is None or not _is_guild_board_entity(selected):
+                self.show_board_modal = False
 
         def on_key_release(self, key: int, modifiers: int):
             self._keys[key] = False
@@ -644,9 +691,36 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     ey = self._tile_center_y(entity.y)
                     arcade.draw_circle_filled(ex, ey, max(4, tile * 0.28), self._entity_color(entity))
                     arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=selected_font)
+                    if self.selected_entity is entity:
+                        arcade.draw_circle_outline(ex, ey, max(6, tile * 0.42), (255, 215, 0, 255), 2)
 
-            hud = f"WASD/Arrow: move | Q/E: zoom | {simulation.display_clock_by_interval(30)}"
+            selected_name = "없음" if self.selected_entity is None else self.selected_entity.name
+            hud = (
+                f"WASD/Arrow: move | Q/E: zoom | Click: 선택 | I: 게시판 의뢰 보기 | "
+                f"선택:{selected_name} | {simulation.display_clock_by_interval(30)}"
+            )
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
+
+            if self.show_board_modal:
+                modal_w = min(self.width - 40, 540)
+                modal_h = min(self.height - 80, 320)
+                left = (self.width - modal_w) / 2
+                bottom = (self.height - modal_h) / 2
+                arcade.draw_lrbt_rectangle_filled(0, self.width, 0, self.height, (0, 0, 0, 110))
+                arcade.draw_lrbt_rectangle_filled(left, left + modal_w, bottom, bottom + modal_h, (28, 32, 40, 245))
+                arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
+                arcade.draw_text("게시판 발행 의뢰", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
+                arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
+                lines = _format_guild_issue_lines(simulation)
+                for idx, line in enumerate(lines[:10]):
+                    arcade.draw_text(
+                        line,
+                        left + 18,
+                        bottom + modal_h - 64 - (idx * 24),
+                        (230, 230, 230, 255),
+                        12,
+                        font_name=selected_font,
+                    )
 
     VillageArcadeWindow()
     arcade.run()
