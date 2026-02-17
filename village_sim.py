@@ -609,6 +609,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.camera.position = (self.state.x, self.state.y)
             self._keys: dict[int, bool] = {}
             self.selected_entity: GameEntity | None = None
+            self.last_click_world: tuple[float, float] | None = None
             self.show_board_modal = False
 
         @staticmethod
@@ -657,6 +658,14 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     self.show_board_modal = not self.show_board_modal
 
         def _screen_to_world(self, x: float, y: float) -> tuple[float, float]:
+            # Camera2D.unproject 동작이 Arcade 버전에 따라 달라질 수 있어,
+            # 카메라 상태 기반 계산을 우선 사용한다.
+            zoom = max(1e-6, float(self.state.zoom))
+            world_x = ((float(x) - (self.width / 2.0)) / zoom) + float(self.state.x)
+            world_y = ((float(y) - (self.height / 2.0)) / zoom) + float(self.state.y)
+            return world_x, world_y
+
+        def _screen_to_world_via_unproject(self, x: float, y: float) -> tuple[float, float]:
             try:
                 wx, wy = self.camera.unproject((x, y))
                 return float(wx), float(wy)
@@ -667,6 +676,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             if button != arcade.MOUSE_BUTTON_LEFT:
                 return
             world_x, world_y = self._screen_to_world(x, y)
+            self.last_click_world = (world_x, world_y)
             selected = _pick_entity_near_world_point(
                 render_entities,
                 world_x,
@@ -718,6 +728,12 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     arcade.draw_text(entity.name, ex + 6, ey + 6, (230, 230, 230, 255), 10, font_name=selected_font)
                     if self.selected_entity is entity:
                         arcade.draw_circle_outline(ex, ey, max(6, tile * 0.42), (255, 215, 0, 255), 2)
+
+                if self.last_click_world is not None:
+                    cx, cy = self.last_click_world
+                    half = max(4.0, tile * 0.16)
+                    arcade.draw_line(cx - half, cy, cx + half, cy, (255, 238, 88, 220), 2)
+                    arcade.draw_line(cx, cy - half, cx, cy + half, (255, 238, 88, 220), 2)
 
             selected_name = "없음" if self.selected_entity is None else self.selected_entity.name
             hud = (
