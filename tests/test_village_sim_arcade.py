@@ -804,6 +804,88 @@ def test_exploration_buffer_flushes_only_when_board_reported(monkeypatch):
     assert sim.minimap_known_cells_snapshot == sim.guild_board_exploration_state.known_cells
 
 
+def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim.guild_board_exploration_state.known_cells = {(2, 2)}
+    sim.guild_board_exploration_state.frontier_cells = {(3, 3)}
+    sim.exploration_buffer_by_name["A"].clear()
+
+    sim._handle_board_check("A")
+
+    assert (2, 2) in sim.exploration_buffer_by_name["A"].new_known_cells
+    assert (3, 3) in sim.exploration_buffer_by_name["A"].new_frontier_cells
+
+
+def test_exploration_prefers_npc_buffer_frontier_after_board_check(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "탐색", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    sim.guild_board_exploration_state.frontier_cells = {(4, 4)}
+    sim.exploration_buffer_by_name["A"].new_frontier_cells = {(4, 0)}
+
+    captured: dict[str, set[tuple[int, int]]] = {}
+
+    def _pick_frontier(cells, rng):
+        captured["cells"] = set(cells)
+        ordered = sorted(captured["cells"])
+        return ordered[0] if ordered else None
+
+    monkeypatch.setattr(village_sim, "choose_next_frontier", _pick_frontier)
+
+    sim._step_exploration_action(npcs[0], state, width_tiles=5, height_tiles=5)
+
+    assert (4, 0) in captured["cells"]
+    assert (4, 4) not in captured["cells"]
+
+
 def test_registered_resources_include_world_keys_and_available_follows_discovery(monkeypatch):
     import village_sim
 
