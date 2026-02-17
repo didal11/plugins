@@ -35,6 +35,7 @@ from ldtk_integration import (
     build_world_from_ldtk,
 )
 from guild_dispatch import GuildDispatcher
+from exploration import GuildBoardExplorationState, choose_next_frontier
 from planning import DailyPlanner, ScheduledActivity
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
@@ -174,6 +175,8 @@ class SimulationRuntime:
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+        self.guild_board_exploration_state = GuildBoardExplorationState()
+        self._initialize_exploration_state()
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
         keys: List[str] = []
@@ -253,6 +256,60 @@ class SimulationRuntime:
             if "bed" in key or "침대" in name:
                 out.append((entity.x, entity.y))
         return out
+
+    def _initialize_exploration_state(self) -> None:
+        for npc in self.npcs:
+            self._mark_cell_discovered((npc.x, npc.y))
+
+    def _grid_bounds(self) -> Tuple[int, int]:
+        width_tiles = max(1, self.world.width_px // self.world.grid_size)
+        height_tiles = max(1, self.world.height_px // self.world.grid_size)
+        return width_tiles, height_tiles
+
+    def _mark_cell_discovered(self, coord: Tuple[int, int]) -> None:
+        x, y = coord
+        width_tiles, height_tiles = self._grid_bounds()
+        if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
+            return
+        if coord in self.blocked_tiles:
+            return
+
+        self.guild_board_exploration_state.known_cells.add(coord)
+        self.guild_board_exploration_state.frontier_cells.discard(coord)
+
+        for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
+            nb = (nx, ny)
+            if nb not in self.guild_board_exploration_state.known_cells:
+                self.guild_board_exploration_state.frontier_cells.add(nb)
+
+    def _step_exploration_action(
+        self,
+        npc: RenderNpc,
+        state: SimulationNpcState,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> bool:
+        self._mark_cell_discovered((npc.x, npc.y))
+
+        if not state.work_path_initialized or not state.path:
+            target = choose_next_frontier(self.guild_board_exploration_state.frontier_cells, self.rng)
+            if target is None:
+                return False
+            state.path = self._find_path_to_nearest_target(
+                (npc.x, npc.y),
+                [target],
+                width_tiles,
+                height_tiles,
+            )
+            state.work_path_initialized = True
+            if not state.path:
+                self.guild_board_exploration_state.frontier_cells.discard(target)
+                return False
+
+        next_x, next_y = state.path.pop(0)
+        npc.x, npc.y = next_x, next_y
+        self._mark_cell_discovered((npc.x, npc.y))
+        return True
 
     @staticmethod
     def _duration_to_ticks(minutes: object) -> int:
@@ -533,6 +590,12 @@ class SimulationRuntime:
                 return
 
         if state.current_action not in {"식사", "취침"}:
+            if state.current_action == "탐색":
+                moved = self._step_exploration_action(npc, state, width_tiles, height_tiles)
+                if moved:
+                    return
+                state.work_path_initialized = False
+
             work_tiles = self._find_work_tiles(state.current_action)
             if work_tiles:
                 if not state.work_path_initialized:
