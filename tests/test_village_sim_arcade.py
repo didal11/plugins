@@ -450,7 +450,7 @@ def test_sleep_stays_on_bed_after_arrival(monkeypatch):
     assert (npcs[0].x, npcs[0].y) == (3, 1)
 
 
-def test_collect_non_resource_entities_filters_resource_tag():
+def test_collect_render_entities_keeps_resource_entities_for_map_draw():
     import village_sim
 
     entities = [
@@ -474,8 +474,8 @@ def test_collect_non_resource_entities_filters_resource_tag():
         ),
     ]
 
-    collected = village_sim._collect_non_resource_entities(entities)
-    assert [e.name for e in collected] == ["침대"]
+    collected = village_sim._collect_render_entities(entities)
+    assert [e.name for e in collected] == ["나무", "침대"]
 
 
 def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
