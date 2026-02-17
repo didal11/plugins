@@ -8,10 +8,12 @@ from typing import Dict, List, Optional, Tuple
 
 
 def _has_workbench_trait(ent: Dict[str, object]) -> bool:
-    tags = ent.get("tags", [])
-    normalized_tags = {str(tag).strip().lower() for tag in tags} if isinstance(tags, list) else set()
     key = str(ent.get("key", "")).strip().lower()
-    return "workbench" in normalized_tags or key.endswith("_workbench")
+    return key.endswith("_workbench") or "current_duration" in ent
+
+
+def _is_resource(ent: Dict[str, object]) -> bool:
+    return "current_quantity" in ent
 
 
 class EntityManager:
@@ -40,9 +42,9 @@ class EntityManager:
         for ent in self.entities:
             if not self._match_key(ent, entity_key):
                 continue
-            if int(ent.get("current_quantity", 0)) <= 0:
+            if _is_resource(ent) and int(ent.get("current_quantity", 0)) <= 0:
                 continue
-            if discovered_only and not bool(ent.get("is_discovered", False)):
+            if discovered_only and _is_resource(ent) and not bool(ent.get("is_discovered", False)):
                 continue
             out.append(ent)
         return out
@@ -59,7 +61,7 @@ class EntityManager:
         if not candidates:
             return False
         ent = self.rng.choice(candidates)
-        if _has_workbench_trait(ent):
+        if not _is_resource(ent):
             return True
         current = max(0, int(ent.get("current_quantity", 0)))
         if current <= 0:
@@ -70,13 +72,13 @@ class EntityManager:
         return True
 
     def remove_depleted(self) -> None:
-        self.entities[:] = [e for e in self.entities if _has_workbench_trait(e) or int(e.get("current_quantity", 0)) > 0]
+        self.entities[:] = [e for e in self.entities if (not _is_resource(e)) or int(e.get("current_quantity", 0)) > 0]
 
     def discover_near(self, center: Tuple[int, int], radius: int = 1) -> Optional[Dict[str, object]]:
         cx, cy = center
         candidates: List[Dict[str, object]] = []
         for ent in self.entities:
-            if _has_workbench_trait(ent):
+            if not _is_resource(ent):
                 continue
             if bool(ent.get("is_discovered", False)):
                 continue

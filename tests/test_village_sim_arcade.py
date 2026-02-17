@@ -105,7 +105,7 @@ def test_simulation_runtime_meal_moves_towards_dining_table(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="dining_table",
                 name="식탁",
                 x=3,
@@ -146,15 +146,14 @@ def test_simulation_runtime_work_moves_towards_required_entity(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="field",
                 name="농지",
                 x=3,
                 y=1,
                 max_quantity=5,
                 current_quantity=5,
-                is_discovered=True,
-                tags=[],
+                is_discovered=True
             )
         ],
         tiles=[],
@@ -180,7 +179,7 @@ def test_simulation_runtime_sleep_moves_towards_bed(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="bed_single",
                 name="침대",
                 x=3,
@@ -370,15 +369,14 @@ def test_sleep_does_not_recalculate_bed_path_every_tick(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="bed_single",
                 name="침대",
                 x=3,
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_discovered=True,
-                tags=[],
+                is_discovered=True
             )
         ],
         tiles=[],
@@ -416,15 +414,14 @@ def test_sleep_stays_on_bed_after_arrival(monkeypatch):
         width_px=64,
         height_px=64,
         entities=[
-            village_sim.GameEntity(
+            village_sim.ResourceEntity(
                 key="bed_single",
                 name="침대",
                 x=3,
                 y=1,
                 max_quantity=1,
                 current_quantity=1,
-                is_discovered=True,
-                tags=[],
+                is_discovered=True
             )
         ],
         tiles=[],
@@ -447,27 +444,71 @@ def test_collect_non_resource_entities_filters_resource_tag():
     import village_sim
 
     entities = [
-        village_sim.GameEntity(
+        village_sim.ResourceEntity(
             key="tree",
             name="나무",
             x=1,
             y=1,
             max_quantity=1,
             current_quantity=1,
-            is_discovered=True,
-            tags=["resource"],
+            is_discovered=True
         ),
-        village_sim.GameEntity(
+        village_sim.StructureEntity(
             key="bed",
             name="침대",
             x=2,
             y=2,
-            max_quantity=1,
-            current_quantity=1,
-            is_discovered=True,
-            tags=["furniture"],
+            min_duration=1,
+            max_duration=5,
+            current_duration=5,
         ),
     ]
 
     collected = village_sim._collect_non_resource_entities(entities)
     assert [e.name for e in collected] == ["침대"]
+
+
+def test_adventurer_picks_only_from_guild_issued_actions(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색", "약초채집", "벌목"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "탐색", "duration_minutes": 10},
+            {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
+            {"name": "벌목", "duration_minutes": 10, "required_entity": "tree"},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=2,
+                y=2,
+                max_quantity=5,
+                current_quantity=5,
+                is_discovered=True,
+            )
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    _set_sim_time(sim, 9)
+    sim.tick_once()
+
+    assert sim.state_by_name["A"].current_action in {"탐색", "약초채집"}
+    assert sim.state_by_name["A"].current_action != "벌목"
