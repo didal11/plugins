@@ -65,8 +65,35 @@ def test_build_render_npcs_uses_defaults_and_clamps(monkeypatch):
 
     npcs = village_sim._build_render_npcs(world)
     assert len(npcs) == 2
-    assert (npcs[0].x, npcs[0].y) == (1, 1)
+    assert 0 <= npcs[0].x <= 3
+    assert 0 <= npcs[0].y <= 3
     assert (npcs[1].x, npcs[1].y) == (3, 0)
+
+
+def test_build_render_npcs_prefers_town_region(monkeypatch):
+    import village_sim
+    from ldtk_integration import LevelRegion
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_npc_templates",
+        lambda: [{"name": "A", "job": "농부"}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="ALL_LEVELS",
+        grid_size=16,
+        width_px=160,
+        height_px=160,
+        entities=[],
+        tiles=[],
+        level_regions=[LevelRegion(level_id="Town", x=1, y=2, width=3, height=2)],
+    )
+
+    npcs = village_sim._build_render_npcs(world)
+    assert len(npcs) == 1
+    assert 1 <= npcs[0].x <= 3
+    assert 2 <= npcs[0].y <= 3
 
 
 def test_simulation_runtime_uses_daily_planning_for_actions(monkeypatch):
@@ -755,3 +782,26 @@ def test_exploration_action_is_linked_with_frontier_exploration_state(monkeypatc
     assert sim.state_by_name["A"].current_action == "탐색"
     assert sim.state_by_name["A"].current_action_display.endswith(" 탐색")
     assert len(sim.guild_board_exploration_state.known_cells) > initial_known_count
+
+
+def test_simulation_runtime_marks_town_cells_known_on_start():
+    import village_sim
+    from ldtk_integration import LevelRegion
+
+    world = village_sim.GameWorld(
+        level_id="ALL_LEVELS",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[],
+        tiles=[],
+        blocked_tiles=[[2, 2]],
+        level_regions=[LevelRegion(level_id="Town", x=1, y=1, width=3, height=3)],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=0, y=0)]
+
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    assert (1, 1) in sim.guild_board_exploration_state.known_cells
+    assert (3, 3) in sim.guild_board_exploration_state.known_cells
+    assert (2, 2) not in sim.guild_board_exploration_state.known_cells
