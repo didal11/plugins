@@ -26,12 +26,19 @@ from editable_data import (
     load_job_defs,
     load_npc_templates,
 )
-from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
+from ldtk_integration import (
+    GameEntity,
+    GameWorld,
+    ResourceEntity,
+    StructureEntity,
+    WorkbenchEntity,
+    build_world_from_ldtk,
+)
+from guild_dispatch import GuildDispatcher
 from planning import DailyPlanner, ScheduledActivity
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
-    tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
-    return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
+    return isinstance(entity, WorkbenchEntity) or entity.key.strip().lower().endswith("_workbench")
 
 
 class RuntimeConfig(BaseModel):
@@ -109,12 +116,19 @@ class SimulationRuntime:
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
+        self.guild_dispatcher = GuildDispatcher(self.world.entities)
+        self.target_stock_by_key, self.target_available_by_key = self._default_guild_targets()
         self.state_by_name: Dict[str, SimulationNpcState] = {
             npc.name: SimulationNpcState() for npc in self.npcs
         }
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+
+    def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
+        target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
+        target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
+        return target_stock_by_key, target_available_by_key
 
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:
         out: List[Tuple[int, int]] = []
@@ -194,7 +208,7 @@ class SimulationRuntime:
         for entity in self.world.entities:
             if not self._entity_matches_key(entity, required_key):
                 continue
-            if not _has_workbench_trait(entity) and entity.current_quantity <= 0:
+            if isinstance(entity, ResourceEntity) and entity.current_quantity <= 0:
                 continue
             out.append((entity.x, entity.y))
         return out
@@ -207,6 +221,19 @@ class SimulationRuntime:
         """업무 시간에만 호출되는 업무 선택 로직."""
 
         candidates = self.job_actions.get(npc.job, [])
+        if npc.job.strip() == "모험가":
+            issued = self.guild_dispatcher.issue_for_targets(
+                self.target_stock_by_key,
+                self.target_available_by_key,
+            )
+            issued_actions: List[str] = []
+            allowed = set(candidates)
+            for row in issued:
+                if row.action_name not in allowed:
+                    continue
+                issued_actions.extend([row.action_name] * max(1, int(row.amount)))
+            candidates = issued_actions
+
         if not candidates:
             state.current_action = "배회"
             state.ticks_remaining = 1
@@ -425,8 +452,7 @@ def _npc_color(job_name: str) -> tuple[int, int, int, int]:
 def _collect_non_resource_entities(entities: List[GameEntity]) -> List[GameEntity]:
     out: List[GameEntity] = []
     for entity in entities:
-        tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
-        if "resource" in tags:
+        if isinstance(entity, ResourceEntity):
             continue
         out.append(entity)
     return out
@@ -496,9 +522,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
         def _entity_color(entity: GameEntity) -> tuple[int, int, int, int]:
             if _has_workbench_trait(entity):
                 return 198, 140, 80, 255
-            if not entity.is_discovered:
-                return 95, 108, 95, 255
-            return 86, 176, 132, 255
+            return 112, 120, 156, 255
 
         @staticmethod
         def _tile_bottom_left_y(grid_y: int) -> float:

@@ -15,11 +15,10 @@ from pathlib import Path
 
 import arcade
 
-from ldtk_integration import GameEntity, GameWorld, build_world_from_ldtk
+from ldtk_integration import GameEntity, GameWorld, WorkbenchEntity, build_world_from_ldtk
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
-    tags = {str(tag).strip().lower() for tag in entity.tags if str(tag).strip()}
-    return "workbench" in tags or entity.key.strip().lower().endswith("_workbench")
+    return isinstance(entity, WorkbenchEntity) or entity.key.strip().lower().endswith("_workbench")
 
 
 @dataclass
@@ -40,9 +39,7 @@ class LdtkArcadeWindow(arcade.Window):
     def _entity_color(self, entity: GameEntity) -> tuple[int, int, int, int]:
         if _has_workbench_trait(entity):
             return 198, 140, 80, 255
-        if not entity.is_discovered:
-            return 90, 110, 90, 255
-        return 90, 170, 120, 255
+        return 112, 120, 156, 255
 
     def _entity_world_pos(self, entity: GameEntity) -> tuple[float, float]:
         tile = self.world.grid_size
