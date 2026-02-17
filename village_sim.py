@@ -774,6 +774,10 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self._sync_camera_after_viewport_change()
 
         def _sync_camera_after_viewport_change(self) -> None:
+            # Arcade Camera2D의 viewport/projection을 현재 창 크기에 맞춘다.
+            # resize/fullscreen 이후 이 값이 갱신되지 않으면 렌더/클릭 좌표가 어긋날 수 있다.
+            self.camera.match_window(viewport=True, projection=True, scissor=True)
+
             half_w = (self.width / max(1e-6, self.state.zoom)) / 2.0
             half_h = (self.height / max(1e-6, self.state.zoom)) / 2.0
 
