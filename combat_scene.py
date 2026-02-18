@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""ASCII 감성 전투 씬 프로토타입.
-
-- backend=terminal: 기존 터미널 입력형
-- backend=arcade: 클릭형 버튼 UI
-"""
+"""ASCII 감성 전투 씬 프로토타입 (아케이드 전용 실행)."""
 
 from __future__ import annotations
 
@@ -224,8 +220,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         self._queued_ready: List[Combatant] = []
         self._battle_done = False
 
-        self.attack_btn = arcade.LRBT(80, 280, 120, 60)
-        self.move_btn = arcade.LRBT(320, 520, 120, 60)
+        self.attack_btn = arcade.LRBT(left=80, right=280, bottom=60, top=120)
+        self.move_btn = arcade.LRBT(left=320, right=520, bottom=60, top=120)
 
     def on_draw(self) -> None:
         self.clear((16, 18, 22))
@@ -251,8 +247,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         # 버튼
         attack_color = arcade.color.DARK_SPRING_GREEN if self._player_waiting else arcade.color.DARK_SLATE_GRAY
         move_color = arcade.color.INDIGO if self._player_waiting else arcade.color.DARK_SLATE_GRAY
-        arcade.draw_lrbt_rectangle_filled(*self.attack_btn, attack_color)
-        arcade.draw_lrbt_rectangle_filled(*self.move_btn, move_color)
+        arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.attack_btn), attack_color)
+        arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.move_btn), move_color)
         arcade.draw_text("공격", 150, 83, arcade.color.WHITE, 18, anchor_x="center")
         arcade.draw_text("이동", 390, 83, arcade.color.WHITE, 18, anchor_x="center")
 
@@ -345,6 +341,11 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         if not self._player_waiting:
             self.engine.advance_tick()
 
+
+    @staticmethod
+    def _rect_points(rect: arcade.LRBT) -> tuple[float, float, float, float]:
+        return rect.left, rect.right, rect.bottom, rect.top
+
     @staticmethod
     def _contains(rect: arcade.LRBT, x: float, y: float) -> bool:
         return rect.left <= x <= rect.right and rect.bottom <= y <= rect.top
@@ -365,12 +366,9 @@ def build_default_engine(*, seed: int = 42) -> CombatSceneEngine:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ASCII/Arcade ATB 전투 씬 단독 실행")
+    parser = argparse.ArgumentParser(description="Arcade ATB 전투 씬 단독 실행")
     parser.add_argument("--seed", type=int, default=42, help="난수 시드")
-    parser.add_argument("--backend", choices=["terminal", "arcade"], default="terminal", help="렌더/입력 백엔드")
-    parser.add_argument("--auto", action="store_true", help="터미널 모드에서 플레이어 자동 행동")
-    parser.add_argument("--max-ticks", type=int, default=200, help="터미널 모드 최대 틱 수")
-    parser.add_argument("--tick-seconds", type=float, default=0.35, help="아케이드 모드 틱 진행 간격")
+    parser.add_argument("--tick-seconds", type=float, default=0.35, help="틱 진행 간격(초)")
     return parser.parse_args()
 
 
@@ -378,12 +376,8 @@ def main() -> None:
     args = parse_args()
     engine = build_default_engine(seed=args.seed)
 
-    if args.backend == "terminal":
-        run_terminal(engine, player_auto=args.auto, max_ticks=args.max_ticks)
-        return
-
     if arcade is None:
-        raise RuntimeError("arcade 모드를 사용하려면 `pip install arcade`가 필요합니다.")
+        raise RuntimeError("실행하려면 `pip install arcade`가 필요합니다.")
 
     window = CombatSceneArcadeWindow(engine, tick_seconds=args.tick_seconds)
     arcade.run()
