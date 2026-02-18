@@ -845,6 +845,76 @@ def test_exploration_buffer_flushes_only_when_board_reported(monkeypatch):
     assert sim.minimap_known_monsters_snapshot == sim.guild_board_exploration_state.known_monsters
 
 
+
+
+def test_visible_entity_observation_updates_resource_and_monster_buffers(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[
+            village_sim.StructureEntity(
+                key="guild_board",
+                name="길드 게시판",
+                x=1,
+                y=1,
+                min_duration=1,
+                max_duration=1,
+                current_duration=1,
+            ),
+            village_sim.ResourceEntity(
+                key="herb",
+                name="약초",
+                x=2,
+                y=2,
+                max_quantity=5,
+                current_quantity=3,
+                is_discovered=False,
+            ),
+            village_sim.StructureEntity(
+                key="monster_rat",
+                name="쥐 몬스터",
+                x=2,
+                y=1,
+                min_duration=1,
+                max_duration=1,
+                current_duration=1,
+            ),
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim._mark_visible_area_discovered("A", (1, 1))
+
+    buffer = sim.exploration_buffer_by_name["A"]
+    assert buffer.known_resource_updates == {("herb", (2, 2)): 3}
+    assert ("monster_rat", (2, 1)) in buffer.known_monster_discoveries
+
+    sim._handle_board_report("A")
+
+    assert sim.guild_board_exploration_state.known_resources == {("herb", (2, 2)): 3}
+    assert ("monster_rat", (2, 1)) in sim.guild_board_exploration_state.known_monsters
+
+
 def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch):
     import village_sim
 
