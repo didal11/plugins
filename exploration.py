@@ -30,6 +30,14 @@ class NPCExplorationBuffer:
     known_resource_removals: Set[ResourceKey] = field(default_factory=set)
     known_monster_discoveries: Set[MonsterSighting] = field(default_factory=set)
 
+    def has_any_delta(self) -> bool:
+        return bool(
+            self.new_known_cells
+            or self.known_resource_updates
+            or self.known_resource_removals
+            or self.known_monster_discoveries
+        )
+
     def clear(self) -> None:
         self.new_known_cells.clear()
         self.known_resource_updates.clear()
@@ -69,6 +77,18 @@ class NPCExplorationBuffer:
         """Monsters are append-only discoveries."""
 
         self.known_monster_discoveries.add((name, coord))
+
+    def merge_from(self, other: "NPCExplorationBuffer") -> None:
+        """Merge another delta buffer into this one."""
+
+        if other.new_known_cells:
+            self.new_known_cells.update(other.new_known_cells)
+        if other.known_resource_updates:
+            self.known_resource_updates.update(other.known_resource_updates)
+        if other.known_resource_removals:
+            self.known_resource_removals.update(other.known_resource_removals)
+        if other.known_monster_discoveries:
+            self.known_monster_discoveries.update(other.known_monster_discoveries)
 
 
 @dataclass
@@ -143,3 +163,72 @@ def choose_next_frontier(frontier_cells: Iterable[Coord], rng: Random) -> Option
     if not cells:
         return None
     return rng.choice(cells)
+
+
+def is_known_from_view(coord: Coord, global_known_cells: Set[Coord], buffer: NPCExplorationBuffer) -> bool:
+    """Return True if coord is known globally or in local NPC buffer view."""
+
+    return coord in global_known_cells or coord in buffer.new_known_cells
+
+
+def frontier_cells_from_known_view(
+    buffer: NPCExplorationBuffer,
+    blocked_tiles: Set[Coord],
+    width_tiles: int,
+    height_tiles: int,
+) -> Set[Coord]:
+    """Compute frontier cells from buffer-known cells only."""
+
+    known_view = set(buffer.new_known_cells)
+    frontier: Set[Coord] = set()
+    for x, y in known_view:
+        for ny in range(y - 1, y + 2):
+            for nx in range(x - 1, x + 2):
+                if nx == x and ny == y:
+                    continue
+                if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
+                    continue
+                nb = (nx, ny)
+                if nb in blocked_tiles or nb in known_view:
+                    continue
+                frontier.add(nb)
+    return frontier
+
+
+def record_known_cell_discovery(
+    buffer: NPCExplorationBuffer,
+    coord: Coord,
+    global_known_cells: Set[Coord],
+    blocked_tiles: Set[Coord],
+    width_tiles: int,
+    height_tiles: int,
+    *,
+    force: bool = False,
+) -> None:
+    """Record known cell into NPC buffer if discoverable."""
+
+    x, y = coord
+    if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
+        return
+    if coord in blocked_tiles:
+        return
+    if is_known_from_view(coord, global_known_cells, buffer):
+        return
+
+    if not force:
+        has_adjacent_known = False
+        for ny in range(y - 1, y + 2):
+            for nx in range(x - 1, x + 2):
+                if nx == x and ny == y:
+                    continue
+                if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
+                    continue
+                if is_known_from_view((nx, ny), global_known_cells, buffer):
+                    has_adjacent_known = True
+                    break
+            if has_adjacent_known:
+                break
+        if not has_adjacent_known:
+            return
+
+    buffer.new_known_cells.add(coord)

@@ -35,7 +35,14 @@ from ldtk_integration import (
     build_world_from_ldtk,
 )
 from guild_dispatch import GuildDispatcher
-from exploration import GuildBoardExplorationState, NPCExplorationBuffer, choose_next_frontier
+from exploration import (
+    GuildBoardExplorationState,
+    NPCExplorationBuffer,
+    choose_next_frontier,
+    frontier_cells_from_known_view,
+    is_known_from_view,
+    record_known_cell_discovery,
+)
 from planning import DailyPlanner, ScheduledActivity
 
 BOARD_REPORT_ACTION = "게시판보고"
@@ -319,7 +326,7 @@ class SimulationRuntime:
         return width_tiles, height_tiles
 
     def _is_known_from_view(self, coord: Tuple[int, int], buffer: NPCExplorationBuffer) -> bool:
-        return coord in self.guild_board_exploration_state.known_cells or coord in buffer.new_known_cells
+        return is_known_from_view(coord, self.guild_board_exploration_state.known_cells, buffer)
 
     def _frontier_cells_from_known_view(self, buffer: NPCExplorationBuffer) -> Set[Tuple[int, int]]:
         """Compute frontier cells at runtime from buffer-known cells only.
@@ -328,18 +335,8 @@ class SimulationRuntime:
         게시판 확인을 통해 버퍼 known은 전역 known을 포함하게 된다.
         """
 
-        known_view = set(buffer.new_known_cells)
         width_tiles, height_tiles = self._grid_bounds()
-        frontier: Set[Tuple[int, int]] = set()
-        for x, y in known_view:
-            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
-                nb = (nx, ny)
-                if nb in self.blocked_tiles:
-                    continue
-                if nb in known_view:
-                    continue
-                frontier.add(nb)
-        return frontier
+        return frontier_cells_from_known_view(buffer, self.blocked_tiles, width_tiles, height_tiles)
 
     def _mark_cell_discovered_to_buffer(
         self,
@@ -347,21 +344,16 @@ class SimulationRuntime:
         coord: Tuple[int, int],
         force: bool = False,
     ) -> None:
-        x, y = coord
         width_tiles, height_tiles = self._grid_bounds()
-        if x < 0 or y < 0 or x >= width_tiles or y >= height_tiles:
-            return
-        if coord in self.blocked_tiles:
-            return
-        if self._is_known_from_view(coord, buffer):
-            return
-
-        if not force:
-            has_adjacent_known = self._has_adjacent_known_8(x, y, width_tiles, height_tiles, buffer)
-            if not has_adjacent_known:
-                return
-
-        buffer.new_known_cells.add(coord)
+        record_known_cell_discovery(
+            buffer,
+            coord,
+            self.guild_board_exploration_state.known_cells,
+            self.blocked_tiles,
+            width_tiles,
+            height_tiles,
+            force=force,
+        )
 
     def _has_adjacent_known_8(
         self,
@@ -384,7 +376,7 @@ class SimulationRuntime:
 
     def _flush_exploration_buffer(self, npc_name: str) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
-        if not buffer.new_known_cells and not buffer.known_resource_updates and not buffer.known_resource_removals and not buffer.known_monster_discoveries:
+        if not buffer.has_any_delta():
             return
         self.guild_board_exploration_state.apply_npc_buffer(buffer, self.rng)
         buffer.clear()
@@ -414,14 +406,7 @@ class SimulationRuntime:
         delta = self.guild_board_exploration_state.export_delta_for_known_cells(
             self.guild_board_exploration_state.known_cells
         )
-        if delta.new_known_cells:
-            buffer.new_known_cells.update(delta.new_known_cells)
-        if delta.known_resource_updates:
-            buffer.known_resource_updates.update(delta.known_resource_updates)
-        if delta.known_resource_removals:
-            buffer.known_resource_removals.update(delta.known_resource_removals)
-        if delta.known_monster_discoveries:
-            buffer.known_monster_discoveries.update(delta.known_monster_discoveries)
+        buffer.merge_from(delta)
 
     def _handle_board_report(self, npc_name: str) -> None:
         self._flush_exploration_buffer(npc_name)
@@ -440,12 +425,41 @@ class SimulationRuntime:
         self._mark_cell_discovered_to_buffer(buffer, coord, force=force)
         self._flush_exploration_buffer(system_name)
 
+    def _observe_visible_entities_to_buffer(self, buffer: NPCExplorationBuffer, visible_cells: Set[Tuple[int, int]]) -> None:
+        global_known_resources = self.guild_board_exploration_state.known_resources
+        for entity in self.world.entities:
+            coord = (entity.x, entity.y)
+            if coord not in visible_cells:
+                continue
+            if isinstance(entity, ResourceEntity):
+                resource_key = entity.key.strip().lower()
+                if int(entity.current_quantity) > 0:
+                    buffer.record_resource_observation(
+                        resource_key,
+                        coord,
+                        int(entity.current_quantity),
+                        global_known_resources,
+                    )
+                    entity.is_discovered = True
+                else:
+                    buffer.record_resource_absence(resource_key, coord, global_known_resources)
+                continue
+
+            key = entity.key.strip().lower()
+            name = entity.name.strip().lower()
+            if key.startswith("monster_") or "monster" in key or "몬스터" in name:
+                buffer.record_monster_discovery(key or name, coord)
+
     def _mark_visible_area_discovered(self, npc_name: str, coord: Tuple[int, int]) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
         x, y = coord
+        visible_cells: Set[Tuple[int, int]] = set()
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
-                self._mark_cell_discovered_to_buffer(buffer, (x + dx, y + dy))
+                cell = (x + dx, y + dy)
+                self._mark_cell_discovered_to_buffer(buffer, cell)
+                visible_cells.add(cell)
+        self._observe_visible_entities_to_buffer(buffer, visible_cells)
 
     def _step_exploration_action(
         self,
