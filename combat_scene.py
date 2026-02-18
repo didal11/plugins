@@ -201,6 +201,11 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             actor.name: "attack" for actor in self.engine.actors if actor.team == "player"
         }
 
+        # on_draw 콜백 자체는 프레임마다 들어오지만, 실제 무거운 렌더 블록은 1초마다만 수행한다.
+        self.draw_interval_seconds = 1.0
+        self._draw_acc = 0.0
+        self._should_render = True
+
         self.grid_origin_x = 40
         self.grid_origin_y = 140
         self.tile_px = 70
@@ -222,6 +227,10 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         return "■" * filled + "□" * (width - filled)
 
     def on_draw(self) -> None:
+        if not self._should_render:
+            return
+        self._should_render = False
+
         self.clear((18, 20, 26))
 
         arcade.draw_text(
@@ -315,6 +324,11 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
     def on_update(self, delta_time: float) -> None:
         if self._battle_done:
             return
+
+        self._draw_acc += delta_time
+        if self._draw_acc >= self.draw_interval_seconds:
+            self._draw_acc = 0.0
+            self._should_render = True
 
         self._acc += delta_time
         if self._acc < self.tick_seconds:
