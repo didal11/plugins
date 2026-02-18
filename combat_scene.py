@@ -399,7 +399,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
 
         ready = self.engine.ready_combatants()
         for actor in ready:
-            if not actor.alive:
+            if not actor.alive or actor.team == "player":
                 continue
             if self.engine.resolve_cast_if_ready(actor):
                 if actor.name == self._click_feedback_actor:
