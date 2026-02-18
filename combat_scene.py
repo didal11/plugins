@@ -264,6 +264,14 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
     def _casting_boxes(self, actor: Combatant, width: int = 5) -> str:
         return actor.cast_progress_boxes(self.engine.current_tick, width=width)
 
+    def _actor_status_overlay(self, actor: Combatant) -> tuple[Optional[str], Optional[str]]:
+        if actor.pending_action:
+            action_label = self.engine.action_defs[actor.pending_action].label
+            return f"{action_label} 캐스팅", self._casting_boxes(actor)
+        if actor.last_action and actor.last_action != "대기":
+            return f"{actor.last_action} 실행", None
+        return None, None
+
     def on_draw(self) -> None:
         if not self._should_render:
             return
@@ -311,13 +319,10 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
                 arcade.draw_circle_outline(cx, cy, self.tile_px * 0.40, arcade.color.YELLOW, 4)
             arcade.draw_circle_filled(cx, cy, self.tile_px * 0.30, body)
             arcade.draw_text(actor.icon, cx, cy - 8, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
-            show_click_hint = actor.name == self._click_feedback_actor and self._click_feedback_text
-            show_casting = bool(actor.pending_action)
-            show_temp_hint = bool(show_click_hint and self._click_feedback_remain > 0)
-
-            if show_casting:
+            status_label, cast_boxes = self._actor_status_overlay(actor)
+            if cast_boxes:
                 arcade.draw_text(
-                    self._casting_boxes(actor),
+                    cast_boxes,
                     cx,
                     cy + self.tile_px * 0.36,
                     arcade.color.LIGHT_GRAY,
@@ -325,9 +330,9 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
                     anchor_x="center",
                     font_name=self.selected_font,
                 )
-            if show_casting or show_temp_hint:
+            if status_label:
                 arcade.draw_text(
-                    self._click_feedback_text,
+                    status_label,
                     cx,
                     cy + self.tile_px * 0.50,
                     arcade.color.YELLOW,
