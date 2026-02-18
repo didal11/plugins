@@ -197,9 +197,10 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
 
         self._battle_done = False
         self._selected_player_name: Optional[str] = None
-        self._player_action_mode: Dict[str, str] = {
-            actor.name: "attack" for actor in self.engine.actors if actor.team == "player"
-        }
+        self._click_feedback_actor: Optional[str] = None
+        self._click_feedback_text: Optional[str] = None
+        self._click_feedback_seconds: float = 1.2
+        self._click_feedback_remain: float = 0.0
 
         # on_draw 콜백 자체는 프레임마다 들어오지만, 실제 무거운 렌더 블록은 1초마다만 수행한다.
         self.draw_interval_seconds = 1.0
@@ -273,23 +274,32 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
                 arcade.draw_circle_outline(cx, cy, self.tile_px * 0.40, arcade.color.YELLOW, 4)
             arcade.draw_circle_filled(cx, cy, self.tile_px * 0.30, body)
             arcade.draw_text(actor.icon, cx, cy - 8, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
-            arcade.draw_text(
-                self._cooldown_boxes(actor),
-                cx,
-                cy + self.tile_px * 0.36,
-                arcade.color.LIGHT_GRAY,
-                11,
-                anchor_x="center",
-                font_name=self.selected_font,
-            )
+            if actor.name == self._click_feedback_actor and self._click_feedback_text and self._click_feedback_remain > 0:
+                arcade.draw_text(
+                    self._cooldown_boxes(actor),
+                    cx,
+                    cy + self.tile_px * 0.36,
+                    arcade.color.LIGHT_GRAY,
+                    11,
+                    anchor_x="center",
+                    font_name=self.selected_font,
+                )
+                arcade.draw_text(
+                    self._click_feedback_text,
+                    cx,
+                    cy + self.tile_px * 0.50,
+                    arcade.color.YELLOW,
+                    12,
+                    anchor_x="center",
+                    font_name=self.selected_font,
+                )
 
         y = 640
         arcade.draw_text("상태", 860, y, arcade.color.WHITE, 16, font_name=self.selected_font)
         y -= 26
         for actor in sorted(self.engine.actors, key=lambda x: (x.team, x.name)):
             state = "DOWN" if not actor.alive else f"HP:{actor.hp:02} ({actor.x},{actor.y})"
-            mode = self._player_action_mode.get(actor.name, "-") if actor.team == "player" else "AI"
-            row = f"{actor.icon} {actor.name:<8} [{actor.team}] {state} 모드:{mode}"
+            row = f"{actor.icon} {actor.name:<8} [{actor.team}] {state}"
             color = arcade.color.LIGHT_GRAY if actor.alive else arcade.color.DARK_GRAY
             arcade.draw_text(row, 860, y, color, 12, font_name=self.selected_font)
             y -= 20
@@ -301,25 +311,25 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             log_y -= 18
 
         selected = self._selected_player_name
-        attack_active = bool(selected and self._player_action_mode.get(selected) == "attack")
-        move_active = bool(selected and self._player_action_mode.get(selected) == "move")
+        attack_active = bool(selected)
+        move_active = bool(selected)
 
         attack_color = arcade.color.DARK_SPRING_GREEN if attack_active else arcade.color.DARK_SLATE_GRAY
         move_color = arcade.color.INDIGO if move_active else arcade.color.DARK_SLATE_GRAY
         arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.attack_btn), attack_color)
         arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.move_btn), move_color)
-        arcade.draw_text("공격 모드", 1000, 178, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
-        arcade.draw_text("이동 모드", 1000, 88, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
+        arcade.draw_text("공격 실행", 1000, 178, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
+        arcade.draw_text("이동 실행", 1000, 88, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
 
         if self._battle_done:
             winner = self.engine.winner_team()
             msg = f"전투 종료 - 승리 팀: {winner}" if winner else "전투 종료 - 무승부"
             arcade.draw_text(msg, 860, 20, arcade.color.YELLOW, 18, font_name=self.selected_font)
         elif selected:
-            msg = f"선택: {selected} / 클릭으로 모드 변경(실시간 진행)"
+            msg = f"선택: {selected} / 버튼 클릭 시 즉시 행동 실행"
             arcade.draw_text(msg, 860, 20, arcade.color.YELLOW, 14, font_name=self.selected_font)
         else:
-            arcade.draw_text("플레이어 NPC를 클릭해 행동 모드를 선택하세요", 860, 20, arcade.color.LIGHT_GRAY, 14, font_name=self.selected_font)
+            arcade.draw_text("플레이어 NPC를 클릭한 뒤 행동 버튼을 누르세요", 860, 20, arcade.color.LIGHT_GRAY, 14, font_name=self.selected_font)
 
     def on_update(self, delta_time: float) -> None:
         if self._battle_done:
@@ -329,6 +339,12 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         if self._draw_acc >= self.draw_interval_seconds:
             self._draw_acc = 0.0
             self._should_render = True
+
+        if self._click_feedback_remain > 0:
+            self._click_feedback_remain = max(0.0, self._click_feedback_remain - delta_time)
+            if self._click_feedback_remain == 0.0:
+                self._click_feedback_actor = None
+                self._click_feedback_text = None
 
         self._acc += delta_time
         if self._acc < self.tick_seconds:
@@ -341,15 +357,12 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
 
         ready = self.engine.ready_combatants()
         for actor in ready:
-            if not actor.alive:
+            if not actor.alive or actor.team == "player":
                 continue
             enemies = self.engine.alive_enemies(actor)
             if not enemies:
                 break
-            if actor.team == "player":
-                action = self._player_action_mode.get(actor.name, "attack")
-            else:
-                action = self.engine.choose_npc_action(actor, enemies)
+            action = self.engine.choose_npc_action(actor, enemies)
             self.engine.execute_action(actor, action)
             if self.engine.is_battle_over():
                 self._battle_done = True
@@ -363,10 +376,10 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             return
 
         if self._contains(self.attack_btn, x, y) and self._selected_player_name:
-            self._player_action_mode[self._selected_player_name] = "attack"
+            self._trigger_player_action("attack")
             return
         if self._contains(self.move_btn, x, y) and self._selected_player_name:
-            self._player_action_mode[self._selected_player_name] = "move"
+            self._trigger_player_action("move")
             return
 
         tile_x = int((x - self.grid_origin_x) // self.tile_px)
@@ -377,7 +390,38 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         for actor in self.engine.actors:
             if actor.team == "player" and actor.alive and actor.x == tile_x and actor.y == tile_y:
                 self._selected_player_name = actor.name
+                self._set_click_feedback(actor.name, f"선택: {actor.name}")
                 return
+
+    def _trigger_player_action(self, action_key: str) -> None:
+        actor = self._selected_player()
+        if actor is None:
+            return
+        if actor.next_action_tick > self.engine.current_tick:
+            wait = actor.next_action_tick - self.engine.current_tick
+            self._set_click_feedback(actor.name, f"대기 {wait}틱")
+            return
+
+        self.engine.execute_action(actor, action_key)
+        action_label = self.engine.action_defs[action_key].label
+        self._set_click_feedback(actor.name, f"{action_label} 클릭")
+        self._should_render = True
+        if self.engine.is_battle_over():
+            self._battle_done = True
+
+    def _selected_player(self) -> Optional[Combatant]:
+        if not self._selected_player_name:
+            return None
+        for actor in self.engine.actors:
+            if actor.name == self._selected_player_name and actor.team == "player" and actor.alive:
+                return actor
+        return None
+
+    def _set_click_feedback(self, actor_name: str, text: str) -> None:
+        self._click_feedback_actor = actor_name
+        self._click_feedback_text = text
+        self._click_feedback_remain = self._click_feedback_seconds
+        self._should_render = True
 
     @staticmethod
     def _rect_points(rect: arcade.LRBT) -> tuple[float, float, float, float]:
