@@ -30,6 +30,7 @@ from editable_data import (
 from ldtk_integration import (
     GameEntity,
     GameWorld,
+    NpcStatEntity,
     ResourceEntity,
     StructureEntity,
     WorkbenchEntity,
@@ -149,6 +150,10 @@ class JsonNpc(BaseModel):
     job: str = "농부"
     x: int | None = None
     y: int | None = None
+    hp: int | None = None
+    strength: int | None = None
+    agility: int | None = None
+    focus: int | None = None
 
 
 class RenderNpc(BaseModel):
@@ -158,6 +163,10 @@ class RenderNpc(BaseModel):
     job: str
     x: int
     y: int
+    hp: int = 10
+    strength: int = 1
+    agility: int = 1
+    focus: int = 1
 
 
 class SimulationNpcState(BaseModel):
@@ -1117,6 +1126,15 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
 
     rng = Random(42)
     remaining_candidates = list(spawn_candidates)
+    npc_stats_by_name: Dict[str, NpcStatEntity] = {}
+    npc_stats_by_tile: Dict[Tuple[int, int], NpcStatEntity] = {}
+    for entity in world.entities:
+        if not isinstance(entity, NpcStatEntity):
+            continue
+        npc_stats_by_tile[(entity.x, entity.y)] = entity
+        entity_name_key = entity.name.strip().lower()
+        if entity_name_key:
+            npc_stats_by_name[entity_name_key] = entity
 
     out: List[RenderNpc] = []
     for npc in raw_npcs:
@@ -1135,7 +1153,27 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
         y = npc.y if npc.y is not None else default_y
         x = min(max(0, int(x)), width_tiles - 1)
         y = min(max(0, int(y)), height_tiles - 1)
-        out.append(RenderNpc(name=npc.name, job=npc.job, x=x, y=y))
+        ldtk_stat = npc_stats_by_name.get(npc.name.strip().lower())
+        if ldtk_stat is None:
+            ldtk_stat = npc_stats_by_tile.get((x, y))
+
+        hp = int(npc.hp if npc.hp is not None else (ldtk_stat.hp if ldtk_stat else 10))
+        strength = int(npc.strength if npc.strength is not None else (ldtk_stat.strength if ldtk_stat else 1))
+        agility = int(npc.agility if npc.agility is not None else (ldtk_stat.agility if ldtk_stat else 1))
+        focus = int(npc.focus if npc.focus is not None else (ldtk_stat.focus if ldtk_stat else 1))
+
+        out.append(
+            RenderNpc(
+                name=npc.name,
+                job=npc.job,
+                x=x,
+                y=y,
+                hp=max(1, hp),
+                strength=max(0, strength),
+                agility=max(0, agility),
+                focus=max(0, focus),
+            )
+        )
     return out
 
 
