@@ -25,6 +25,7 @@ from editable_data import (
     load_action_defs,
     load_item_defs,
     load_job_defs,
+    load_monster_templates,
     load_npc_templates,
 )
 from ldtk_integration import (
@@ -220,12 +221,14 @@ class SimulationRuntime:
         self,
         world: GameWorld,
         npcs: List[RenderNpc],
+        monsters: List[RenderNpc] | None = None,
         tick_seconds: float = 0.1,
         seed: int = 42,
         use_torch_for_npc: bool = False,
     ):
         self.world = world
         self.npcs = npcs
+        self.monsters = monsters or []
         self.tick_seconds = max(0.1, float(tick_seconds))
         self._accumulator = 0.0
         self.ticks = 0
@@ -1060,6 +1063,9 @@ class SimulationRuntime:
         for npc in fallback_random:
             self._step_random(npc, width_tiles, height_tiles)
 
+        for monster in self.monsters:
+            self._step_random(monster, width_tiles, height_tiles)
+
     def advance(self, delta_time: float) -> None:
         self._accumulator += max(0.0, float(delta_time))
         while self._accumulator >= self.tick_seconds:
@@ -1202,11 +1208,81 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
     return out
 
 
+def _build_render_monsters(world: GameWorld) -> List[RenderNpc]:
+    raw_monsters = [JsonNpc.model_validate(row) for row in load_monster_templates() if isinstance(row, dict)]
+    if not raw_monsters:
+        return []
+
+    width_tiles = max(1, world.width_px // world.grid_size)
+    height_tiles = max(1, world.height_px // world.grid_size)
+    blocked_tiles = {tuple(row) for row in world.blocked_tiles}
+
+    spawn_candidates = [
+        (x, y)
+        for y in range(height_tiles)
+        for x in range(width_tiles)
+        if (x, y) not in blocked_tiles
+    ]
+    if not spawn_candidates:
+        spawn_candidates = [(0, 0)]
+
+    rng = Random(4242)
+    remaining_candidates = list(spawn_candidates)
+    npc_stats_by_name: Dict[str, NpcStatEntity] = {}
+    npc_stats_by_tile: Dict[Tuple[int, int], NpcStatEntity] = {}
+    for entity in world.entities:
+        if not isinstance(entity, NpcStatEntity):
+            continue
+        npc_stats_by_tile[(entity.x, entity.y)] = entity
+        entity_name_key = entity.name.strip().lower()
+        if entity_name_key:
+            npc_stats_by_name[entity_name_key] = entity
+
+    out: List[RenderNpc] = []
+    for monster in raw_monsters:
+        if monster.x is None or monster.y is None:
+            if remaining_candidates:
+                default_x, default_y = remaining_candidates.pop(rng.randrange(len(remaining_candidates)))
+            else:
+                default_x, default_y = rng.choice(spawn_candidates)
+        else:
+            default_x, default_y = monster.x, monster.y
+
+        x = monster.x if monster.x is not None else default_x
+        y = monster.y if monster.y is not None else default_y
+        x = min(max(0, int(x)), width_tiles - 1)
+        y = min(max(0, int(y)), height_tiles - 1)
+
+        ldtk_stat = npc_stats_by_name.get(monster.name.strip().lower())
+        if ldtk_stat is None:
+            ldtk_stat = npc_stats_by_tile.get((x, y))
+
+        hp = int(monster.hp if monster.hp is not None else (ldtk_stat.hp if ldtk_stat else 10))
+        strength = int(monster.strength if monster.strength is not None else (ldtk_stat.strength if ldtk_stat else 1))
+        agility = int(monster.agility if monster.agility is not None else (ldtk_stat.agility if ldtk_stat else 1))
+        focus = int(monster.focus if monster.focus is not None else (ldtk_stat.focus if ldtk_stat else 1))
+
+        out.append(
+            RenderNpc(
+                name=monster.name,
+                job=monster.job,
+                x=x,
+                y=y,
+                hp=max(1, hp),
+                strength=max(0, strength),
+                agility=max(0, agility),
+                focus=max(0, focus),
+            )
+        )
+    return out
+
+
 def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
     import arcade
 
     npcs = _build_render_npcs(world)
-    simulation = SimulationRuntime(world, npcs, use_torch_for_npc=config.use_torch_for_npc)
+    monsters = _build_render_monsters(world)
+    simulation = SimulationRuntime(world, npcs, monsters, use_torch_for_npc=config.use_torch_for_npc)
     selected_font = _pick_font_name()
     render_entities = _collect_render_entities(world.entities)
 
@@ -1413,6 +1489,12 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action_display})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
 
+                for monster in monsters:
+                    mx = monster.x * tile + tile / 2
+                    my = self._tile_center_y(monster.y)
+                    arcade.draw_circle_filled(mx, my, max(4, tile * 0.22), (235, 92, 92, 255))
+                    arcade.draw_text(monster.name, mx + 5, my - 12, (245, 188, 188, 255), 9, font_name=selected_font)
+
                 for entity in render_entities:
                     ex = entity.x * tile + tile / 2
                     ey = self._tile_center_y(entity.y)
@@ -1607,6 +1689,12 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                         px = map_left + ((npc.x + 0.5) * cell_size)
                         py = map_bottom + ((height_tiles - npc.y - 0.5) * cell_size)
                         arcade.draw_circle_filled(px, py, max(1.2, cell_size * 0.2), (248, 226, 110, 255))
+
+                    for monster in monsters:
+                        px = map_left + ((monster.x + 0.5) * cell_size)
+                        py = map_bottom + ((height_tiles - monster.y - 0.5) * cell_size)
+                        half = max(1.0, cell_size * 0.18)
+                        arcade.draw_lrbt_rectangle_filled(px - half, px + half, py - half, py + half, (235, 92, 92, 255))
 
                     arcade.draw_lrbt_rectangle_outline(
                         map_left,
