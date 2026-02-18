@@ -134,6 +134,15 @@ class StructureEntity(GameEntity):
     current_duration: int
 
 
+class NpcStatEntity(GameEntity):
+    model_config = ConfigDict(extra="forbid")
+
+    hp: int
+    strength: int
+    agility: int
+    focus: int
+
+
 class GameTile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -225,6 +234,22 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
             min_duration=min_duration,
             max_duration=max_duration,
             current_duration=current_duration,
+        )
+
+    if "npc" in tags or key == "stat":
+        hp = max(1, int(f.get("hp", 10)))
+        strength = max(0, int(f.get("str", f.get("strength", 1))))
+        agility = max(0, int(f.get("agi", f.get("agility", 1))))
+        focus = max(0, int(f.get("foc", f.get("focus", 1))))
+        return NpcStatEntity(
+            key=key,
+            name=name,
+            x=tx,
+            y=ty,
+            hp=hp,
+            strength=strength,
+            agility=agility,
+            focus=focus,
         )
 
     max_q = max(1, int(f.get("max_quantity", f.get("maxQuantity", 1))))

@@ -122,6 +122,80 @@ def test_build_render_npcs_prefers_town_region(monkeypatch):
     assert 2 <= npcs[0].y <= 3
 
 
+def test_build_render_npcs_attaches_ldtk_npc_stat_by_name(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_npc_templates",
+        lambda: [{"name": "민수", "job": "농부", "x": 1, "y": 1}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="World",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.NpcStatEntity(
+                key="stat",
+                name="민수",
+                x=3,
+                y=3,
+                hp=44,
+                strength=6,
+                agility=4,
+                focus=2,
+            )
+        ],
+        tiles=[],
+    )
+
+    npcs = village_sim._build_render_npcs(world)
+    assert len(npcs) == 1
+    assert npcs[0].hp == 44
+    assert npcs[0].strength == 6
+    assert npcs[0].agility == 4
+    assert npcs[0].focus == 2
+
+
+def test_build_render_npcs_template_stats_override_ldtk(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_npc_templates",
+        lambda: [{"name": "민수", "job": "농부", "x": 1, "y": 1, "hp": 99, "strength": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="World",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.NpcStatEntity(
+                key="stat",
+                name="민수",
+                x=1,
+                y=1,
+                hp=44,
+                strength=6,
+                agility=4,
+                focus=2,
+            )
+        ],
+        tiles=[],
+    )
+
+    npcs = village_sim._build_render_npcs(world)
+    assert len(npcs) == 1
+    assert npcs[0].hp == 99
+    assert npcs[0].strength == 10
+    assert npcs[0].agility == 4
+    assert npcs[0].focus == 2
+
+
 def test_simulation_runtime_uses_daily_planning_for_actions(monkeypatch):
     import village_sim
 

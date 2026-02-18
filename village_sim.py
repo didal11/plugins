@@ -30,6 +30,7 @@ from editable_data import (
 from ldtk_integration import (
     GameEntity,
     GameWorld,
+    NpcStatEntity,
     ResourceEntity,
     StructureEntity,
     WorkbenchEntity,
@@ -120,6 +121,31 @@ def _pick_entity_near_world_point(
     return nearest
 
 
+def _pick_npc_near_world_point(
+    npcs: List[RenderNpc],
+    world_x: float,
+    world_y: float,
+    *,
+    tile_size: int,
+    world_height_px: int,
+) -> RenderNpc | None:
+    threshold = max(8.0, float(tile_size) * 0.55)
+    threshold_sq = threshold * threshold
+
+    nearest: RenderNpc | None = None
+    nearest_sq = float("inf")
+    for npc in npcs:
+        nx = npc.x * tile_size + tile_size / 2
+        ny = world_height_px - (npc.y * tile_size + tile_size / 2)
+        dist_sq = ((float(world_x) - nx) ** 2) + ((float(world_y) - ny) ** 2)
+        if dist_sq > threshold_sq:
+            continue
+        if dist_sq < nearest_sq:
+            nearest_sq = dist_sq
+            nearest = npc
+    return nearest
+
+
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -149,6 +175,10 @@ class JsonNpc(BaseModel):
     job: str = "농부"
     x: int | None = None
     y: int | None = None
+    hp: int | None = None
+    strength: int | None = None
+    agility: int | None = None
+    focus: int | None = None
 
 
 class RenderNpc(BaseModel):
@@ -158,6 +188,10 @@ class RenderNpc(BaseModel):
     job: str
     x: int
     y: int
+    hp: int = 10
+    strength: int = 1
+    agility: int = 1
+    focus: int = 1
 
 
 class SimulationNpcState(BaseModel):
@@ -1117,6 +1151,15 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
 
     rng = Random(42)
     remaining_candidates = list(spawn_candidates)
+    npc_stats_by_name: Dict[str, NpcStatEntity] = {}
+    npc_stats_by_tile: Dict[Tuple[int, int], NpcStatEntity] = {}
+    for entity in world.entities:
+        if not isinstance(entity, NpcStatEntity):
+            continue
+        npc_stats_by_tile[(entity.x, entity.y)] = entity
+        entity_name_key = entity.name.strip().lower()
+        if entity_name_key:
+            npc_stats_by_name[entity_name_key] = entity
 
     out: List[RenderNpc] = []
     for npc in raw_npcs:
@@ -1135,7 +1178,27 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
         y = npc.y if npc.y is not None else default_y
         x = min(max(0, int(x)), width_tiles - 1)
         y = min(max(0, int(y)), height_tiles - 1)
-        out.append(RenderNpc(name=npc.name, job=npc.job, x=x, y=y))
+        ldtk_stat = npc_stats_by_name.get(npc.name.strip().lower())
+        if ldtk_stat is None:
+            ldtk_stat = npc_stats_by_tile.get((x, y))
+
+        hp = int(npc.hp if npc.hp is not None else (ldtk_stat.hp if ldtk_stat else 10))
+        strength = int(npc.strength if npc.strength is not None else (ldtk_stat.strength if ldtk_stat else 1))
+        agility = int(npc.agility if npc.agility is not None else (ldtk_stat.agility if ldtk_stat else 1))
+        focus = int(npc.focus if npc.focus is not None else (ldtk_stat.focus if ldtk_stat else 1))
+
+        out.append(
+            RenderNpc(
+                name=npc.name,
+                job=npc.job,
+                x=x,
+                y=y,
+                hp=max(1, hp),
+                strength=max(0, strength),
+                agility=max(0, agility),
+                focus=max(0, focus),
+            )
+        )
     return out
 
 
@@ -1155,9 +1218,11 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.camera.position = (self.state.x, self.state.y)
             self._keys: dict[int, bool] = {}
             self.selected_entity: GameEntity | None = None
+            self.selected_npc: RenderNpc | None = None
             self.last_click_world: tuple[float, float] | None = None
             self.show_board_modal = False
             self.show_item_modal = False
+            self.show_npc_modal = False
             self.board_modal_tab = "issues"
             self._sync_camera_after_viewport_change()
 
@@ -1246,10 +1311,17 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     self.show_board_modal = not self.show_board_modal
                     if self.show_board_modal:
                         self.show_item_modal = False
+                        self.show_npc_modal = False
+                elif self.selected_npc is not None:
+                    self.show_npc_modal = not self.show_npc_modal
+                    if self.show_npc_modal:
+                        self.show_item_modal = False
+                        self.show_board_modal = False
                 elif self.selected_entity is None:
                     self.show_item_modal = not self.show_item_modal
                     if self.show_item_modal:
                         self.show_board_modal = False
+                        self.show_npc_modal = False
             elif key == arcade.key.TAB and self.show_board_modal:
                 order = ["issues", "minimap", "known_resources"]
                 try:
@@ -1289,12 +1361,22 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 tile_size=world.grid_size,
                 world_height_px=world.height_px,
             )
+            selected_npc = _pick_npc_near_world_point(
+                npcs,
+                world_x,
+                world_y,
+                tile_size=world.grid_size,
+                world_height_px=world.height_px,
+            )
             self.selected_entity = selected
+            self.selected_npc = selected_npc
             if selected is None or not _is_guild_board_entity(selected):
                 self.show_board_modal = False
                 self.board_modal_tab = "issues"
-            if selected is not None:
+            if selected is not None or selected_npc is not None:
                 self.show_item_modal = False
+            if selected_npc is None:
+                self.show_npc_modal = False
 
         def on_key_release(self, key: int, modifiers: int):
             self._keys[key] = False
@@ -1325,6 +1407,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     nx = npc.x * tile + tile / 2
                     ny = self._tile_center_y(npc.y)
                     arcade.draw_circle_filled(nx, ny, max(4, tile * 0.24), _npc_color(npc.job))
+                    if self.selected_npc is npc:
+                        arcade.draw_circle_outline(nx, ny, max(6, tile * 0.42), (255, 215, 0, 255), 2)
                     sim_state = simulation.state_by_name.get(npc.name)
                     label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action_display})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
@@ -1343,9 +1427,14 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     arcade.draw_line(cx - half, cy, cx + half, cy, (255, 238, 88, 220), 2)
                     arcade.draw_line(cx, cy - half, cx, cy + half, (255, 238, 88, 220), 2)
 
-            selected_name = "없음" if self.selected_entity is None else self.selected_entity.name
+            if self.selected_npc is not None:
+                selected_name = f"NPC:{self.selected_npc.name}"
+            elif self.selected_entity is not None:
+                selected_name = self.selected_entity.name
+            else:
+                selected_name = "없음"
             hud = (
-                f"WASD/Arrow: move | Q/E: zoom | F11: fullscreen | Click: 선택 | I: 게시판/아이템 모달 | "
+                f"WASD/Arrow: move | Q/E: zoom | F11: fullscreen | Click: 선택 | I: 게시판/NPC/아이템 모달 | "
                 f"선택:{selected_name} | {simulation.display_clock_by_interval(30)}"
             )
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
@@ -1368,6 +1457,36 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                         bottom + modal_h - 84 - (idx * 22),
                         (230, 230, 230, 255),
                         11,
+                        font_name=selected_font,
+                    )
+
+            if self.show_npc_modal and self.selected_npc is not None:
+                modal_w = max(260.0, self.width / 3.0)
+                modal_h = float(self.height)
+                left = self.width - modal_w
+                bottom = 0.0
+                arcade.draw_lrbt_rectangle_filled(0, self.width, 0, self.height, (0, 0, 0, 110))
+                arcade.draw_lrbt_rectangle_filled(left, left + modal_w, bottom, bottom + modal_h, (28, 32, 40, 245))
+                arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
+                arcade.draw_text("NPC 정보", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
+                arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
+                lines = [
+                    f"name: {self.selected_npc.name}",
+                    f"job: {self.selected_npc.job}",
+                    f"x: {int(self.selected_npc.x)}",
+                    f"y: {int(self.selected_npc.y)}",
+                    f"hp: {int(self.selected_npc.hp)}",
+                    f"strength: {int(self.selected_npc.strength)}",
+                    f"agility: {int(self.selected_npc.agility)}",
+                    f"focus: {int(self.selected_npc.focus)}",
+                ]
+                for idx, line in enumerate(lines):
+                    arcade.draw_text(
+                        line,
+                        left + 18,
+                        bottom + modal_h - 84 - (idx * 24),
+                        (230, 230, 230, 255),
+                        12,
                         font_name=selected_font,
                     )
 
