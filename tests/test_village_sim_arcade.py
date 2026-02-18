@@ -1269,3 +1269,75 @@ def test_mark_cell_discovered_updates_known_only_when_adjacent_known_exists():
     sim._mark_cell_discovered((4, 4), force=True)
     sim._mark_cell_discovered((5, 5))
     assert (5, 5) in sim.guild_board_exploration_state.known_cells
+
+
+def test_non_town_level_observes_visible_entities_even_when_not_exploring(monkeypatch):
+    import village_sim
+    from ldtk_integration import GameEntity
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[GameEntity(key="monster_rat", name="쥐 몬스터", x=2, y=2)],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=2, y=2)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+    state.current_action = "농사"
+    state.current_action_display = "농사"
+    state.decision_ticks_until_check = 1
+
+    sim.tick_once()
+
+    buffer = sim.exploration_buffer_by_name["A"]
+    assert ("monster_rat", (2, 2)) in buffer.known_monster_discoveries
+
+
+def test_town_level_does_not_observe_visible_entities_without_exploration(monkeypatch):
+    import village_sim
+    from ldtk_integration import GameEntity
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 10}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="Town",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[GameEntity(key="monster_rat", name="쥐 몬스터", x=2, y=2)],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=2, y=2)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+    state.current_action = "농사"
+    state.current_action_display = "농사"
+    state.decision_ticks_until_check = 1
+
+    sim.tick_once()
+
+    buffer = sim.exploration_buffer_by_name["A"]
+    assert ("monster_rat", (2, 2)) not in buffer.known_monster_discoveries

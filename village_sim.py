@@ -217,6 +217,9 @@ class SimulationRuntime:
     TICKS_PER_HOUR = 60 // TICK_MINUTES
     DECISION_INTERVAL_TICKS = 10
 
+    def _is_current_level_town(self) -> bool:
+        return self.world.level_id.strip().lower() == "town"
+
     def __init__(
         self,
         world: GameWorld,
@@ -991,6 +994,9 @@ class SimulationRuntime:
 
             state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
             state.ticks_remaining = max(0, state.ticks_remaining - 1)
+
+            if not self._is_current_level_town():
+                self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
 
             if state.current_action == "식사" and self.dining_tiles:
                 key = ("meal", tuple(sorted(set(self.dining_tiles))))
