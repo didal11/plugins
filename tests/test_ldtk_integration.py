@@ -322,3 +322,52 @@ def test_build_world_can_merge_all_levels_using_world_offsets(tmp_path: Path):
 
     coords = sorted((e.key, e.x, e.y) for e in world.entities)
     assert coords == [("ore", 3, 2), ("tree", 0, 0)]
+
+
+@pytest.mark.skipif(not HAS_DEPS, reason="requires pydantic and orjson")
+def test_build_world_parses_npc_tagged_stat_entity(tmp_path: Path):
+    sample = {
+        "levels": [
+            {
+                "identifier": "World",
+                "worldGridSize": 16,
+                "pxWid": 64,
+                "pxHei": 64,
+                "layerInstances": [
+                    {
+                        "__identifier": "Entities",
+                        "__type": "Entities",
+                        "entityInstances": [
+                            {
+                                "__identifier": "Stat",
+                                "px": [16, 32],
+                                "__tags": ["NPC"],
+                                "fieldInstances": [
+                                    {"__identifier": "name", "__value": "민수"},
+                                    {"__identifier": "hp", "__value": 55},
+                                    {"__identifier": "str", "__value": 7},
+                                    {"__identifier": "agi", "__value": 5},
+                                    {"__identifier": "foc", "__value": 3},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    ldtk_file = tmp_path / "sample_npc_stat.ldtk"
+    ldtk_file.write_text(json.dumps(sample), encoding="utf-8")
+
+    world = build_world_from_ldtk(ldtk_file)
+    rows = world_entities_as_rows(world)
+
+    assert len(rows) == 1
+    assert rows[0]["key"] == "stat"
+    assert rows[0]["name"] == "민수"
+    assert rows[0]["x"] == 1
+    assert rows[0]["y"] == 2
+    assert rows[0]["hp"] == 55
+    assert rows[0]["strength"] == 7
+    assert rows[0]["agility"] == 5
+    assert rows[0]["focus"] == 3
