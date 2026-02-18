@@ -305,7 +305,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             if not actor.alive:
                 continue
             cx, cy = self._tile_center(actor.x, actor.y)
-            is_selected = actor.name == self._selected_actor_name
+            is_selected = actor.name == self._selected_player_name
             body = arcade.color.BRIGHT_NAVY_BLUE if actor.team == "player" else arcade.color.DARK_PASTEL_RED
             if is_selected:
                 arcade.draw_circle_outline(cx, cy, self.tile_px * 0.40, arcade.color.YELLOW, 4)
