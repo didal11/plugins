@@ -18,7 +18,6 @@ from editable_data import (
     load_npc_templates,
     load_races,
     load_sim_settings,
-    save_item_defs,
     save_job_defs,
     save_action_defs,
     save_monster_templates,
@@ -141,123 +140,26 @@ class EditorApp(tk.Tk):
         self.item_display = ttk.Entry(right, width=44)
         self.item_key.grid(row=0, column=1, sticky="w", pady=2)
         self.item_display.grid(row=1, column=1, sticky="w", pady=2)
-
-        self.item_is_craftable = tk.BooleanVar(value=False)
-        self.item_is_gatherable = tk.BooleanVar(value=False)
-        ttk.Checkbutton(right, text="제작 가능", variable=self.item_is_craftable).grid(row=2, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(right, text="채집 가능", variable=self.item_is_gatherable).grid(row=2, column=1, sticky="w", pady=2)
-
-        ttk.Label(right, text="제작 재료(JSON)").grid(row=3, column=0, sticky="nw", pady=2)
-        self.item_craft_inputs = tk.Text(right, width=40, height=4)
-        self.item_craft_inputs.grid(row=3, column=1, sticky="w", pady=2)
-
-        self.item_numbers: dict[str, ttk.Entry] = {}
-        numeric_fields = [
-            ("craft_time", "제작 시간"),
-            ("craft_fatigue", "제작 피로"),
-            ("craft_amount", "제작 수량"),
-            ("gather_time", "채집 시간"),
-            ("gather_amount", "채집 수량"),
-            ("gather_fatigue", "채집 피로"),
-        ]
-        row_idx = 4
-        for key, label in numeric_fields:
-            ttk.Label(right, text=label).grid(row=row_idx, column=0, sticky="w", pady=2)
-            entry = ttk.Entry(right, width=44)
-            entry.grid(row=row_idx, column=1, sticky="w", pady=2)
-            self.item_numbers[key] = entry
-            row_idx += 1
-
-        ttk.Label(right, text="제작 설비").grid(row=row_idx, column=0, sticky="w", pady=2)
-        self.item_craft_station = ttk.Entry(right, width=44)
-        self.item_craft_station.grid(row=row_idx, column=1, sticky="w", pady=2)
-        row_idx += 1
-
-        ttk.Label(right, text="채집 장소").grid(row=row_idx, column=0, sticky="w", pady=2)
-        self.item_gather_spot = ttk.Entry(right, width=44)
-        self.item_gather_spot.grid(row=row_idx, column=1, sticky="w", pady=2)
-
-        btns = ttk.Frame(right)
-        btns.grid(row=row_idx + 1, column=0, columnspan=2, sticky="w", pady=10)
-        ttk.Button(btns, text="추가", command=self._add_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="수정", command=self._update_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="삭제", command=self._delete_item).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=self._save_items).pack(side="left", padx=3)
-
-    def _item_from_form(self) -> dict[str, object] | None:
-        try:
-            return {
-                "key": self.item_key.get().strip(),
-                "display": self.item_display.get().strip(),
-                "is_craftable": bool(self.item_is_craftable.get()),
-                "is_gatherable": bool(self.item_is_gatherable.get()),
-                "craft_inputs": json.loads(self.item_craft_inputs.get("1.0", "end").strip() or "{}"),
-                "craft_time": int(self.item_numbers["craft_time"].get().strip() or "0"),
-                "craft_fatigue": int(self.item_numbers["craft_fatigue"].get().strip() or "0"),
-                "craft_station": self.item_craft_station.get().strip(),
-                "craft_amount": int(self.item_numbers["craft_amount"].get().strip() or "0"),
-                "gather_time": int(self.item_numbers["gather_time"].get().strip() or "0"),
-                "gather_amount": int(self.item_numbers["gather_amount"].get().strip() or "0"),
-                "gather_fatigue": int(self.item_numbers["gather_fatigue"].get().strip() or "0"),
-                "gather_spot": self.item_gather_spot.get().strip(),
-            }
-        except Exception:
-            messagebox.showwarning("경고", "아이템 입력값(JSON/숫자)을 확인하세요.")
-            return None
+        self.item_key.configure(state="readonly")
+        self.item_display.configure(state="readonly")
+        ttk.Label(
+            right,
+            text="아이템 정의는 map.ldtk 의 item 태그 엔티티에서 자동 로드됩니다.",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 2))
 
     def _on_item_select(self, _=None) -> None:
         sel = self.item_list.curselection()
         if not sel:
             return
         row = self.items[sel[0]]
+        self.item_key.configure(state="normal")
         self.item_key.delete(0, "end")
         self.item_key.insert(0, str(row.get("key", "")))
+        self.item_key.configure(state="readonly")
+        self.item_display.configure(state="normal")
         self.item_display.delete(0, "end")
         self.item_display.insert(0, str(row.get("display", "")))
-        self.item_is_craftable.set(bool(row.get("is_craftable", False)))
-        self.item_is_gatherable.set(bool(row.get("is_gatherable", False)))
-        self.item_craft_inputs.delete("1.0", "end")
-        self.item_craft_inputs.insert("1.0", json.dumps(row.get("craft_inputs", {}), ensure_ascii=False, indent=2))
-        for key, entry in self.item_numbers.items():
-            entry.delete(0, "end")
-            entry.insert(0, str(row.get(key, 0)))
-        self.item_craft_station.delete(0, "end")
-        self.item_craft_station.insert(0, str(row.get("craft_station", "")))
-        self.item_gather_spot.delete(0, "end")
-        self.item_gather_spot.insert(0, str(row.get("gather_spot", "")))
-
-    def _add_item(self) -> None:
-        row = self._item_from_form()
-        if not row or not row.get("key") or not row.get("display"):
-            messagebox.showwarning("경고", "아이템 키/표시 이름을 입력하세요.")
-            return
-        self.items.append(row)
-        self.item_list.insert("end", f"{row['key']} ({row['display']})")
-
-    def _update_item(self) -> None:
-        sel = self.item_list.curselection()
-        if not sel:
-            return
-        row = self._item_from_form()
-        if not row or not row.get("key") or not row.get("display"):
-            messagebox.showwarning("경고", "아이템 키/표시 이름을 입력하세요.")
-            return
-        idx = sel[0]
-        self.items[idx] = row
-        self.item_list.delete(idx)
-        self.item_list.insert(idx, f"{row['key']} ({row['display']})")
-
-    def _delete_item(self) -> None:
-        sel = self.item_list.curselection()
-        if not sel:
-            return
-        idx = sel[0]
-        self.item_list.delete(idx)
-        self.items.pop(idx)
-
-    def _save_items(self) -> None:
-        save_item_defs(self.items)
-        messagebox.showinfo("저장 완료", "아이템 데이터를 저장했습니다.")
+        self.item_display.configure(state="readonly")
 
     # ---------- NPC / Monster tabs ----------
     def _build_person_tab(self, tab: ttk.Frame, mode: str) -> None:

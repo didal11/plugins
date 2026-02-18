@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from editable_data import (
     DATA_DIR,
     load_action_defs,
+    load_item_defs,
     load_job_defs,
     load_npc_templates,
 )
@@ -77,6 +78,22 @@ def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
         out.append(f"- {display_action} | 자원:{display_resource} | 수량:{int(row.amount)}")
     return out
 
+
+
+
+def _format_item_catalog_lines() -> List[str]:
+    items = [row for row in load_item_defs() if isinstance(row, dict)]
+    rows = []
+    for row in items:
+        key = str(row.get("key", "")).strip()
+        display = str(row.get("display", "")).strip()
+        if not key:
+            continue
+        rows.append((key, display or key))
+    if not rows:
+        return ["표시할 아이템 정의가 없습니다."]
+    rows.sort(key=lambda row: row[0])
+    return [f"- {display} ({key})" for key, display in rows]
 
 def _pick_entity_near_world_point(
     entities: List[GameEntity],
@@ -1140,6 +1157,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.selected_entity: GameEntity | None = None
             self.last_click_world: tuple[float, float] | None = None
             self.show_board_modal = False
+            self.show_item_modal = False
             self.board_modal_tab = "issues"
             self._sync_camera_after_viewport_change()
 
@@ -1226,6 +1244,12 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             elif key == arcade.key.I:
                 if self.selected_entity is not None and _is_guild_board_entity(self.selected_entity):
                     self.show_board_modal = not self.show_board_modal
+                    if self.show_board_modal:
+                        self.show_item_modal = False
+                elif self.selected_entity is None:
+                    self.show_item_modal = not self.show_item_modal
+                    if self.show_item_modal:
+                        self.show_board_modal = False
             elif key == arcade.key.TAB and self.show_board_modal:
                 order = ["issues", "minimap", "known_resources"]
                 try:
@@ -1269,6 +1293,8 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             if selected is None or not _is_guild_board_entity(selected):
                 self.show_board_modal = False
                 self.board_modal_tab = "issues"
+            if selected is not None:
+                self.show_item_modal = False
 
         def on_key_release(self, key: int, modifiers: int):
             self._keys[key] = False
@@ -1319,10 +1345,31 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
 
             selected_name = "없음" if self.selected_entity is None else self.selected_entity.name
             hud = (
-                f"WASD/Arrow: move | Q/E: zoom | F11: fullscreen | Click: 선택 | I: 게시판 의뢰 보기 | "
+                f"WASD/Arrow: move | Q/E: zoom | F11: fullscreen | Click: 선택 | I: 게시판/아이템 모달 | "
                 f"선택:{selected_name} | {simulation.display_clock_by_interval(30)}"
             )
             arcade.draw_text(hud, 12, self.height - 24, (220, 220, 220, 255), 12, font_name=selected_font)
+
+            if self.show_item_modal:
+                modal_w = max(260.0, self.width / 3.0)
+                modal_h = float(self.height)
+                left = self.width - modal_w
+                bottom = 0.0
+                arcade.draw_lrbt_rectangle_filled(0, self.width, 0, self.height, (0, 0, 0, 110))
+                arcade.draw_lrbt_rectangle_filled(left, left + modal_w, bottom, bottom + modal_h, (28, 32, 40, 245))
+                arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
+                arcade.draw_text("아이템 목록", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
+                arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
+                lines = _format_item_catalog_lines()
+                for idx, line in enumerate(lines[:28]):
+                    arcade.draw_text(
+                        line,
+                        left + 18,
+                        bottom + modal_h - 84 - (idx * 22),
+                        (230, 230, 230, 255),
+                        11,
+                        font_name=selected_font,
+                    )
 
             if self.show_board_modal:
                 # 화면을 세로 3등분했을 때, 오른쪽 1/3을 게시판 모달이 덮도록 배치

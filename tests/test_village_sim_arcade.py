@@ -42,6 +42,32 @@ def test_parse_args_all_levels_flag(monkeypatch):
     assert args.all_levels is True
 
 
+def test_format_item_catalog_lines_uses_defined_items(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_item_defs",
+        lambda: [
+            {"key": "tool", "display": "도구"},
+            {"key": "bread", "display": "빵"},
+        ],
+    )
+
+    assert village_sim._format_item_catalog_lines() == [
+        "- 빵 (bread)",
+        "- 도구 (tool)",
+    ]
+
+
+def test_format_item_catalog_lines_handles_empty_defs(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_item_defs", lambda: [])
+
+    assert village_sim._format_item_catalog_lines() == ["표시할 아이템 정의가 없습니다."]
+
+
 def test_build_render_npcs_uses_defaults_and_clamps(monkeypatch):
     import village_sim
 
