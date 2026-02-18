@@ -233,7 +233,7 @@ def _render_terminal(engine: CombatSceneEngine) -> None:
 
 
 class CombatSceneArcadeWindow(arcade.Window if arcade else object):
-    def __init__(self, engine: CombatSceneEngine, tick_seconds: float = 0.35):
+    def __init__(self, engine: CombatSceneEngine, tick_seconds: float = 1.0):
         if arcade is None:
             raise RuntimeError("arcade 패키지가 설치되어 있지 않습니다.")
         super().__init__(1100, 720, "Combat Scene (Arcade Click UI)")
@@ -415,7 +415,7 @@ def build_default_engine(*, seed: int = 42) -> CombatSceneEngine:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Arcade ATB 전투 씬 단독 실행")
     parser.add_argument("--seed", type=int, default=42, help="난수 시드")
-    parser.add_argument("--tick-seconds", type=float, default=0.35, help="틱 진행 간격(초)")
+    parser.add_argument("--tick-seconds", type=float, default=1.0, help="틱 진행 간격(초)")
     return parser.parse_args()
 
 
