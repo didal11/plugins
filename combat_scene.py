@@ -160,6 +160,8 @@ class CombatSceneEngine:
             return False
         action_key = actor.pending_action
         actor.pending_action = None
+        action_label = self.action_defs[action_key].label
+        self.log.append(f"[T{self.current_tick:03}] {actor.name} {action_label} 캐스팅 완료")
         self.execute_action(actor, action_key)
         return True
 
@@ -310,7 +312,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             arcade.draw_circle_filled(cx, cy, self.tile_px * 0.30, body)
             arcade.draw_text(actor.icon, cx, cy - 8, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
             show_click_hint = actor.name == self._click_feedback_actor and self._click_feedback_text
-            show_casting = bool(show_click_hint and actor.pending_action)
+            show_casting = bool(actor.pending_action)
             show_temp_hint = bool(show_click_hint and self._click_feedback_remain > 0)
 
             if show_casting:
@@ -397,9 +399,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             self._battle_done = True
             return
 
-        ready = self.engine.ready_combatants()
-        for actor in ready:
-            if not actor.alive or actor.team == "player":
+        for actor in self.engine.actors:
+            if not actor.alive:
                 continue
             if self.engine.resolve_cast_if_ready(actor):
                 if actor.name == self._click_feedback_actor:
@@ -407,6 +408,10 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
                 if self.engine.is_battle_over():
                     self._battle_done = True
                     break
+
+        ready = self.engine.ready_combatants()
+        for actor in ready:
+            if not actor.alive or actor.pending_action:
                 continue
             if actor.team == "player":
                 continue
