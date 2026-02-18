@@ -62,12 +62,29 @@ class Combatant:
     alive: bool = True
     icon: str = "?"
     last_action: str = "대기"
+    pending_action: Optional[str] = None
+    cast_started_tick: int = 0
 
     def schedule_next(self, tick_cost: int, now_tick: int) -> None:
         delay = max(1, tick_cost)
         base = max(self.next_action_tick, now_tick)
         self.next_action_tick = base + delay
         self.cooldown_total = delay
+
+    def start_cast(self, action_key: str, tick_cost: int, now_tick: int) -> None:
+        delay = max(1, tick_cost)
+        self.pending_action = action_key
+        self.cast_started_tick = now_tick
+        self.next_action_tick = now_tick + delay
+        self.cooldown_total = delay
+
+    def cast_progress_boxes(self, now_tick: int, width: int = 5) -> str:
+        if not self.pending_action:
+            return "□" * width
+        total = max(1, self.cooldown_total)
+        elapsed = max(0, min(total, now_tick - self.cast_started_tick))
+        filled = int(round((elapsed / total) * width))
+        return "■" * filled + "□" * (width - filled)
 
 
 @dataclass
@@ -117,12 +134,34 @@ class CombatSceneEngine:
 
         if action_key == "move":
             self._execute_move(actor, enemies)
-            actor.schedule_next(self.action_defs["move"].tick_cost, self.current_tick)
             return
 
         target = min(enemies, key=lambda x: self._manhattan(actor, x))
         self._execute_attack(actor, target)
-        actor.schedule_next(self.action_defs["attack"].tick_cost, self.current_tick)
+
+    def start_action_cast(self, actor: Combatant, action_key: str) -> bool:
+        if not actor.alive or actor.pending_action:
+            return False
+        enemies = self.alive_enemies(actor)
+        if not enemies:
+            return False
+        action_def = self.action_defs[action_key]
+        actor.start_cast(action_key, action_def.tick_cost, self.current_tick)
+        actor.last_action = f"{action_def.label} 캐스팅"
+        self.log.append(
+            f"[T{self.current_tick:03}] {actor.name} {action_def.label} 캐스팅 시작 ({action_def.tick_cost}틱)"
+        )
+        return True
+
+    def resolve_cast_if_ready(self, actor: Combatant) -> bool:
+        if not actor.alive or not actor.pending_action:
+            return False
+        if actor.next_action_tick > self.current_tick:
+            return False
+        action_key = actor.pending_action
+        actor.pending_action = None
+        self.execute_action(actor, action_key)
+        return True
 
     def advance_tick(self) -> None:
         self.current_tick += 1
@@ -220,12 +259,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             self.grid_origin_y + y * self.tile_px + self.tile_px / 2,
         )
 
-    def _cooldown_boxes(self, actor: Combatant, width: int = 5) -> str:
-        total = max(1, actor.cooldown_total)
-        remaining = max(0, actor.next_action_tick - self.engine.current_tick)
-        progressed = max(0, min(total, total - remaining))
-        filled = int(round((progressed / total) * width))
-        return "■" * filled + "□" * (width - filled)
+    def _casting_boxes(self, actor: Combatant, width: int = 5) -> str:
+        return actor.cast_progress_boxes(self.engine.current_tick, width=width)
 
     def on_draw(self) -> None:
         if not self._should_render:
@@ -274,9 +309,13 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
                 arcade.draw_circle_outline(cx, cy, self.tile_px * 0.40, arcade.color.YELLOW, 4)
             arcade.draw_circle_filled(cx, cy, self.tile_px * 0.30, body)
             arcade.draw_text(actor.icon, cx, cy - 8, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
-            if actor.name == self._click_feedback_actor and self._click_feedback_text and self._click_feedback_remain > 0:
+            show_click_hint = actor.name == self._click_feedback_actor and self._click_feedback_text
+            show_casting = bool(show_click_hint and actor.pending_action)
+            show_temp_hint = bool(show_click_hint and self._click_feedback_remain > 0)
+
+            if show_casting:
                 arcade.draw_text(
-                    self._cooldown_boxes(actor),
+                    self._casting_boxes(actor),
                     cx,
                     cy + self.tile_px * 0.36,
                     arcade.color.LIGHT_GRAY,
@@ -284,6 +323,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
                     anchor_x="center",
                     font_name=self.selected_font,
                 )
+            if show_casting or show_temp_hint:
                 arcade.draw_text(
                     self._click_feedback_text,
                     cx,
@@ -326,7 +366,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             msg = f"전투 종료 - 승리 팀: {winner}" if winner else "전투 종료 - 무승부"
             arcade.draw_text(msg, 860, 20, arcade.color.YELLOW, 18, font_name=self.selected_font)
         elif selected:
-            msg = f"선택: {selected} / 버튼 클릭 시 즉시 행동 실행"
+            msg = f"선택: {selected} / 버튼 클릭 시 캐스팅 시작"
             arcade.draw_text(msg, 860, 20, arcade.color.YELLOW, 14, font_name=self.selected_font)
         else:
             arcade.draw_text("플레이어 NPC를 클릭한 뒤 행동 버튼을 누르세요", 860, 20, arcade.color.LIGHT_GRAY, 14, font_name=self.selected_font)
@@ -343,8 +383,10 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         if self._click_feedback_remain > 0:
             self._click_feedback_remain = max(0.0, self._click_feedback_remain - delta_time)
             if self._click_feedback_remain == 0.0:
-                self._click_feedback_actor = None
-                self._click_feedback_text = None
+                actor = self._selected_player()
+                if actor is None or not actor.pending_action:
+                    self._click_feedback_actor = None
+                    self._click_feedback_text = None
 
         self._acc += delta_time
         if self._acc < self.tick_seconds:
@@ -359,11 +401,20 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         for actor in ready:
             if not actor.alive or actor.team == "player":
                 continue
+            if self.engine.resolve_cast_if_ready(actor):
+                if actor.name == self._click_feedback_actor:
+                    self._set_click_feedback(actor.name, f"{actor.last_action} 발동")
+                if self.engine.is_battle_over():
+                    self._battle_done = True
+                    break
+                continue
+            if actor.team == "player":
+                continue
             enemies = self.engine.alive_enemies(actor)
             if not enemies:
                 break
             action = self.engine.choose_npc_action(actor, enemies)
-            self.engine.execute_action(actor, action)
+            self.engine.start_action_cast(actor, action)
             if self.engine.is_battle_over():
                 self._battle_done = True
                 break
@@ -397,14 +448,17 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         actor = self._selected_player()
         if actor is None:
             return
-        if actor.next_action_tick > self.engine.current_tick:
-            wait = actor.next_action_tick - self.engine.current_tick
-            self._set_click_feedback(actor.name, f"대기 {wait}틱")
+
+        if actor.pending_action:
+            remain = actor.next_action_tick - self.engine.current_tick
+            action_label = self.engine.action_defs[actor.pending_action].label
+            self._set_click_feedback(actor.name, f"{action_label} 캐스팅 {remain}틱")
             return
 
-        self.engine.execute_action(actor, action_key)
+        if not self.engine.start_action_cast(actor, action_key):
+            return
         action_label = self.engine.action_defs[action_key].label
-        self._set_click_feedback(actor.name, f"{action_label} 클릭")
+        self._set_click_feedback(actor.name, f"{action_label} 캐스팅")
         self._should_render = True
         if self.engine.is_battle_over():
             self._battle_done = True
