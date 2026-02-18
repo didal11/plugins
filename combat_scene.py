@@ -237,7 +237,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         self.selected_font = _pick_font_name()
 
         self._battle_done = False
-        self._selected_actor_name: Optional[str] = None
+        self._selected_player_name: Optional[str] = None
         self._click_feedback_actor: Optional[str] = None
         self._click_feedback_text: Optional[str] = None
         self._click_feedback_seconds: float = 1.2
@@ -352,7 +352,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             arcade.draw_text(row, 40, log_y, arcade.color.ASH_GREY, 12, font_name=self.selected_font)
             log_y -= 18
 
-        selected = self._selected_actor_name
+        selected = self._selected_player_name
         attack_active = bool(selected)
         move_active = bool(selected)
 
@@ -371,7 +371,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             msg = f"선택: {selected} / 버튼 클릭 시 캐스팅 시작"
             arcade.draw_text(msg, 860, 20, arcade.color.YELLOW, 14, font_name=self.selected_font)
         else:
-            arcade.draw_text("유닛을 클릭한 뒤 행동 버튼을 누르세요", 860, 20, arcade.color.LIGHT_GRAY, 14, font_name=self.selected_font)
+            arcade.draw_text("플레이어 NPC를 클릭한 뒤 행동 버튼을 누르세요", 860, 20, arcade.color.LIGHT_GRAY, 14, font_name=self.selected_font)
 
     def on_update(self, delta_time: float) -> None:
         if self._battle_done:
@@ -385,7 +385,7 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         if self._click_feedback_remain > 0:
             self._click_feedback_remain = max(0.0, self._click_feedback_remain - delta_time)
             if self._click_feedback_remain == 0.0:
-                actor = self._selected_actor()
+                actor = self._selected_player()
                 if actor is None or not actor.pending_action:
                     self._click_feedback_actor = None
                     self._click_feedback_text = None
@@ -413,6 +413,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         for actor in ready:
             if not actor.alive or actor.pending_action:
                 continue
+            if actor.team == "player":
+                continue
             enemies = self.engine.alive_enemies(actor)
             if not enemies:
                 break
@@ -429,11 +431,11 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         if self._battle_done:
             return
 
-        if self._contains(self.attack_btn, x, y) and self._selected_actor_name:
-            self._trigger_selected_action("attack")
+        if self._contains(self.attack_btn, x, y) and self._selected_player_name:
+            self._trigger_player_action("attack")
             return
-        if self._contains(self.move_btn, x, y) and self._selected_actor_name:
-            self._trigger_selected_action("move")
+        if self._contains(self.move_btn, x, y) and self._selected_player_name:
+            self._trigger_player_action("move")
             return
 
         tile_x = int((x - self.grid_origin_x) // self.tile_px)
@@ -442,13 +444,13 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
             return
 
         for actor in self.engine.actors:
-            if actor.alive and actor.x == tile_x and actor.y == tile_y:
-                self._selected_actor_name = actor.name
+            if actor.team == "player" and actor.alive and actor.x == tile_x and actor.y == tile_y:
+                self._selected_player_name = actor.name
                 self._set_click_feedback(actor.name, f"선택: {actor.name}")
                 return
 
-    def _trigger_selected_action(self, action_key: str) -> None:
-        actor = self._selected_actor()
+    def _trigger_player_action(self, action_key: str) -> None:
+        actor = self._selected_player()
         if actor is None:
             return
 
@@ -466,11 +468,11 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         if self.engine.is_battle_over():
             self._battle_done = True
 
-    def _selected_actor(self) -> Optional[Combatant]:
-        if not self._selected_actor_name:
+    def _selected_player(self) -> Optional[Combatant]:
+        if not self._selected_player_name:
             return None
         for actor in self.engine.actors:
-            if actor.name == self._selected_actor_name and actor.alive:
+            if actor.name == self._selected_player_name and actor.team == "player" and actor.alive:
                 return actor
         return None
 
