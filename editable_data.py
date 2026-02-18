@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, List
 
 DATA_DIR = Path(__file__).parent / "data"
-ITEMS_FILE = DATA_DIR / "items.json"
 MAP_FILE = DATA_DIR / "map.ldtk"
 NPCS_FILE = DATA_DIR / "npcs.json"
 MONSTERS_FILE = DATA_DIR / "monsters.json"
@@ -193,27 +192,8 @@ def load_item_defs() -> List[Dict[str, object]]:
             continue
         seen_keys.add(key)
         display = _entity_default_name(entity_def) or identifier or key
-        out.append({
-            "key": key,
-            "display": display,
-            "is_craftable": False,
-            "is_gatherable": False,
-            "craft_inputs": {},
-            "craft_time": 0,
-            "craft_fatigue": 0,
-            "craft_station": "",
-            "craft_amount": 0,
-            "gather_time": 0,
-            "gather_amount": 0,
-            "gather_fatigue": 0,
-            "gather_spot": "",
-        })
+        out.append({"key": key, "display": display})
     return out or list(DEFAULT_ITEMS)
-
-
-def save_item_defs(items: List[Dict[str, object]]) -> None:
-    ensure_data_files()
-    _write_json(ITEMS_FILE, items)
 
 
 def load_npc_templates() -> List[Dict[str, object]]:
