@@ -500,12 +500,14 @@ class SimulationRuntime:
                     entity.is_discovered = True
                 else:
                     buffer.record_resource_absence(resource_key, coord, global_known_resources)
-                continue
 
-            key = entity.key.strip().lower()
-            name = entity.name.strip().lower()
-            if key.startswith("monster_") or "monster" in key or "몬스터" in name:
-                buffer.record_monster_discovery(key or name, coord)
+        for monster in self.monsters:
+            coord = (monster.x, monster.y)
+            if coord not in visible_cells:
+                continue
+            key = monster.name.strip().lower()
+            if key:
+                buffer.record_monster_discovery(key, coord)
 
     def _mark_visible_area_discovered(self, npc_name: str, coord: Tuple[int, int]) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
