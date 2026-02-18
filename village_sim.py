@@ -217,6 +217,9 @@ class SimulationRuntime:
     TICKS_PER_HOUR = 60 // TICK_MINUTES
     DECISION_INTERVAL_TICKS = 10
 
+    def _is_current_level_town(self) -> bool:
+        return self.world.level_id.strip().lower() == "town"
+
     def __init__(
         self,
         world: GameWorld,
@@ -992,6 +995,9 @@ class SimulationRuntime:
             state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
             state.ticks_remaining = max(0, state.ticks_remaining - 1)
 
+            if not self._is_current_level_town():
+                self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
+
             if state.current_action == "식사" and self.dining_tiles:
                 key = ("meal", tuple(sorted(set(self.dining_tiles))))
                 grouped_requests.setdefault(key, []).append((npc, state))
@@ -1292,6 +1298,9 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.camera = arcade.Camera2D(position=(0, 0), zoom=1.0)
             self.state = CameraState(x=world.width_px / 2, y=world.height_px / 2, zoom=1.0)
             self.camera.position = (self.state.x, self.state.y)
+            self.draw_interval_seconds = 0.1
+            self._draw_acc = 0.0
+            self._should_render = True
             self._keys: dict[int, bool] = {}
             self.selected_entity: GameEntity | None = None
             self.selected_npc: RenderNpc | None = None
@@ -1355,6 +1364,11 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             return world.height_px - (grid_y * world.grid_size + world.grid_size / 2)
 
         def on_update(self, delta_time: float):
+            self._draw_acc += delta_time
+            if self._draw_acc >= self.draw_interval_seconds:
+                self._draw_acc = 0.0
+                self._should_render = True
+
             dx = dy = 0.0
             if self._keys.get(arcade.key.A) or self._keys.get(arcade.key.LEFT):
                 dx -= 1.0
@@ -1458,6 +1472,10 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self._keys[key] = False
 
         def on_draw(self):
+            if not self._should_render:
+                return
+            self._should_render = False
+
             self.clear((25, 28, 32, 255))
             tile = world.grid_size
             with self.camera.activate():
