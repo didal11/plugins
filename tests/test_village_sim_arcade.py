@@ -988,20 +988,12 @@ def test_visible_entity_observation_updates_resource_and_monster_buffers(monkeyp
                 current_quantity=3,
                 is_discovered=False,
             ),
-            village_sim.StructureEntity(
-                key="monster_rat",
-                name="쥐 몬스터",
-                x=2,
-                y=1,
-                min_duration=1,
-                max_duration=1,
-                current_duration=1,
-            ),
         ],
         tiles=[],
     )
     npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    monsters = [village_sim.RenderNpc(name="monster_rat", job="몬스터", x=2, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, monsters=monsters, seed=1)
 
     sim._mark_visible_area_discovered("A", (1, 1))
 
@@ -1273,8 +1265,6 @@ def test_mark_cell_discovered_updates_known_only_when_adjacent_known_exists():
 
 def test_non_town_level_observes_visible_entities_even_when_not_exploring(monkeypatch):
     import village_sim
-    from ldtk_integration import GameEntity
-
     monkeypatch.setattr(
         village_sim,
         "load_job_defs",
@@ -1291,11 +1281,12 @@ def test_non_town_level_observes_visible_entities_even_when_not_exploring(monkey
         grid_size=16,
         width_px=80,
         height_px=80,
-        entities=[GameEntity(key="monster_rat", name="쥐 몬스터", x=2, y=2)],
+        entities=[],
         tiles=[],
     )
     npcs = [village_sim.RenderNpc(name="A", job="모험가", x=2, y=2)]
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    monsters = [village_sim.RenderNpc(name="monster_rat", job="몬스터", x=2, y=2)]
+    sim = village_sim.SimulationRuntime(world, npcs, monsters=monsters, seed=1)
     state = sim.state_by_name["A"]
     state.current_action = "농사"
     state.current_action_display = "농사"
@@ -1309,8 +1300,6 @@ def test_non_town_level_observes_visible_entities_even_when_not_exploring(monkey
 
 def test_town_level_does_not_observe_visible_entities_without_exploration(monkeypatch):
     import village_sim
-    from ldtk_integration import GameEntity
-
     monkeypatch.setattr(
         village_sim,
         "load_job_defs",
@@ -1327,11 +1316,12 @@ def test_town_level_does_not_observe_visible_entities_without_exploration(monkey
         grid_size=16,
         width_px=80,
         height_px=80,
-        entities=[GameEntity(key="monster_rat", name="쥐 몬스터", x=2, y=2)],
+        entities=[],
         tiles=[],
     )
     npcs = [village_sim.RenderNpc(name="A", job="모험가", x=2, y=2)]
-    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    monsters = [village_sim.RenderNpc(name="monster_rat", job="몬스터", x=2, y=2)]
+    sim = village_sim.SimulationRuntime(world, npcs, monsters=monsters, seed=1)
     state = sim.state_by_name["A"]
     state.current_action = "농사"
     state.current_action_display = "농사"
