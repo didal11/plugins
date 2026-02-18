@@ -16,6 +16,31 @@ except ImportError:  # optional dependency
     arcade = None
 
 
+FONT_CANDIDATES: tuple[str, ...] = (
+    "Noto Sans CJK KR",
+    "Noto Sans KR",
+    "NanumGothic",
+    "NanumBarunGothic",
+    "NanumSquare",
+    "Arial Unicode MS",
+    "sans-serif",
+)
+
+
+def _pick_font_name() -> str:
+    """설치된 폰트 후보 중 첫 번째를 선택한다."""
+
+    try:
+        import pyglet
+
+        for name in FONT_CANDIDATES:
+            if pyglet.font.have_font(name):
+                return name
+    except Exception:
+        pass
+    return FONT_CANDIDATES[0]
+
+
 @dataclass(frozen=True)
 class ActionDefinition:
     key: str
@@ -208,13 +233,14 @@ def _render_terminal(engine: CombatSceneEngine) -> None:
 
 
 class CombatSceneArcadeWindow(arcade.Window if arcade else object):
-    def __init__(self, engine: CombatSceneEngine, tick_seconds: float = 0.35):
+    def __init__(self, engine: CombatSceneEngine, tick_seconds: float = 1.0):
         if arcade is None:
             raise RuntimeError("arcade 패키지가 설치되어 있지 않습니다.")
         super().__init__(1100, 720, "Combat Scene (Arcade Click UI)")
         self.engine = engine
         self.tick_seconds = max(0.05, float(tick_seconds))
         self._acc = 0.0
+        self.selected_font = _pick_font_name()
 
         self._player_waiting: Optional[Combatant] = None
         self._queued_ready: List[Combatant] = []
@@ -225,23 +251,37 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
 
     def on_draw(self) -> None:
         self.clear((16, 18, 22))
-        arcade.draw_text(f"TICK {self.engine.current_tick:03}", 30, 680, arcade.color.LIGHT_GRAY, 18)
-        arcade.draw_text(self.engine.timeline_str(), 30, 650, arcade.color.BRIGHT_GREEN, 16, font_name="Courier New")
+        arcade.draw_text(
+            f"TICK {self.engine.current_tick:03}",
+            30,
+            680,
+            arcade.color.LIGHT_GRAY,
+            18,
+            font_name=self.selected_font,
+        )
+        arcade.draw_text(
+            self.engine.timeline_str(),
+            30,
+            650,
+            arcade.color.BRIGHT_GREEN,
+            16,
+            font_name=self.selected_font,
+        )
 
         y = 610
-        arcade.draw_text("상태", 30, y, arcade.color.WHITE, 15)
+        arcade.draw_text("상태", 30, y, arcade.color.WHITE, 15, font_name=self.selected_font)
         y -= 25
         for actor in sorted(self.engine.actors, key=lambda x: (x.team, x.name)):
             text = f"{actor.icon} {actor.name:<8} [{actor.team}] "
             text += "DOWN" if not actor.alive else f"HP:{actor.hp:02} POS:{actor.position:02} NEXT:{actor.next_action_tick:03}"
             color = arcade.color.LIGHT_GRAY if actor.alive else arcade.color.DARK_GRAY
-            arcade.draw_text(text, 30, y, color, 13, font_name="Courier New")
+            arcade.draw_text(text, 30, y, color, 13, font_name=self.selected_font)
             y -= 22
 
-        arcade.draw_text("최근 로그", 30, 250, arcade.color.WHITE, 15)
+        arcade.draw_text("최근 로그", 30, 250, arcade.color.WHITE, 15, font_name=self.selected_font)
         y = 225
         for row in self.engine.log[-8:]:
-            arcade.draw_text(row, 30, y, arcade.color.ASH_GREY, 12, font_name="Courier New")
+            arcade.draw_text(row, 30, y, arcade.color.ASH_GREY, 12, font_name=self.selected_font)
             y -= 18
 
         # 버튼
@@ -249,17 +289,24 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         move_color = arcade.color.INDIGO if self._player_waiting else arcade.color.DARK_SLATE_GRAY
         arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.attack_btn), attack_color)
         arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.move_btn), move_color)
-        arcade.draw_text("공격", 150, 83, arcade.color.WHITE, 18, anchor_x="center")
-        arcade.draw_text("이동", 390, 83, arcade.color.WHITE, 18, anchor_x="center")
+        arcade.draw_text("공격", 150, 83, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
+        arcade.draw_text("이동", 390, 83, arcade.color.WHITE, 18, anchor_x="center", font_name=self.selected_font)
 
         if self._battle_done:
             winner = self.engine.winner_team()
             msg = f"전투 종료 - 승리 팀: {winner}" if winner else "전투 종료 - 무승부"
-            arcade.draw_text(msg, 650, 80, arcade.color.YELLOW, 20)
+            arcade.draw_text(msg, 650, 80, arcade.color.YELLOW, 20, font_name=self.selected_font)
         elif self._player_waiting:
-            arcade.draw_text(f"{self._player_waiting.name} 행동을 클릭으로 선택하세요", 560, 80, arcade.color.YELLOW, 18)
+            arcade.draw_text(
+                f"{self._player_waiting.name} 행동을 클릭으로 선택하세요",
+                560,
+                80,
+                arcade.color.YELLOW,
+                18,
+                font_name=self.selected_font,
+            )
         else:
-            arcade.draw_text("진행 중...", 560, 80, arcade.color.LIGHT_GRAY, 16)
+            arcade.draw_text("진행 중...", 560, 80, arcade.color.LIGHT_GRAY, 16, font_name=self.selected_font)
 
     def on_update(self, delta_time: float) -> None:
         if self._battle_done:
@@ -368,7 +415,7 @@ def build_default_engine(*, seed: int = 42) -> CombatSceneEngine:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Arcade ATB 전투 씬 단독 실행")
     parser.add_argument("--seed", type=int, default=42, help="난수 시드")
-    parser.add_argument("--tick-seconds", type=float, default=0.35, help="틱 진행 간격(초)")
+    parser.add_argument("--tick-seconds", type=float, default=1.0, help="틱 진행 간격(초)")
     return parser.parse_args()
 
 
