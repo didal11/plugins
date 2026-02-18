@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import orjson
+import re
 from pathlib import Path
 from typing import Dict, List
 
 DATA_DIR = Path(__file__).parent / "data"
-ITEMS_FILE = DATA_DIR / "items.json"
+MAP_FILE = DATA_DIR / "map.ldtk"
 NPCS_FILE = DATA_DIR / "npcs.json"
 MONSTERS_FILE = DATA_DIR / "monsters.json"
 RACES_FILE = DATA_DIR / "races.json"
@@ -130,7 +131,6 @@ def load_job_names() -> List[str]:
 def ensure_data_files() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     defaults = {
-        ITEMS_FILE: DEFAULT_ITEMS,
         NPCS_FILE: DEFAULT_NPCS,
         MONSTERS_FILE: DEFAULT_MONSTERS,
         RACES_FILE: DEFAULT_RACES,
@@ -143,38 +143,57 @@ def ensure_data_files() -> None:
             _write_json(path, value)
 
 
+def _normalize_item_key(identifier: str) -> str:
+    key = str(identifier).strip()
+    key = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key).replace(" ", "_").replace("-", "_")
+    return key.lower()
+
+
+def _entity_default_name(entity_def: Dict[str, object]) -> str:
+    field_defs = entity_def.get("fieldDefs", [])
+    if not isinstance(field_defs, list):
+        return ""
+    for field in field_defs:
+        if not isinstance(field, dict):
+            continue
+        if str(field.get("identifier", "")).strip() != "name":
+            continue
+        default_override = field.get("defaultOverride")
+        if not isinstance(default_override, dict):
+            return ""
+        params = default_override.get("params", [])
+        if not isinstance(params, list) or not params:
+            return ""
+        return str(params[0]).strip()
+    return ""
+
+
 def load_item_defs() -> List[Dict[str, object]]:
-    ensure_data_files()
-    raw = _read_json(ITEMS_FILE, DEFAULT_ITEMS)
+    if not MAP_FILE.exists():
+        return list(DEFAULT_ITEMS)
+    raw = _read_json(MAP_FILE, {})
+    defs = raw.get("defs", {}) if isinstance(raw, dict) else {}
+    entities = defs.get("entities", []) if isinstance(defs, dict) else []
     out: List[Dict[str, object]] = []
-    for it in raw if isinstance(raw, list) else []:
-        if not isinstance(it, dict):
+    seen_keys: set[str] = set()
+    for entity_def in entities if isinstance(entities, list) else []:
+        if not isinstance(entity_def, dict):
             continue
-        key = str(it.get("key", "")).strip()
-        display = str(it.get("display", "")).strip()
-        if not key or not display:
+        tags = {
+            str(tag).strip().lower()
+            for tag in entity_def.get("tags", [])
+            if str(tag).strip()
+        } if isinstance(entity_def.get("tags", []), list) else set()
+        if "item" not in tags:
             continue
-        out.append({
-            "key": key,
-            "display": display,
-            "is_craftable": bool(it.get("is_craftable", False)),
-            "is_gatherable": bool(it.get("is_gatherable", False)),
-            "craft_inputs": it.get("craft_inputs", {}) if isinstance(it.get("craft_inputs", {}), dict) else {},
-            "craft_time": int(it.get("craft_time", 0)),
-            "craft_fatigue": int(it.get("craft_fatigue", 0)),
-            "craft_station": str(it.get("craft_station", "")),
-            "craft_amount": int(it.get("craft_amount", 0)),
-            "gather_time": int(it.get("gather_time", 0)),
-            "gather_amount": int(it.get("gather_amount", 0)),
-            "gather_fatigue": int(it.get("gather_fatigue", 0)),
-            "gather_spot": str(it.get("gather_spot", "")),
-        })
-    return _seed_if_empty(ITEMS_FILE, out, DEFAULT_ITEMS)
-
-
-def save_item_defs(items: List[Dict[str, object]]) -> None:
-    ensure_data_files()
-    _write_json(ITEMS_FILE, items)
+        identifier = str(entity_def.get("identifier", "")).strip()
+        key = _normalize_item_key(identifier)
+        if not key or key in seen_keys:
+            continue
+        seen_keys.add(key)
+        display = _entity_default_name(entity_def) or identifier or key
+        out.append({"key": key, "display": display})
+    return out or list(DEFAULT_ITEMS)
 
 
 def load_npc_templates() -> List[Dict[str, object]]:
