@@ -220,8 +220,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         self._queued_ready: List[Combatant] = []
         self._battle_done = False
 
-        self.attack_btn = arcade.LRBT(80, 280, 120, 60)
-        self.move_btn = arcade.LRBT(320, 520, 120, 60)
+        self.attack_btn = arcade.LRBT(left=80, right=280, bottom=60, top=120)
+        self.move_btn = arcade.LRBT(left=320, right=520, bottom=60, top=120)
 
     def on_draw(self) -> None:
         self.clear((16, 18, 22))
@@ -247,8 +247,8 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
         # 버튼
         attack_color = arcade.color.DARK_SPRING_GREEN if self._player_waiting else arcade.color.DARK_SLATE_GRAY
         move_color = arcade.color.INDIGO if self._player_waiting else arcade.color.DARK_SLATE_GRAY
-        arcade.draw_lrbt_rectangle_filled(*self.attack_btn, attack_color)
-        arcade.draw_lrbt_rectangle_filled(*self.move_btn, move_color)
+        arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.attack_btn), attack_color)
+        arcade.draw_lrbt_rectangle_filled(*self._rect_points(self.move_btn), move_color)
         arcade.draw_text("공격", 150, 83, arcade.color.WHITE, 18, anchor_x="center")
         arcade.draw_text("이동", 390, 83, arcade.color.WHITE, 18, anchor_x="center")
 
@@ -340,6 +340,11 @@ class CombatSceneArcadeWindow(arcade.Window if arcade else object):
 
         if not self._player_waiting:
             self.engine.advance_tick()
+
+
+    @staticmethod
+    def _rect_points(rect: arcade.LRBT) -> tuple[float, float, float, float]:
+        return rect.left, rect.right, rect.bottom, rect.top
 
     @staticmethod
     def _contains(rect: arcade.LRBT, x: float, y: float) -> bool:
