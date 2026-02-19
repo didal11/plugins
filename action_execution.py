@@ -129,14 +129,7 @@ class ActionExecutor:
         npc.work_ticks_remaining = max(0, npc.work_ticks_remaining - 1)
         done_ticks = duration_ticks - npc.work_ticks_remaining
 
-        fatigue_cost = int(action.get("fatigue", 12))
-        hunger_cost = int(action.get("hunger", 8))
-        per_tick_fatigue = max(0, round(fatigue_cost / duration_ticks))
-        per_tick_hunger = max(0, round(hunger_cost / duration_ticks))
-
         s = npc.status
-        s.fatigue += per_tick_fatigue
-        s.hunger += per_tick_hunger
         s.happiness -= 1
         self.status_clamp(npc)
 
@@ -164,32 +157,11 @@ class ActionExecutor:
             npc.status.current_action = f"{action_name}({done_ticks}/{duration_ticks})"
             return f"{npc.traits.name}: {action_name} 진행 {done_ticks}/{duration_ticks}틱"
 
-        outputs = action.get("outputs", {}) if isinstance(action.get("outputs", {}), dict) else {}
-        gained_parts: List[str] = []
-        valid_items = set(self.items.keys())
-        for item, spec in outputs.items():
-            if str(item) not in valid_items:
-                continue
-            qty = 0
-            if isinstance(spec, int):
-                qty = max(0, int(spec))
-            elif isinstance(spec, dict):
-                lo = int(spec.get("min", 0))
-                hi = int(spec.get("max", lo))
-                if hi < lo:
-                    lo, hi = hi, lo
-                qty = self.rng.randint(max(0, lo), max(0, hi))
-            if qty <= 0:
-                continue
-            npc.inventory[str(item)] = int(npc.inventory.get(str(item), 0)) + qty
-            gained_parts.append(f"{item}+{qty}")
-
         tool_text = f" 도구:{', '.join([str(x) for x in tool_names])}" if tool_names else ""
-        gained_text = ", ".join(gained_parts) if gained_parts else "획득 없음"
         npc.status.current_action = action_name
         npc.current_work_action = None
         npc.work_ticks_remaining = 0
-        return f"{npc.traits.name}: {action_name} 완료({gained_text}){tool_text}"
+        return f"{npc.traits.name}: {action_name} 완료{tool_text}"
 
     def profit_action(self, npc: NPC) -> str:
         job = npc.traits.job

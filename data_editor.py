@@ -19,7 +19,6 @@ from editable_data import (
     load_races,
     load_sim_settings,
     save_job_defs,
-    save_action_defs,
     save_monster_templates,
     save_npc_templates,
     save_sim_settings,
@@ -472,29 +471,18 @@ class EditorApp(tk.Tk):
 
         ttk.Label(right, text="행동명").grid(row=0, column=0, sticky="w", pady=2)
         ttk.Label(right, text="소요 시간(분, 10분 단위)").grid(row=1, column=0, sticky="w", pady=2)
-        ttk.Label(right, text="산출물(JSON)").grid(row=2, column=0, sticky="nw", pady=2)
-        ttk.Label(right, text="피로").grid(row=3, column=0, sticky="w", pady=2)
-        ttk.Label(right, text="허기").grid(row=4, column=0, sticky="w", pady=2)
-
         self.action_name = ttk.Entry(right, width=43)
         self.action_duration = ttk.Entry(right, width=43)
-        self.action_outputs = tk.Text(right, width=40, height=8)
-        self.action_fatigue = ttk.Entry(right, width=43)
-        self.action_hunger = ttk.Entry(right, width=43)
         self.action_name.grid(row=0, column=1, sticky="w", pady=2)
         self.action_duration.grid(row=1, column=1, sticky="w", pady=2)
-        self.action_outputs.grid(row=2, column=1, sticky="w", pady=2)
-        self.action_fatigue.grid(row=3, column=1, sticky="w", pady=2)
-        self.action_hunger.grid(row=4, column=1, sticky="w", pady=2)
 
-        ttk.Label(right, text="도구는 자동으로 [\"도구\"] 로 저장됩니다.").grid(row=5, column=1, sticky="w", pady=2)
+        ttk.Label(right, text="도구는 자동으로 [\"도구\"] 로 저장됩니다.").grid(row=2, column=1, sticky="w", pady=2)
 
         btns = ttk.Frame(right)
-        btns.grid(row=6, column=0, columnspan=2, sticky="w", pady=10)
+        btns.grid(row=3, column=0, columnspan=2, sticky="w", pady=10)
         ttk.Button(btns, text="추가", command=self._add_action).pack(side="left", padx=3)
         ttk.Button(btns, text="수정", command=self._update_action).pack(side="left", padx=3)
         ttk.Button(btns, text="삭제", command=self._delete_action).pack(side="left", padx=3)
-        ttk.Button(btns, text="저장", command=self._save_actions).pack(side="left", padx=3)
 
     def _on_action_select(self, _=None) -> None:
         sel = self.action_list.curselection()
@@ -505,12 +493,6 @@ class EditorApp(tk.Tk):
         self.action_name.insert(0, str(row.get("name", "")))
         self.action_duration.delete(0, "end")
         self.action_duration.insert(0, str(row.get("duration_minutes", int(row.get("duration_hours", 1)) * 60)))
-        self.action_outputs.delete("1.0", "end")
-        self.action_outputs.insert("1.0", json.dumps(row.get("outputs", {}), ensure_ascii=False, indent=2))
-        self.action_fatigue.delete(0, "end")
-        self.action_fatigue.insert(0, str(row.get("fatigue", 12)))
-        self.action_hunger.delete(0, "end")
-        self.action_hunger.insert(0, str(row.get("hunger", 8)))
 
     def _action_from_form(self) -> dict[str, object] | None:
         try:
@@ -521,9 +503,6 @@ class EditorApp(tk.Tk):
                 "name": name,
                 "duration_minutes": max(10, (int(self.action_duration.get().strip() or "10") // 10) * 10),
                 "required_tools": ["도구"],
-                "outputs": json.loads(self.action_outputs.get("1.0", "end").strip() or "{}"),
-                "fatigue": int(self.action_fatigue.get().strip() or "12"),
-                "hunger": int(self.action_hunger.get().strip() or "8"),
             }
         except Exception:
             messagebox.showwarning("경고", "행동 입력값(JSON/숫자)을 확인하세요.")
@@ -556,13 +535,6 @@ class EditorApp(tk.Tk):
         self.action_list.delete(idx)
         self.actions.pop(idx)
 
-    def _save_actions(self) -> None:
-        save_action_defs(self.actions)
-        self.actions = load_action_defs()
-        self.action_list.delete(0, "end")
-        for row in self.actions:
-            self.action_list.insert("end", str(row.get("name", "")))
-        messagebox.showinfo("저장 완료", "행동 데이터를 저장했습니다.")
 
     # ---------- Sim tab ----------
     def _build_sim_tab(self) -> None:
