@@ -45,9 +45,9 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "게시판확인", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "schedulable": False, "interruptible": True},
-    {"name": "게시판보고", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "schedulable": False, "interruptible": True},
-    {"name": "탐색", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "schedulable": True, "interruptible": True},
+    {"name": "게시판확인", "action_type": "Normal", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "schedulable": False, "interruptible": True},
+    {"name": "게시판보고", "action_type": "Normal", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "schedulable": False, "interruptible": True},
+    {"name": "탐색", "action_type": "Normal", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "schedulable": True, "interruptible": True},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -307,6 +307,7 @@ def load_action_defs() -> List[Dict[str, object]]:
         required_tools = [part.strip() for part in required_tools_raw.split(",") if part.strip()]
         out.append({
             "name": name,
+            "action_type": str(fields.get("Action_type", "Normal") or "Normal").strip() or "Normal",
             "duration_minutes": max(10, int(fields.get("duration_minutes", 10) or 10) // 10 * 10),
             "required_tools": required_tools,
             "required_entity": str(fields.get("required_entity", "")).strip(),
