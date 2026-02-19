@@ -641,7 +641,7 @@ class SimulationRuntime:
         gap_ticks = self._ticks_until_anchor_hour(self.planner.dinner_hour)
         if npc.job.strip() == "모험가":
             gap_ticks = max(1, gap_ticks - self._reserved_adventurer_board_ticks(state))
-        return max(1, min(default_ticks, gap_ticks))
+        return max(1, gap_ticks)
 
     def _can_interrupt_current_action(self, state: SimulationNpcState) -> bool:
         if state.current_action in {"식사", "취침", "대기", "배회"}:
