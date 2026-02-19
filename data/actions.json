@@ -6,7 +6,9 @@
     "required_entity": "guild_board",
     "outputs": {},
     "fatigue": 2,
-    "hunger": 1
+    "hunger": 1,
+    "schedulable": false,
+    "interruptible": true
   },
   {
     "name": "게시판보고",
@@ -15,7 +17,9 @@
     "required_entity": "guild_board",
     "outputs": {},
     "fatigue": 2,
-    "hunger": 1
+    "hunger": 1,
+    "schedulable": false,
+    "interruptible": true
   },
   {
     "name": "탐색",
@@ -26,7 +30,9 @@
     "required_entity": "",
     "outputs": {},
     "fatigue": 9,
-    "hunger": 7
+    "hunger": 7,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "농사",
@@ -42,7 +48,9 @@
       }
     },
     "fatigue": 14,
-    "hunger": 8
+    "hunger": 8,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "낚시",
@@ -58,7 +66,9 @@
       }
     },
     "fatigue": 13,
-    "hunger": 7
+    "hunger": 7,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "제련",
@@ -74,7 +84,9 @@
       }
     },
     "fatigue": 12,
-    "hunger": 7
+    "hunger": 7,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "도구제작",
@@ -90,7 +102,9 @@
       }
     },
     "fatigue": 11,
-    "hunger": 6
+    "hunger": 6,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "약 제조",
@@ -106,7 +120,9 @@
       }
     },
     "fatigue": 10,
-    "hunger": 6
+    "hunger": 6,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "약초채집",
@@ -122,7 +138,9 @@
       }
     },
     "fatigue": 11,
-    "hunger": 7
+    "hunger": 7,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "벌목",
@@ -138,7 +156,9 @@
       }
     },
     "fatigue": 15,
-    "hunger": 9
+    "hunger": 9,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "채광",
@@ -154,7 +174,9 @@
       }
     },
     "fatigue": 16,
-    "hunger": 9
+    "hunger": 9,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "동물사냥",
@@ -174,7 +196,9 @@
       }
     },
     "fatigue": 16,
-    "hunger": 10
+    "hunger": 10,
+    "schedulable": true,
+    "interruptible": true
   },
   {
     "name": "몬스터사냥",
@@ -194,6 +218,8 @@
       }
     },
     "fatigue": 18,
-    "hunger": 11
+    "hunger": 11,
+    "schedulable": true,
+    "interruptible": true
   }
 ]
