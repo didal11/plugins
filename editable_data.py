@@ -157,6 +157,7 @@ def _entity_default_name(entity_def: Dict[str, object]) -> str:
     return ""
 
 
+
 def load_item_defs() -> List[Dict[str, object]]:
     if not MAP_FILE.exists():
         return list(DEFAULT_ITEMS)
@@ -310,7 +311,7 @@ def load_action_defs() -> List[Dict[str, object]]:
             "action_type": str(fields.get("Action_type", "Normal") or "Normal").strip() or "Normal",
             "duration_minutes": max(10, int(fields.get("duration_minutes", 10) or 10) // 10 * 10),
             "required_tools": required_tools,
-            "required_entity": str(fields.get("required_entity", "")).strip(),
+            "required_entity": "" if fields.get("required_entity", "") is None else str(fields.get("required_entity", "")).strip(),
             "schedulable": bool(fields.get("schedulable", True)),
             "interruptible": bool(fields.get("interruptible", True)),
         })

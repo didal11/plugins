@@ -16,6 +16,11 @@ def _is_resource(ent: Dict[str, object]) -> bool:
     return "current_quantity" in ent
 
 
+def _normalize_entity_token(value: object) -> str:
+    token = str(value).strip().lower()
+    return token.replace(" ", "").replace("_", "").replace("-", "")
+
+
 class EntityManager:
     def __init__(self, entities: List[Dict[str, object]], rng: Random):
         self.entities = entities
@@ -31,11 +36,23 @@ class EntityManager:
         return None
 
     def _match_key(self, ent: Dict[str, object], entity_key: str) -> bool:
-        key = str(entity_key).strip()
+        required_raw = str(entity_key).strip()
         ent_key = str(ent.get("key", "")).strip()
-        if not key or not ent_key:
+        ent_name = str(ent.get("name", "")).strip()
+        if not required_raw or (not ent_key and not ent_name):
             return False
-        return ent_key == key or ent_key.startswith(f"{key}_")
+
+        required_norm = _normalize_entity_token(required_raw)
+        ent_key_norm = _normalize_entity_token(ent_key)
+        ent_name_norm = _normalize_entity_token(ent_name)
+
+        if required_raw == ent_key or required_raw == ent_name:
+            return True
+        if required_raw.lower() == ent_key.lower() or required_raw.lower() == ent_name.lower():
+            return True
+        if required_norm and (required_norm == ent_key_norm or required_norm == ent_name_norm):
+            return True
+        return bool(required_norm and ent_key_norm.startswith(required_norm))
 
     def candidates_by_key(self, entity_key: str, discovered_only: bool = False) -> List[Dict[str, object]]:
         out: List[Dict[str, object]] = []

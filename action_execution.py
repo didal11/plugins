@@ -145,7 +145,7 @@ class ActionExecutor:
             target_bstate_name = "낚시터"
         elif entity_key == "forge_workbench":
             target_bstate_name = "대장간"
-        elif entity_key == "alchemy_table":
+        elif entity_key in ("alchemy_table", "alchemy_workbench"):
             target_bstate_name = "약국"
         if target_bstate_name and target_bstate_name in self.bstate:
             bst = self.bstate[target_bstate_name]
