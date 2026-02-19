@@ -14,7 +14,6 @@ NPCS_FILE = DATA_DIR / "npcs.json"
 MONSTERS_FILE = DATA_DIR / "monsters.json"
 RACES_FILE = DATA_DIR / "races.json"
 JOBS_FILE = DATA_DIR / "jobs.json"
-ACTIONS_FILE = DATA_DIR / "actions.json"
 SIM_SETTINGS_FILE = DATA_DIR / "sim_settings.json"
 
 VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사"]
@@ -46,18 +45,9 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "게시판확인", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "outputs": {}, "fatigue": 2, "hunger": 1, "schedulable": False, "interruptible": True},
-    {"name": "탐색", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "outputs": {}, "fatigue": 9, "hunger": 7, "schedulable": True, "interruptible": True},
-    {"name": "농사", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8, "schedulable": True, "interruptible": True},
-    {"name": "낚시", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7, "schedulable": True, "interruptible": True},
-    {"name": "제련", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7, "schedulable": True, "interruptible": True},
-    {"name": "도구제작", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6, "schedulable": True, "interruptible": True},
-    {"name": "약 제조", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "alchemy_table", "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6, "schedulable": True, "interruptible": True},
-    {"name": "약초채집", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "herb_cluster", "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7, "schedulable": True, "interruptible": True},
-    {"name": "벌목", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "tree_grove", "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9, "schedulable": True, "interruptible": True},
-    {"name": "채광", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "ore_vein", "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9, "schedulable": True, "interruptible": True},
-    {"name": "동물사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10, "schedulable": True, "interruptible": True},
-    {"name": "몬스터사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11, "schedulable": True, "interruptible": True},
+    {"name": "게시판확인", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "schedulable": False, "interruptible": True},
+    {"name": "게시판보고", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "schedulable": False, "interruptible": True},
+    {"name": "탐색", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "schedulable": True, "interruptible": True},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -135,7 +125,6 @@ def ensure_data_files() -> None:
         MONSTERS_FILE: DEFAULT_MONSTERS,
         RACES_FILE: DEFAULT_RACES,
         JOBS_FILE: DEFAULT_JOB_DEFS,
-        ACTIONS_FILE: DEFAULT_ACTION_DEFS,
         SIM_SETTINGS_FILE: DEFAULT_SIM_SETTINGS,
     }
     for path, value in defaults.items():
@@ -279,37 +268,52 @@ def load_job_defs() -> List[Dict[str, object]]:
 
 
 def load_action_defs() -> List[Dict[str, object]]:
-    ensure_data_files()
-    raw = _read_json(ACTIONS_FILE, DEFAULT_ACTION_DEFS)
-    item_keys = {str(it.get("key", "")).strip() for it in load_item_defs() if isinstance(it, dict)}
+    if not MAP_FILE.exists():
+        return list(DEFAULT_ACTION_DEFS)
+    raw = _read_json(MAP_FILE, {})
+    defs = raw.get("defs", {}) if isinstance(raw, dict) else {}
+    entities = defs.get("entities", []) if isinstance(defs, dict) else []
     out: List[Dict[str, object]] = []
-    for row in raw if isinstance(raw, list) else []:
-        if not isinstance(row, dict):
+    for entity_def in entities if isinstance(entities, list) else []:
+        if not isinstance(entity_def, dict):
             continue
-        name = str(row.get("name", "")).strip()
+        tags = {
+            str(tag).strip().lower()
+            for tag in entity_def.get("tags", [])
+            if str(tag).strip()
+        } if isinstance(entity_def.get("tags", []), list) else set()
+        if "action" not in tags:
+            continue
+
+        fields: Dict[str, object] = {}
+        for field in entity_def.get("fieldDefs", []) if isinstance(entity_def.get("fieldDefs", []), list) else []:
+            if not isinstance(field, dict):
+                continue
+            identifier = str(field.get("identifier", "")).strip()
+            if not identifier:
+                continue
+            default_override = field.get("defaultOverride")
+            value: object = None
+            if isinstance(default_override, dict):
+                params = default_override.get("params", [])
+                if isinstance(params, list) and params:
+                    value = params[0]
+            fields[identifier] = value
+
+        name = str(fields.get("name", "")).strip()
         if not name:
             continue
-        outputs_raw = row.get("outputs", {}) if isinstance(row.get("outputs", {}), dict) else {}
-        outputs = {k: v for k, v in outputs_raw.items() if str(k).strip() in item_keys}
+        required_tools_raw = str(fields.get("required_tools", "")).strip()
+        required_tools = [part.strip() for part in required_tools_raw.split(",") if part.strip()]
         out.append({
             "name": name,
-            "duration_minutes": max(10, int(row.get("duration_minutes", int(row.get("duration_hours", 1)) * 60) // 10 * 10)),
-            "required_tools": [str(x).strip() for x in row.get("required_tools", []) if str(x).strip()] if isinstance(row.get("required_tools", []), list) else ["도구"],
-            "required_entity": str(row.get("required_entity", "")).strip(),
-            "outputs": outputs,
-            "fatigue": int(row.get("fatigue", 12)),
-            "hunger": int(row.get("hunger", 8)),
-            "schedulable": bool(row.get("schedulable", True)),
-            "interruptible": bool(row.get("interruptible", True)),
+            "duration_minutes": max(10, int(fields.get("duration_minutes", 10) or 10) // 10 * 10),
+            "required_tools": required_tools,
+            "required_entity": str(fields.get("required_entity", "")).strip(),
+            "schedulable": bool(fields.get("schedulable", True)),
+            "interruptible": bool(fields.get("interruptible", True)),
         })
-    return _seed_if_empty(ACTIONS_FILE, out, DEFAULT_ACTION_DEFS)
-
-
-
-
-def save_action_defs(action_defs: List[Dict[str, object]]) -> None:
-    ensure_data_files()
-    _write_json(ACTIONS_FILE, action_defs)
+    return out or list(DEFAULT_ACTION_DEFS)
 
 def save_job_defs(job_defs: List[Dict[str, object]]) -> None:
     ensure_data_files()
