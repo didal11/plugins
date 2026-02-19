@@ -652,11 +652,26 @@ class SimulationRuntime:
 
     @staticmethod
     def _entity_matches_key(entity: GameEntity, required_key: str) -> bool:
-        required = required_key.strip().lower()
-        key = entity.key.strip().lower()
-        if not required or not key:
+        required_raw = required_key.strip()
+        key_raw = entity.key.strip()
+        name_raw = entity.name.strip()
+        if not required_raw or (not key_raw and not name_raw):
             return False
-        return key == required or key.startswith(f"{required}_")
+
+        def _norm(value: str) -> str:
+            return value.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        required_norm = _norm(required_raw)
+        key_norm = _norm(key_raw)
+        name_norm = _norm(name_raw)
+
+        if required_raw == key_raw or required_raw == name_raw:
+            return True
+        if required_raw.lower() == key_raw.lower() or required_raw.lower() == name_raw.lower():
+            return True
+        if required_norm and (required_norm == key_norm or required_norm == name_norm):
+            return True
+        return bool(required_norm and key_norm.startswith(required_norm))
 
     def _find_work_tiles(self, action_name: str) -> List[Tuple[int, int]]:
         # 작업 좌표는 실시간 탐색 결과가 아니라 월드 엔티티 스냅샷(self.world.entities)에서 조회한다.
