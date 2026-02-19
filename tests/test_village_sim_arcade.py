@@ -1331,3 +1331,88 @@ def test_town_level_does_not_observe_visible_entities_without_exploration(monkey
 
     buffer = sim.exploration_buffer_by_name["A"]
     assert ("monster_rat", (2, 2)) not in buffer.known_monster_discoveries
+
+
+def test_schedulable_action_uses_gap_until_dinner(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "농부", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 600, "schedulable": True}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    _set_sim_time(sim, 9)
+    sim.state_by_name["A"].decision_ticks_until_check = 0
+    sim.tick_once()
+
+    assert sim.state_by_name["A"].current_action == "농사"
+    assert sim.state_by_name["A"].ticks_remaining == 539
+
+
+def test_adventurer_schedulable_gap_reserves_board_cycle_time(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 60, "schedulable": False, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 60, "schedulable": False, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 600, "schedulable": True},
+        ],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    state.board_cycle_checked = False
+    state.board_cycle_needs_report = False
+
+    _set_sim_time(sim, 9)
+    planned = sim._work_duration_for_action("탐색", npcs[0], state)
+
+    assert planned == 481
+
+
+def test_non_interruptible_work_is_not_preempted(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "농부", "work_actions": ["농사"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "농사", "duration_minutes": 180, "interruptible": False}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="농부", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    _set_sim_time(sim, 11)
+    sim.tick_once()
+    assert sim.state_by_name["A"].current_action == "농사"
+
+    for _ in range(60):
+        sim.tick_once()
+    assert sim.state_by_name["A"].current_action == "농사"

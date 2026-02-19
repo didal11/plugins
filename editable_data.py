@@ -46,18 +46,18 @@ DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
-    {"name": "게시판확인", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "outputs": {}, "fatigue": 2, "hunger": 1},
-    {"name": "탐색", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "outputs": {}, "fatigue": 9, "hunger": 7},
-    {"name": "농사", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8},
-    {"name": "낚시", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7},
-    {"name": "제련", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7},
-    {"name": "도구제작", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6},
-    {"name": "약 제조", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "alchemy_table", "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6},
-    {"name": "약초채집", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "herb_cluster", "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7},
-    {"name": "벌목", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "tree_grove", "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9},
-    {"name": "채광", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "ore_vein", "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9},
-    {"name": "동물사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10},
-    {"name": "몬스터사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11},
+    {"name": "게시판확인", "duration_minutes": 10, "required_tools": [], "required_entity": "guild_board", "outputs": {}, "fatigue": 2, "hunger": 1, "schedulable": False, "interruptible": True},
+    {"name": "탐색", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "", "outputs": {}, "fatigue": 9, "hunger": 7, "schedulable": True, "interruptible": True},
+    {"name": "농사", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "field", "outputs": {"wheat": {"min": 2, "max": 4}}, "fatigue": 14, "hunger": 8, "schedulable": True, "interruptible": True},
+    {"name": "낚시", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "fish_spot", "outputs": {"fish": {"min": 1, "max": 3}}, "fatigue": 13, "hunger": 7, "schedulable": True, "interruptible": True},
+    {"name": "제련", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"ingot": {"min": 1, "max": 3}}, "fatigue": 12, "hunger": 7, "schedulable": True, "interruptible": True},
+    {"name": "도구제작", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "forge_workbench", "outputs": {"tool": {"min": 1, "max": 1}}, "fatigue": 11, "hunger": 6, "schedulable": True, "interruptible": True},
+    {"name": "약 제조", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "alchemy_table", "outputs": {"potion": {"min": 1, "max": 2}}, "fatigue": 10, "hunger": 6, "schedulable": True, "interruptible": True},
+    {"name": "약초채집", "duration_minutes": 10, "required_tools": ["도구"], "required_entity": "herb_cluster", "outputs": {"herb": {"min": 2, "max": 4}}, "fatigue": 11, "hunger": 7, "schedulable": True, "interruptible": True},
+    {"name": "벌목", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "tree_grove", "outputs": {"wood": {"min": 1, "max": 3}}, "fatigue": 15, "hunger": 9, "schedulable": True, "interruptible": True},
+    {"name": "채광", "duration_minutes": 20, "required_tools": ["도구"], "required_entity": "ore_vein", "outputs": {"ore": {"min": 1, "max": 3}}, "fatigue": 16, "hunger": 9, "schedulable": True, "interruptible": True},
+    {"name": "동물사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"meat": {"min": 1, "max": 2}, "hide": {"min": 1, "max": 1}}, "fatigue": 16, "hunger": 10, "schedulable": True, "interruptible": True},
+    {"name": "몬스터사냥", "duration_minutes": 30, "required_tools": ["도구"], "required_entity": "animal_habitat", "outputs": {"artifact": {"min": 1, "max": 1}, "ore": {"min": 0, "max": 1}}, "fatigue": 18, "hunger": 11, "schedulable": True, "interruptible": True},
 ]
 
 DEFAULT_SIM_SETTINGS: Dict[str, float] = {
@@ -299,6 +299,8 @@ def load_action_defs() -> List[Dict[str, object]]:
             "outputs": outputs,
             "fatigue": int(row.get("fatigue", 12)),
             "hunger": int(row.get("hunger", 8)),
+            "schedulable": bool(row.get("schedulable", True)),
+            "interruptible": bool(row.get("interruptible", True)),
         })
     return _seed_if_empty(ACTIONS_FILE, out, DEFAULT_ACTION_DEFS)
 

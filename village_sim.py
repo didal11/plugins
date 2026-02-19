@@ -242,6 +242,8 @@ class SimulationRuntime:
         self.job_actions = self._job_actions_map()
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
+        self.action_schedulable = self._action_schedulable_map()
+        self.action_interruptible = self._action_interruptible_map()
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.target_stock_by_key, self.target_available_by_key = {}, {}
@@ -593,6 +595,61 @@ class SimulationRuntime:
             out[name] = str(row.get("required_entity", "")).strip()
         return out
 
+    def _action_schedulable_map(self) -> Dict[str, bool]:
+        out: Dict[str, bool] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            out[name] = bool(row.get("schedulable", True))
+        return out
+
+    def _action_interruptible_map(self) -> Dict[str, bool]:
+        out: Dict[str, bool] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name", "")).strip()
+            if not name:
+                continue
+            out[name] = bool(row.get("interruptible", True))
+        return out
+
+    def _ticks_until_anchor_hour(self, anchor_hour: int) -> int:
+        current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
+        anchor_tick_of_day = (anchor_hour % 24) * self.TICKS_PER_HOUR
+        gap = anchor_tick_of_day - current_tick_of_day
+        if gap <= 0:
+            gap += 24 * self.TICKS_PER_HOUR
+        return gap
+
+    def _reserved_adventurer_board_ticks(self, state: SimulationNpcState) -> int:
+        reserve = 0
+        if not state.board_cycle_checked:
+            reserve += self.action_duration_ticks.get(BOARD_CHECK_ACTION, 0)
+        if state.board_cycle_needs_report:
+            reserve += self.action_duration_ticks.get(BOARD_REPORT_ACTION, 0)
+        return reserve
+
+    def _work_duration_for_action(self, action_name: str, npc: RenderNpc, state: SimulationNpcState) -> int:
+        default_ticks = self.action_duration_ticks.get(action_name, 1)
+        if not self.action_schedulable.get(action_name, True):
+            return default_ticks
+
+        gap_ticks = self._ticks_until_anchor_hour(self.planner.dinner_hour)
+        if npc.job.strip() == "모험가":
+            gap_ticks = max(1, gap_ticks - self._reserved_adventurer_board_ticks(state))
+        return max(1, min(default_ticks, gap_ticks))
+
+    def _can_interrupt_current_action(self, state: SimulationNpcState) -> bool:
+        if state.current_action in {"식사", "취침", "대기", "배회"}:
+            return True
+        if state.ticks_remaining <= 0:
+            return True
+        return self.action_interruptible.get(state.current_action, True)
+
     @staticmethod
     def _entity_matches_key(entity: GameEntity, required_key: str) -> bool:
         required = required_key.strip().lower()
@@ -632,7 +689,7 @@ class SimulationRuntime:
             if not state.board_cycle_checked and check_action is not None:
                 state.current_action = check_action
                 state.current_action_display = check_action
-                state.ticks_remaining = self.action_duration_ticks.get(check_action, 1)
+                state.ticks_remaining = self._work_duration_for_action(check_action, npc, state)
                 state.path = []
                 state.work_path_initialized = False
                 state.board_cycle_checked = True
@@ -641,7 +698,7 @@ class SimulationRuntime:
             if state.board_cycle_needs_report and report_action is not None:
                 state.current_action = report_action
                 state.current_action_display = report_action
-                state.ticks_remaining = self.action_duration_ticks.get(report_action, 1)
+                state.ticks_remaining = self._work_duration_for_action(report_action, npc, state)
                 state.path = []
                 state.work_path_initialized = False
                 state.board_cycle_checked = False
@@ -663,7 +720,7 @@ class SimulationRuntime:
                 action, display_action = self.rng.choice(issued_actions)
                 state.current_action = action
                 state.current_action_display = display_action
-                state.ticks_remaining = self.action_duration_ticks.get(action, 1)
+                state.ticks_remaining = self._work_duration_for_action(action, npc, state)
                 state.path = []
                 state.work_path_initialized = False
                 state.board_cycle_needs_report = True
@@ -681,7 +738,7 @@ class SimulationRuntime:
         action = self.rng.choice(candidates)
         state.current_action = action
         state.current_action_display = action
-        state.ticks_remaining = self.action_duration_ticks.get(action, 1)
+        state.ticks_remaining = self._work_duration_for_action(action, npc, state)
         state.path = []
         state.work_path_initialized = False
 
@@ -880,21 +937,23 @@ class SimulationRuntime:
             planned = self.planner.activity_for_hour(self._current_hour())
             decision_code = self._torch_decision_code(planned, state.ticks_remaining)
             if decision_code == 1:
-                if state.current_action != "식사":
-                    state.current_action = "식사"
-                    state.current_action_display = "식사"
-                    state.path = []
-                state.sleep_path_initialized = False
-                state.work_path_initialized = False
-                state.ticks_remaining = 1
-            elif decision_code == 2:
-                if state.current_action != "취침":
-                    state.current_action = "취침"
-                    state.current_action_display = "취침"
-                    state.path = []
+                if self._can_interrupt_current_action(state):
+                    if state.current_action != "식사":
+                        state.current_action = "식사"
+                        state.current_action_display = "식사"
+                        state.path = []
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
-                state.ticks_remaining = 1
+                    state.ticks_remaining = 1
+            elif decision_code == 2:
+                if self._can_interrupt_current_action(state):
+                    if state.current_action != "취침":
+                        state.current_action = "취침"
+                        state.current_action_display = "취침"
+                        state.path = []
+                        state.sleep_path_initialized = False
+                        state.work_path_initialized = False
+                    state.ticks_remaining = 1
             elif decision_code == 3:
                 state.sleep_path_initialized = False
                 self._pick_next_work_action(npc, state)
@@ -974,21 +1033,23 @@ class SimulationRuntime:
                 planned = self.planner.activity_for_hour(self._current_hour())
                 decision_code = self._torch_decision_code(planned, state.ticks_remaining)
                 if decision_code == 1:
-                    if state.current_action != "식사":
-                        state.current_action = "식사"
-                        state.current_action_display = "식사"
-                        state.path = []
-                    state.sleep_path_initialized = False
-                    state.work_path_initialized = False
-                    state.ticks_remaining = 1
-                elif decision_code == 2:
-                    if state.current_action != "취침":
-                        state.current_action = "취침"
-                        state.current_action_display = "취침"
-                        state.path = []
+                    if self._can_interrupt_current_action(state):
+                        if state.current_action != "식사":
+                            state.current_action = "식사"
+                            state.current_action_display = "식사"
+                            state.path = []
                         state.sleep_path_initialized = False
                         state.work_path_initialized = False
-                    state.ticks_remaining = 1
+                        state.ticks_remaining = 1
+                elif decision_code == 2:
+                    if self._can_interrupt_current_action(state):
+                        if state.current_action != "취침":
+                            state.current_action = "취침"
+                            state.current_action_display = "취침"
+                            state.path = []
+                            state.sleep_path_initialized = False
+                            state.work_path_initialized = False
+                        state.ticks_remaining = 1
                 elif decision_code == 3:
                     state.sleep_path_initialized = False
                     self._pick_next_work_action(npc, state)
