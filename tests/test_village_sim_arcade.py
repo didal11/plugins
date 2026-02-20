@@ -1437,3 +1437,12 @@ def test_runtime_cell_state_marks_town_as_completed_on_load():
     assert sim.get_cell_runtime_state((1, 1)) == village_sim.CellConstructionState.COMPLETED
     assert sim.get_cell_runtime_state((2, 2)) == village_sim.CellConstructionState.COMPLETED
     assert sim.get_cell_runtime_state((0, 0)) == village_sim.CellConstructionState.UNEXPLORED
+
+
+def test_construction_state_minimap_color_mapping():
+    import village_sim
+
+    assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.UNEXPLORED) is None
+    assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.IN_PROGRESS) == (235, 208, 74, 240)
+    assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.COMPLETED) == (98, 216, 123, 240)
+    assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.IN_USE) == (224, 92, 92, 240)
