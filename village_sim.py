@@ -39,8 +39,10 @@ from ldtk_integration import (
 )
 from guild_dispatch import GuildDispatcher
 from exploration import (
+    CellConstructionState,
     GuildBoardExplorationState,
     NPCExplorationBuffer,
+    RuntimeCellStateStore,
     choose_next_frontier,
     frontier_cells_from_known_view,
     is_known_from_view,
@@ -258,6 +260,7 @@ class SimulationRuntime:
         self.minimap_known_cells_snapshot: Set[Tuple[int, int]] = set()
         self.minimap_known_resources_snapshot: Dict[Tuple[str, Tuple[int, int]], int] = {}
         self.minimap_known_monsters_snapshot: Set[Tuple[str, Tuple[int, int]]] = set()
+        self.cell_runtime_state = RuntimeCellStateStore()
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
@@ -374,10 +377,21 @@ class SimulationRuntime:
 
     def _initialize_exploration_state(self) -> None:
         self.guild_board_exploration_state.known_cells.clear()
-        for coord in self._town_walkable_cells():
+        town_cells = self._town_walkable_cells()
+        self.cell_runtime_state.mark_baseline_completed(town_cells)
+        for coord in town_cells:
             self._mark_cell_discovered(coord, force=True)
         for npc in self.npcs:
             self._mark_cell_discovered((npc.x, npc.y), force=True)
+
+    def set_cell_runtime_state(self, coord: Tuple[int, int], state: CellConstructionState) -> bool:
+        return self.cell_runtime_state.set_state(coord, state)
+
+    def get_cell_runtime_state(self, coord: Tuple[int, int]) -> CellConstructionState:
+        return self.cell_runtime_state.get_state(coord)
+
+    def pop_cell_runtime_state_changes(self) -> Dict[Tuple[int, int], CellConstructionState]:
+        return self.cell_runtime_state.pop_pending_changes()
 
     def _grid_bounds(self) -> Tuple[int, int]:
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
@@ -1177,6 +1191,16 @@ def _collect_render_entities(entities: List[GameEntity]) -> List[GameEntity]:
     return list(entities)
 
 
+def _construction_state_minimap_color(state: CellConstructionState) -> tuple[int, int, int, int] | None:
+    if state == CellConstructionState.IN_PROGRESS:
+        return 235, 208, 74, 240
+    if state == CellConstructionState.COMPLETED:
+        return 98, 216, 123, 240
+    if state == CellConstructionState.IN_USE:
+        return 224, 92, 92, 240
+    return None
+
+
 def _town_bounds_tiles(world: GameWorld) -> Tuple[int, int, int, int] | None:
     for region in world.level_regions:
         if region.level_id.strip().lower() == "town":
@@ -1491,7 +1515,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                         self.show_board_modal = False
                         self.show_npc_modal = False
             elif key == arcade.key.TAB and self.show_board_modal:
-                order = ["issues", "minimap", "known_resources"]
+                order = ["issues", "minimap", "known_resources", "construction"]
                 try:
                     idx = order.index(self.board_modal_tab)
                 except ValueError:
@@ -1679,8 +1703,15 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
                 arcade.draw_text("게시판 발행 의뢰", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
                 arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
+                tab_name_map = {
+                    "issues": "의뢰 목록",
+                    "minimap": "미니맵",
+                    "known_resources": "노운 리소스",
+                    "construction": "건설",
+                }
+                tab_name = tab_name_map.get(self.board_modal_tab, "의뢰 목록")
                 arcade.draw_text(
-                    f"탭: {('의뢰 목록' if self.board_modal_tab == 'issues' else ('미니맵' if self.board_modal_tab == 'minimap' else '노운 리소스'))} (TAB 전환)",
+                    f"탭: {tab_name} (TAB 전환)",
                     left + 18,
                     bottom + modal_h - 54,
                     (210, 210, 210, 255),
@@ -1726,6 +1757,64 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                                 11,
                                 font_name=selected_font,
                             )
+                elif self.board_modal_tab == "construction":
+                    mini_left = left + 18
+                    mini_bottom = bottom + 48
+                    mini_w = modal_w - 36
+                    mini_h = modal_h - 152
+                    arcade.draw_lrbt_rectangle_filled(
+                        mini_left,
+                        mini_left + mini_w,
+                        mini_bottom,
+                        mini_bottom + mini_h,
+                        (18, 20, 26, 255),
+                    )
+
+                    width_tiles = max(1, world.width_px // world.grid_size)
+                    height_tiles = max(1, world.height_px // world.grid_size)
+                    cell_size = min(mini_w / width_tiles, mini_h / height_tiles)
+                    map_w = width_tiles * cell_size
+                    map_h = height_tiles * cell_size
+                    map_left = mini_left + (mini_w - map_w) / 2
+                    map_bottom = mini_bottom + (mini_h - map_h) / 2
+
+                    for cy in range(height_tiles):
+                        for cx in range(width_tiles):
+                            state_color = _construction_state_minimap_color(
+                                simulation.get_cell_runtime_state((cx, cy))
+                            )
+                            if state_color is None:
+                                continue
+                            px = map_left + (cx * cell_size)
+                            py = map_bottom + ((height_tiles - cy - 1) * cell_size)
+                            arcade.draw_lrbt_rectangle_filled(px, px + cell_size, py, py + cell_size, state_color)
+
+                    legend_left = left + 18
+                    legend_y = bottom + 22
+                    legend_rows = [
+                        ("미개척", None),
+                        ("개척중", (235, 208, 74, 240)),
+                        ("개척완료", (98, 216, 123, 240)),
+                        ("사용중", (224, 92, 92, 240)),
+                    ]
+                    cursor_x = legend_left
+                    for label, color in legend_rows:
+                        if color is not None:
+                            arcade.draw_lrbt_rectangle_filled(cursor_x, cursor_x + 10, legend_y, legend_y + 10, color)
+                            arcade.draw_lrbt_rectangle_outline(cursor_x, cursor_x + 10, legend_y, legend_y + 10, (220, 220, 220, 160), 1)
+                        else:
+                            arcade.draw_lrbt_rectangle_outline(cursor_x, cursor_x + 10, legend_y, legend_y + 10, (135, 135, 135, 140), 1)
+                        arcade.draw_text(label, cursor_x + 14, legend_y - 2, (220, 220, 220, 255), 10, font_name=selected_font)
+                        cursor_x += 82
+
+                    arcade.draw_lrbt_rectangle_outline(
+                        map_left,
+                        map_left + map_w,
+                        map_bottom,
+                        map_bottom + map_h,
+                        (220, 220, 220, 255),
+                        1,
+                    )
                 else:
                     mini_left = left + 18
                     mini_bottom = bottom + 18
