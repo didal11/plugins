@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field
+from enum import IntEnum
 from random import Random
 from typing import Dict, Iterable, Optional, Set, Tuple
 
@@ -19,6 +20,72 @@ from typing import Dict, Iterable, Optional, Set, Tuple
 Coord = Tuple[int, int]
 ResourceKey = Tuple[str, Coord]
 MonsterSighting = Tuple[str, Coord]
+
+
+class CellConstructionState(IntEnum):
+    UNEXPLORED = 0
+    IN_PROGRESS = 1
+    COMPLETED = 2
+    IN_USE = 3
+
+
+@dataclass
+class RuntimeCellStateStore:
+    """Runtime-only cell state storage with sparse change tracking.
+
+    - baseline_completed_cells: 로드 시 기본 완료 상태(예: town)
+    - overrides: baseline에서 달라진 셀만 저장
+    - pending_changes: 마지막 저장 이후 변경된 좌표만 추적
+    """
+
+    baseline_completed_cells: Set[Coord] = field(default_factory=set)
+    overrides: Dict[Coord, CellConstructionState] = field(default_factory=dict)
+    pending_changes: Set[Coord] = field(default_factory=set)
+
+    def get_state(self, coord: Coord) -> CellConstructionState:
+        state = self.overrides.get(coord)
+        if state is not None:
+            return state
+        if coord in self.baseline_completed_cells:
+            return CellConstructionState.COMPLETED
+        return CellConstructionState.UNEXPLORED
+
+    def set_state(self, coord: Coord, state: CellConstructionState) -> bool:
+        """Set runtime state. Return True when actual change occurred."""
+
+        prev = self.get_state(coord)
+        next_state = CellConstructionState(int(state))
+        if prev == next_state:
+            return False
+
+        baseline = (
+            CellConstructionState.COMPLETED
+            if coord in self.baseline_completed_cells
+            else CellConstructionState.UNEXPLORED
+        )
+        if next_state == baseline:
+            self.overrides.pop(coord, None)
+        else:
+            self.overrides[coord] = next_state
+        self.pending_changes.add(coord)
+        return True
+
+    def mark_baseline_completed(self, coords: Iterable[Coord]) -> None:
+        """Initialize baseline completion without producing pending changes."""
+
+        for coord in coords:
+            self.baseline_completed_cells.add(coord)
+            if self.overrides.get(coord) == CellConstructionState.COMPLETED:
+                self.overrides.pop(coord, None)
+
+    def pop_pending_changes(self) -> Dict[Coord, CellConstructionState]:
+        """Return and clear only changed cells since last pop."""
+
+        if not self.pending_changes:
+            return {}
+        out = {coord: self.get_state(coord) for coord in self.pending_changes}
+        self.pending_changes.clear()
+        return out
 
 
 @dataclass

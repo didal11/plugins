@@ -1416,3 +1416,24 @@ def test_non_interruptible_work_is_not_preempted(monkeypatch):
     for _ in range(60):
         sim.tick_once()
     assert sim.state_by_name["A"].current_action == "농사"
+
+
+def test_runtime_cell_state_marks_town_as_completed_on_load():
+    import village_sim
+    from ldtk_integration import LevelRegion
+
+    world = village_sim.GameWorld(
+        level_id="ALL_LEVELS",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+        level_regions=[LevelRegion(level_id="Town", x=1, y=1, width=2, height=2)],
+    )
+
+    sim = village_sim.SimulationRuntime(world=world, npcs=[], monsters=[])
+
+    assert sim.get_cell_runtime_state((1, 1)) == village_sim.CellConstructionState.COMPLETED
+    assert sim.get_cell_runtime_state((2, 2)) == village_sim.CellConstructionState.COMPLETED
+    assert sim.get_cell_runtime_state((0, 0)) == village_sim.CellConstructionState.UNEXPLORED
