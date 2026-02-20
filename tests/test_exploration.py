@@ -1,7 +1,9 @@
 from random import Random
 
+from exploration import CellConstructionState
 from exploration import GuildBoardExplorationState
 from exploration import NPCExplorationBuffer
+from exploration import RuntimeCellStateStore
 from exploration import choose_next_frontier
 
 
@@ -78,3 +80,30 @@ def test_with_all_cells_known_initializes_full_grid():
         (0, 0), (0, 1), (0, 2),
         (1, 0), (1, 1), (1, 2),
     }
+
+
+def test_runtime_cell_state_store_tracks_only_overrides_and_changes():
+    store = RuntimeCellStateStore()
+    store.mark_baseline_completed({(1, 1)})
+
+    assert store.get_state((0, 0)) == CellConstructionState.UNEXPLORED
+    assert store.get_state((1, 1)) == CellConstructionState.COMPLETED
+
+    changed = store.set_state((0, 0), CellConstructionState.IN_PROGRESS)
+    assert changed is True
+    assert store.overrides[(0, 0)] == CellConstructionState.IN_PROGRESS
+
+    delta = store.pop_pending_changes()
+    assert delta == {(0, 0): CellConstructionState.IN_PROGRESS}
+    assert store.pop_pending_changes() == {}
+
+
+def test_runtime_cell_state_store_removes_override_when_returning_to_baseline():
+    store = RuntimeCellStateStore()
+    store.mark_baseline_completed({(2, 2)})
+
+    assert store.set_state((2, 2), CellConstructionState.IN_USE) is True
+    assert (2, 2) in store.overrides
+
+    assert store.set_state((2, 2), CellConstructionState.COMPLETED) is True
+    assert (2, 2) not in store.overrides

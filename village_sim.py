@@ -39,8 +39,10 @@ from ldtk_integration import (
 )
 from guild_dispatch import GuildDispatcher
 from exploration import (
+    CellConstructionState,
     GuildBoardExplorationState,
     NPCExplorationBuffer,
+    RuntimeCellStateStore,
     choose_next_frontier,
     frontier_cells_from_known_view,
     is_known_from_view,
@@ -258,6 +260,7 @@ class SimulationRuntime:
         self.minimap_known_cells_snapshot: Set[Tuple[int, int]] = set()
         self.minimap_known_resources_snapshot: Dict[Tuple[str, Tuple[int, int]], int] = {}
         self.minimap_known_monsters_snapshot: Set[Tuple[str, Tuple[int, int]]] = set()
+        self.cell_runtime_state = RuntimeCellStateStore()
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
@@ -374,10 +377,21 @@ class SimulationRuntime:
 
     def _initialize_exploration_state(self) -> None:
         self.guild_board_exploration_state.known_cells.clear()
-        for coord in self._town_walkable_cells():
+        town_cells = self._town_walkable_cells()
+        self.cell_runtime_state.mark_baseline_completed(town_cells)
+        for coord in town_cells:
             self._mark_cell_discovered(coord, force=True)
         for npc in self.npcs:
             self._mark_cell_discovered((npc.x, npc.y), force=True)
+
+    def set_cell_runtime_state(self, coord: Tuple[int, int], state: CellConstructionState) -> bool:
+        return self.cell_runtime_state.set_state(coord, state)
+
+    def get_cell_runtime_state(self, coord: Tuple[int, int]) -> CellConstructionState:
+        return self.cell_runtime_state.get_state(coord)
+
+    def pop_cell_runtime_state_changes(self) -> Dict[Tuple[int, int], CellConstructionState]:
+        return self.cell_runtime_state.pop_pending_changes()
 
     def _grid_bounds(self) -> Tuple[int, int]:
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
