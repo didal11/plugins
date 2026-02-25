@@ -37,7 +37,7 @@ from ldtk_integration import (
     WorkbenchEntity,
     build_world_from_ldtk,
 )
-from guild_dispatch import GuildDispatcher
+from guild_dispatch import GuildDispatcher, WorkOrderQueue
 from exploration import (
     CellConstructionState,
     GuildBoardExplorationState,
@@ -69,17 +69,16 @@ def _is_guild_board_entity(entity: GameEntity) -> bool:
 
 
 def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
-    issued = simulation.guild_dispatcher.issue_for_targets(
-        simulation.target_stock_by_key,
-        simulation.target_available_by_key,
-    )
+    issued = simulation.work_order_queue.open_orders(job=simulation.board_issue_job_filter)
     if not issued:
         return ["발행된 의뢰가 없습니다."]
     out: List[str] = []
     for row in issued:
         display_action = simulation.display_action_name(row.action_name, row.resource_key)
         display_resource = simulation.display_resource_name(row.resource_key)
-        out.append(f"- {display_action} | 자원:{display_resource} | 수량:{int(row.amount)}")
+        out.append(
+            f"- [{row.job}] {display_action} | 자원:{display_resource} | 수량:{int(row.amount)} | 우선:{int(row.priority)}"
+        )
     return out
 
 
@@ -210,6 +209,7 @@ class SimulationNpcState(BaseModel):
     last_board_check_day: int = -1
     board_cycle_checked: bool = False
     board_cycle_needs_report: bool = False
+    assigned_order_id: str = ""
 
 
 class SimulationRuntime:
@@ -248,6 +248,9 @@ class SimulationRuntime:
         self.action_interruptible = self._action_interruptible_map()
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
+        self.work_order_queue = WorkOrderQueue()
+        self.action_candidate_jobs = self._action_candidate_jobs_map()
+        self.board_issue_job_filter = "전체"
         self.target_stock_by_key, self.target_available_by_key = {}, {}
         self.guild_board_exploration_state = GuildBoardExplorationState()
         self._refresh_guild_dispatcher()
@@ -265,6 +268,7 @@ class SimulationRuntime:
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
         self._initialize_exploration_state()
+        self._recompute_work_orders(reason="init")
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
         keys: List[str] = []
@@ -311,6 +315,39 @@ class SimulationRuntime:
         target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
+
+    def _action_candidate_jobs_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for job, actions in self.job_actions.items():
+            for action in actions:
+                rows = out.setdefault(action, [])
+                if job not in rows:
+                    rows.append(job)
+        return out
+
+    def board_issue_filter_jobs(self) -> List[str]:
+        return ["전체", *sorted(self.job_actions.keys())]
+
+    def _order_recipe_id(self, action_name: str, resource_key: str) -> str:
+        return f"recipe::{action_name.strip()}::{resource_key.strip().lower()}"
+
+    def _recompute_work_orders(self, *, reason: str) -> None:
+        issued = self.guild_dispatcher.issue_for_targets(
+            self.target_stock_by_key,
+            self.target_available_by_key,
+        )
+        now_tick = int(self.ticks)
+        for row in issued:
+            for job in self.action_candidate_jobs.get(row.action_name, []):
+                self.work_order_queue.upsert_open_order(
+                    recipe_id=self._order_recipe_id(row.action_name, row.resource_key),
+                    action_name=row.action_name,
+                    resource_key=row.resource_key,
+                    amount=max(1, int(row.amount)),
+                    job=job,
+                    priority=2 if row.action_name == "탐색" else 1,
+                    now_tick=now_tick,
+                )
 
     def _known_available_by_key_from_board(self) -> Dict[str, int]:
         out: Dict[str, int] = {}
@@ -734,25 +771,16 @@ class SimulationRuntime:
                 state.board_cycle_needs_report = False
                 return
 
-            issued = self.guild_dispatcher.issue_for_targets(
-                self.target_stock_by_key,
-                self.target_available_by_key,
-            )
-            issued_actions: List[Tuple[str, str]] = []
-            allowed = set(candidates)
-            for row in issued:
-                if row.action_name not in allowed:
-                    continue
-                display_action = self.display_action_name(row.action_name, row.resource_key)
-                issued_actions.extend([(row.action_name, display_action)] * max(1, int(row.amount)))
-            if issued_actions:
-                action, display_action = self.rng.choice(issued_actions)
+            assigned = self.work_order_queue.assign_next(npc.job, npc.name)
+            if assigned is not None:
+                action = assigned.action_name
                 state.current_action = action
-                state.current_action_display = display_action
+                state.current_action_display = self.display_action_name(action, assigned.resource_key)
                 state.ticks_remaining = self._work_duration_for_action(action, npc, state)
                 state.path = []
                 state.work_path_initialized = False
                 state.board_cycle_needs_report = True
+                state.assigned_order_id = assigned.order_id
                 return
             state.board_cycle_checked = False
             state.board_cycle_needs_report = False
@@ -764,7 +792,20 @@ class SimulationRuntime:
             state.ticks_remaining = 1
             state.path = []
             return
+
+        assigned = self.work_order_queue.assign_next(npc.job, npc.name)
+        if assigned is not None:
+            action = assigned.action_name
+            state.current_action = action
+            state.current_action_display = self.display_action_name(action, assigned.resource_key)
+            state.ticks_remaining = self._work_duration_for_action(action, npc, state)
+            state.path = []
+            state.work_path_initialized = False
+            state.assigned_order_id = assigned.order_id
+            return
+
         action = self.rng.choice(candidates)
+        state.assigned_order_id = ""
         state.current_action = action
         state.current_action_display = action
         state.ticks_remaining = self._work_duration_for_action(action, npc, state)
@@ -1049,6 +1090,8 @@ class SimulationRuntime:
     def tick_once(self) -> None:
         self._refresh_guild_dispatcher()
         self.ticks += 1
+        if self.ticks % (24 * self.TICKS_PER_HOUR) == 0:
+            self._recompute_work_orders(reason="midnight")
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
         height_tiles = max(1, self.world.height_px // self.world.grid_size)
 
@@ -1157,6 +1200,14 @@ class SimulationRuntime:
                     self._handle_board_check(npc.name)
                 else:
                     self._handle_board_report(npc.name)
+                    self._recompute_work_orders(reason="board_report")
+
+        for npc in self.npcs:
+            state = self.state_by_name[npc.name]
+            if state.assigned_order_id and state.ticks_remaining <= 0:
+                self.work_order_queue.complete(state.assigned_order_id, self.ticks)
+                state.assigned_order_id = ""
+                self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
             self._step_random(npc, width_tiles, height_tiles)
@@ -1521,6 +1572,13 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 except ValueError:
                     idx = 0
                 self.board_modal_tab = order[(idx + 1) % len(order)]
+            elif key == arcade.key.J and self.show_board_modal and self.board_modal_tab == "issues":
+                jobs = simulation.board_issue_filter_jobs()
+                try:
+                    idx = jobs.index(simulation.board_issue_job_filter)
+                except ValueError:
+                    idx = 0
+                simulation.board_issue_job_filter = jobs[(idx + 1) % len(jobs)]
 
         def _screen_to_world(self, x: float, y: float) -> tuple[float, float]:
             # resize/fullscreen 이후 클릭 오프셋을 피하기 위해
@@ -1718,6 +1776,15 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     11,
                     font_name=selected_font,
                 )
+                if self.board_modal_tab == "issues":
+                    arcade.draw_text(
+                        f"직업 필터: {simulation.board_issue_job_filter} (J 전환)",
+                        left + 18,
+                        bottom + modal_h - 72,
+                        (210, 210, 210, 255),
+                        11,
+                        font_name=selected_font,
+                    )
 
                 if self.board_modal_tab == "issues":
                     lines = _format_guild_issue_lines(simulation)
@@ -1725,7 +1792,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                         arcade.draw_text(
                             line,
                             left + 18,
-                            bottom + modal_h - 84 - (idx * 24),
+                            bottom + modal_h - 104 - (idx * 24),
                             (230, 230, 230, 255),
                             12,
                             font_name=selected_font,
