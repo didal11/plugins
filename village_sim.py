@@ -31,13 +31,14 @@ from editable_data import (
 from ldtk_integration import (
     GameEntity,
     GameWorld,
+    BuildingEntity,
     NpcStatEntity,
     ResourceEntity,
     StructureEntity,
     WorkbenchEntity,
     build_world_from_ldtk,
 )
-from guild_dispatch import GuildDispatcher, WorkOrderQueue
+from guild_dispatch import GuildDispatcher, GuildIssue, WorkOrderQueue
 from exploration import (
     CellConstructionState,
     GuildBoardExplorationState,
@@ -246,6 +247,8 @@ class SimulationRuntime:
         self.action_required_entity = self._action_required_entity_map()
         self.action_schedulable = self._action_schedulable_map()
         self.action_interruptible = self._action_interruptible_map()
+        self.producer_actions_by_item = self._producer_actions_by_item_map()
+        self.expected_output_by_action_item = self._expected_output_by_action_item_map()
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.work_order_queue = WorkOrderQueue()
@@ -267,8 +270,22 @@ class SimulationRuntime:
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+        self.global_buildings_by_key = self._global_building_registry()
         self._initialize_exploration_state()
         self._recompute_work_orders(reason="init")
+
+    def _global_building_registry(self) -> Dict[str, List[Tuple[int, int]]]:
+        out: Dict[str, List[Tuple[int, int]]] = {}
+        for entity in self.world.entities:
+            if not isinstance(entity, BuildingEntity):
+                continue
+            key = entity.key.strip().lower()
+            if not key:
+                continue
+            out.setdefault(key, []).append((entity.x, entity.y))
+        for key in out:
+            out[key].sort()
+        return out
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
         keys: List[str] = []
@@ -302,9 +319,13 @@ class SimulationRuntime:
         }
 
         target_stock, target_available = self._default_guild_targets()
+        stock_keys = set(target_stock.keys()) | set(self.target_stock_by_key.keys()) | set(self.guild_inventory_by_key.keys())
+        for key in stock_keys:
+            if key not in self.guild_inventory_by_key:
+                self.guild_inventory_by_key[key] = 0
         self.target_stock_by_key = {
             key: int(self.target_stock_by_key.get(key, target_stock.get(key, 1)))
-            for key in self.guild_dispatcher.resource_keys
+            for key in sorted(stock_keys)
         }
         self.target_available_by_key = {
             key: int(self.target_available_by_key.get(key, target_available.get(key, 1)))
@@ -312,7 +333,8 @@ class SimulationRuntime:
         }
 
     def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
-        target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
+        stock_keys = sorted(set(self.guild_dispatcher.resource_keys) | set(self.producer_actions_by_item.keys()))
+        target_stock_by_key = {key: 1 for key in stock_keys}
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
 
@@ -332,10 +354,16 @@ class SimulationRuntime:
         return f"recipe::{action_name.strip()}::{resource_key.strip().lower()}"
 
     def _recompute_work_orders(self, *, reason: str) -> None:
-        issued = self.guild_dispatcher.issue_for_targets(
-            self.target_stock_by_key,
-            self.target_available_by_key,
-        )
+        explore_issued = [
+            row
+            for row in self.guild_dispatcher.issue_for_targets(
+                self.target_stock_by_key,
+                self.target_available_by_key,
+            )
+            if row.action_name == "탐색"
+        ]
+        non_explore_issued = self._issue_non_explore_orders_by_guild_stock()
+        issued = [*explore_issued, *non_explore_issued]
         now_tick = int(self.ticks)
         for row in issued:
             for job in self.action_candidate_jobs.get(row.action_name, []):
@@ -562,6 +590,7 @@ class SimulationRuntime:
             if key:
                 buffer.record_monster_discovery(key, coord)
 
+
     def _mark_visible_area_discovered(self, npc_name: str, coord: Tuple[int, int]) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
         x, y = coord
@@ -667,6 +696,101 @@ class SimulationRuntime:
                 continue
             out[name] = bool(row.get("interruptible", True))
         return out
+
+    def _producer_actions_by_item_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            action_name = str(row.get("name", "")).strip()
+            if not action_name:
+                continue
+            outputs = row.get("outputs", {})
+            if not isinstance(outputs, dict):
+                continue
+            for raw_key in outputs.keys():
+                key = str(raw_key).strip().lower()
+                if not key:
+                    continue
+                rows = out.setdefault(key, [])
+                if action_name not in rows:
+                    rows.append(action_name)
+        return out
+
+    def _expected_output_by_action_item_map(self) -> Dict[Tuple[str, str], int]:
+        out: Dict[Tuple[str, str], int] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            action_name = str(row.get("name", "")).strip()
+            if not action_name:
+                continue
+            outputs = row.get("outputs", {})
+            if not isinstance(outputs, dict):
+                continue
+            for raw_key, spec in outputs.items():
+                item_key = str(raw_key).strip().lower()
+                if not item_key:
+                    continue
+                if isinstance(spec, dict):
+                    mn = int(spec.get("min", 1))
+                    mx = int(spec.get("max", mn))
+                else:
+                    mn = 1
+                    mx = 1
+                lo = max(1, min(mn, mx))
+                hi = max(lo, max(mn, mx))
+                out[(action_name, item_key)] = max(1, (lo + hi) // 2)
+        return out
+
+    @staticmethod
+    def _default_non_explore_action_for_key(item_key: str) -> str:
+        key = item_key.strip().lower()
+        if key == "herb" or key.startswith("herb_"):
+            return "약초채집"
+        if key == "tree" or key.startswith("tree_"):
+            return "벌목"
+        if key == "ore" or key.startswith("ore_"):
+            return "채광"
+        if key == "animal" or key.startswith("animal_"):
+            return "동물사냥"
+        if key == "monster" or key.startswith("monster_"):
+            return "몬스터사냥"
+        return "채집"
+
+    def _non_explore_action_for_item(self, item_key: str) -> str:
+        key = item_key.strip().lower()
+        candidates = self.producer_actions_by_item.get(key, [])
+        if candidates:
+            return candidates[0]
+        return self._default_non_explore_action_for_key(key)
+
+    def _issue_non_explore_orders_by_guild_stock(self) -> List[GuildIssue]:
+        issues: List[GuildIssue] = []
+        keys = sorted(set(self.target_stock_by_key.keys()) | set(self.guild_inventory_by_key.keys()))
+        for key in keys:
+            target = max(0, int(self.target_stock_by_key.get(key, 0)))
+            current = max(0, int(self.guild_inventory_by_key.get(key, 0)))
+            deficit = max(0, target - current)
+            if deficit <= 0:
+                continue
+            action_name = self._non_explore_action_for_item(key)
+            if action_name == "탐색":
+                continue
+            issues.append(GuildIssue(action_name=action_name, resource_key=key, amount=deficit))
+        return issues
+
+    def _apply_order_completion_effects(self, order_id: str) -> None:
+        row = self.work_order_queue.orders_by_id.get(order_id)
+        if row is None:
+            return
+        if row.action_name == "탐색":
+            return
+        key = row.resource_key.strip().lower()
+        if not key:
+            return
+        produced = max(1, int(row.amount))
+        self.guild_inventory_by_key[key] = max(0, int(self.guild_inventory_by_key.get(key, 0))) + produced
 
     def _ticks_until_anchor_hour(self, anchor_hour: int) -> int:
         current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
@@ -1205,6 +1329,7 @@ class SimulationRuntime:
         for npc in self.npcs:
             state = self.state_by_name[npc.name]
             if state.assigned_order_id and state.ticks_remaining <= 0:
+                self._apply_order_completion_effects(state.assigned_order_id)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
                 self._recompute_work_orders(reason="order_done")
@@ -1798,28 +1923,35 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                             font_name=selected_font,
                         )
                 elif self.board_modal_tab == "known_resources":
-                    rows = sorted(
-                        [
-                            (name, coord, amount)
-                            for (name, coord), amount in simulation.minimap_known_resources_snapshot.items()
-                        ],
-                        key=lambda row: (row[0], row[1][1], row[1][0]),
+                    known_available = simulation._known_available_by_key_from_board()
+                    keys = sorted(set(simulation.guild_inventory_by_key.keys()) | set(simulation.target_stock_by_key.keys()))
+                    arcade.draw_text(
+                        "key | inv | target | deficit | known",
+                        left + 18,
+                        bottom + modal_h - 84,
+                        (210, 210, 210, 255),
+                        11,
+                        font_name=selected_font,
                     )
-                    if not rows:
+                    if not keys:
                         arcade.draw_text(
-                            "게시판 보고 후 노운 리소스 갱신",
+                            "재고/목표 데이터 없음",
                             left + 18,
-                            bottom + modal_h - 84,
+                            bottom + modal_h - 106,
                             (205, 205, 205, 255),
                             11,
                             font_name=selected_font,
                         )
                     else:
-                        for idx, (name, coord, amount) in enumerate(rows[:16]):
+                        for idx, key in enumerate(keys[:14]):
+                            inv = max(0, int(simulation.guild_inventory_by_key.get(key, 0)))
+                            target = max(0, int(simulation.target_stock_by_key.get(key, 0)))
+                            deficit = max(0, target - inv)
+                            known = max(0, int(known_available.get(key, 0)))
                             arcade.draw_text(
-                                f"- {name} @ {coord} : {int(amount)}",
+                                f"{key:<10} | {inv:>3} | {target:>3} | {deficit:>3} | {known:>3}",
                                 left + 18,
-                                bottom + modal_h - 84 - (idx * 22),
+                                bottom + modal_h - 106 - (idx * 22),
                                 (230, 230, 230, 255),
                                 11,
                                 font_name=selected_font,
