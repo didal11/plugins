@@ -1515,143 +1515,20 @@ def test_construction_state_minimap_color_mapping():
     assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.IN_USE) == (224, 92, 92, 240)
 
 
-def test_non_explore_orders_are_emitted_by_guild_inventory_deficit(monkeypatch):
+def test_display_item_name_prefers_item_display(monkeypatch):
     import village_sim
 
-    monkeypatch.setattr(
-        village_sim,
-        "load_job_defs",
-        lambda: [{"job": "모험가", "work_actions": ["탐색", "약초채집"]}],
-    )
-    monkeypatch.setattr(
-        village_sim,
-        "load_action_defs",
-        lambda: [
-            {"name": "탐색", "duration_minutes": 10},
-            {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb", "outputs": {"herb": {"min": 1, "max": 2}}},
-        ],
-    )
+    monkeypatch.setattr(village_sim, "load_item_defs", lambda: [{"key": "potion", "display": "포션"}])
 
     world = village_sim.GameWorld(
         level_id="W",
         grid_size=16,
         width_px=64,
         height_px=64,
-        entities=[
-            village_sim.ResourceEntity(
-                key="herb",
-                name="약초",
-                x=1,
-                y=1,
-                max_quantity=5,
-                current_quantity=0,
-                is_discovered=False,
-            )
-        ],
+        entities=[],
         tiles=[],
     )
-    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)], seed=1)
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="농부", x=0, y=0)], seed=1)
 
-    sim.guild_inventory_by_key["herb"] = 0
-    sim.target_stock_by_key["herb"] = 3
-    sim.target_available_by_key["herb"] = 0
-    sim._recompute_work_orders(reason="test")
-
-    got = {(row.resource_key, row.action_name) for row in sim.work_order_queue.open_orders()}
-    assert ("herb", "약초채집") in got
-
-
-def test_outputs_mapping_emits_product_order_from_guild_stock_deficit(monkeypatch):
-    import village_sim
-
-    monkeypatch.setattr(
-        village_sim,
-        "load_job_defs",
-        lambda: [{"job": "약사", "work_actions": ["약 제조"]}],
-    )
-    monkeypatch.setattr(
-        village_sim,
-        "load_action_defs",
-        lambda: [
-            {"name": "약 제조", "duration_minutes": 10, "required_entity": "alchemy_workbench", "outputs": {"potion": {"min": 1, "max": 2}}},
-        ],
-    )
-
-    world = village_sim.GameWorld(
-        level_id="W",
-        grid_size=16,
-        width_px=64,
-        height_px=64,
-        entities=[
-            village_sim.WorkbenchEntity(
-                key="alchemy_workbench",
-                name="연금 작업대",
-                x=1,
-                y=1,
-                min_duration=1,
-                max_duration=1,
-                current_duration=1,
-            )
-        ],
-        tiles=[],
-    )
-    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="P", job="약사", x=0, y=0)], seed=1)
-
-    sim.guild_inventory_by_key["potion"] = 0
-    sim.target_stock_by_key["potion"] = 2
-    sim._recompute_work_orders(reason="test")
-
-    got = {(row.resource_key, row.action_name) for row in sim.work_order_queue.open_orders(job="약사")}
-    assert ("potion", "약 제조") in got
-
-
-def test_order_completion_reflects_inventory_and_known_resources_tab_uses_stock(monkeypatch):
-    import village_sim
-
-    monkeypatch.setattr(
-        village_sim,
-        "load_job_defs",
-        lambda: [{"job": "약사", "work_actions": ["약 제조"]}],
-    )
-    monkeypatch.setattr(
-        village_sim,
-        "load_action_defs",
-        lambda: [
-            {"name": "약 제조", "duration_minutes": 10, "required_entity": "alchemy_workbench", "outputs": {"potion": {"min": 1, "max": 2}}},
-        ],
-    )
-
-    world = village_sim.GameWorld(
-        level_id="W",
-        grid_size=16,
-        width_px=64,
-        height_px=64,
-        entities=[
-            village_sim.WorkbenchEntity(
-                key="alchemy_workbench",
-                name="연금 작업대",
-                x=1,
-                y=1,
-                min_duration=1,
-                max_duration=1,
-                current_duration=1,
-            )
-        ],
-        tiles=[],
-    )
-    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="P", job="약사", x=0, y=0)], seed=1)
-
-    sim.guild_inventory_by_key["potion"] = 0
-    order = sim.work_order_queue.upsert_open_order(
-        recipe_id="recipe::약 제조::potion",
-        action_name="약 제조",
-        resource_key="potion",
-        amount=3,
-        job="약사",
-        priority=1,
-        now_tick=sim.ticks,
-    )
-    sim._apply_order_completion_effects(order.order_id)
-
-    assert sim.guild_inventory_by_key["potion"] == 3
+    assert sim.display_item_name("potion") == "포션"
 
