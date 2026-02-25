@@ -134,6 +134,10 @@ class StructureEntity(GameEntity):
     current_duration: int
 
 
+class BuildingEntity(GameEntity):
+    model_config = ConfigDict(extra="forbid")
+
+
 class NpcStatEntity(GameEntity):
     model_config = ConfigDict(extra="forbid")
 
@@ -234,6 +238,14 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
             min_duration=min_duration,
             max_duration=max_duration,
             current_duration=current_duration,
+        )
+
+    if "building" in tags:
+        return BuildingEntity(
+            key=key,
+            name=name,
+            x=tx,
+            y=ty,
         )
 
     if "npc" in tags or key == "stat":

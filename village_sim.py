@@ -31,6 +31,7 @@ from editable_data import (
 from ldtk_integration import (
     GameEntity,
     GameWorld,
+    BuildingEntity,
     NpcStatEntity,
     ResourceEntity,
     StructureEntity,
@@ -267,8 +268,22 @@ class SimulationRuntime:
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+        self.global_buildings_by_key = self._global_building_registry()
         self._initialize_exploration_state()
         self._recompute_work_orders(reason="init")
+
+    def _global_building_registry(self) -> Dict[str, List[Tuple[int, int]]]:
+        out: Dict[str, List[Tuple[int, int]]] = {}
+        for entity in self.world.entities:
+            if not isinstance(entity, BuildingEntity):
+                continue
+            key = entity.key.strip().lower()
+            if not key:
+                continue
+            out.setdefault(key, []).append((entity.x, entity.y))
+        for key in out:
+            out[key].sort()
+        return out
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
         keys: List[str] = []
@@ -561,6 +576,7 @@ class SimulationRuntime:
             key = monster.name.strip().lower()
             if key:
                 buffer.record_monster_discovery(key, coord)
+
 
     def _mark_visible_area_discovered(self, npc_name: str, coord: Tuple[int, int]) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())

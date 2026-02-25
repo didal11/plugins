@@ -145,6 +145,7 @@ class NPCExplorationBuffer:
 
         self.known_monster_discoveries.add((name, coord))
 
+
     def merge_from(self, other: "NPCExplorationBuffer") -> None:
         """Merge another delta buffer into this one."""
 
@@ -197,6 +198,7 @@ class GuildBoardExplorationState:
 
         if buffer.known_monster_discoveries:
             self.known_monsters.update(buffer.known_monster_discoveries)
+
 
     def export_delta_for_known_cells(self, known_cells: Iterable[Coord]) -> NPCExplorationBuffer:
         """Return only data for cells requested by NPC.

@@ -1007,6 +1007,40 @@ def test_visible_entity_observation_updates_resource_and_monster_buffers(monkeyp
     assert ("monster_rat", (2, 1)) in sim.guild_board_exploration_state.known_monsters
 
 
+
+
+def test_buildings_are_managed_as_global_registry_not_discovery(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[
+            village_sim.BuildingEntity(key="guild", name="길드", x=1, y=1),
+            village_sim.BuildingEntity(key="guild", name="길드", x=2, y=1),
+            village_sim.BuildingEntity(key="inn", name="여관", x=3, y=3),
+        ],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)], seed=1)
+
+    assert sim.global_buildings_by_key == {"guild": [(1, 1), (2, 1)], "inn": [(3, 3)]}
+
 def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch):
     import village_sim
 
