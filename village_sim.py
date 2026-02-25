@@ -710,6 +710,24 @@ class SimulationRuntime:
             out[name] = bool(row.get("interruptible", True))
         return out
 
+    def _producer_actions_by_item_map(self) -> Dict[str, List[str]]:
+        """호환성을 위해 아이템별 생산 액션 매핑을 제공한다.
+
+        현재 데이터 소스(`load_item_defs`)는 아이템 키/표시명만 제공하므로
+        생산 액션 정보가 없는 경우 빈 매핑을 반환한다.
+        """
+
+        return {}
+
+    def _expected_output_by_action_item_map(self) -> Dict[Tuple[str, str], int]:
+        """호환성을 위해 (action, item)별 기대 산출량 매핑을 제공한다.
+
+        관련 데이터가 정의되지 않은 환경에서도 런타임 초기화가 실패하지 않도록
+        기본값으로 빈 매핑을 사용한다.
+        """
+
+        return {}
+
     def _item_display_name_map(self) -> Dict[str, str]:
         out: Dict[str, str] = {}
         for row in load_item_defs():
