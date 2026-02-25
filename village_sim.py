@@ -38,7 +38,7 @@ from ldtk_integration import (
     WorkbenchEntity,
     build_world_from_ldtk,
 )
-from guild_dispatch import GuildDispatcher, WorkOrderQueue
+from guild_dispatch import GuildDispatcher, GuildIssue, WorkOrderQueue
 from exploration import (
     CellConstructionState,
     GuildBoardExplorationState,
@@ -247,6 +247,8 @@ class SimulationRuntime:
         self.action_required_entity = self._action_required_entity_map()
         self.action_schedulable = self._action_schedulable_map()
         self.action_interruptible = self._action_interruptible_map()
+        self.producer_actions_by_item = self._producer_actions_by_item_map()
+        self.expected_output_by_action_item = self._expected_output_by_action_item_map()
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.work_order_queue = WorkOrderQueue()
@@ -1264,6 +1266,7 @@ class SimulationRuntime:
         for npc in self.npcs:
             state = self.state_by_name[npc.name]
             if state.assigned_order_id and state.ticks_remaining <= 0:
+                self._apply_order_completion_effects(state.assigned_order_id)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
                 self._recompute_work_orders(reason="order_done")
