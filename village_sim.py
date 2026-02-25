@@ -31,6 +31,7 @@ from editable_data import (
 from ldtk_integration import (
     GameEntity,
     GameWorld,
+    BuildingEntity,
     NpcStatEntity,
     ResourceEntity,
     StructureEntity,
@@ -267,8 +268,22 @@ class SimulationRuntime:
         self.blocked_tiles = {tuple(row) for row in self.world.blocked_tiles}
         self.dining_tiles = self._find_dining_tiles()
         self.bed_tiles = self._find_bed_tiles()
+        self.global_buildings_by_key = self._global_building_registry()
         self._initialize_exploration_state()
         self._recompute_work_orders(reason="init")
+
+    def _global_building_registry(self) -> Dict[str, List[Tuple[int, int]]]:
+        out: Dict[str, List[Tuple[int, int]]] = {}
+        for entity in self.world.entities:
+            if not isinstance(entity, BuildingEntity):
+                continue
+            key = entity.key.strip().lower()
+            if not key:
+                continue
+            out.setdefault(key, []).append((entity.x, entity.y))
+        for key in out:
+            out[key].sort()
+        return out
 
     def _dynamic_registered_resource_keys(self) -> List[str]:
         keys: List[str] = []
@@ -283,9 +298,23 @@ class SimulationRuntime:
             keys.append(key)
         return keys
 
+    def _all_item_keys(self) -> List[str]:
+        keys: List[str] = []
+        seen: set[str] = set()
+        for row in load_item_defs():
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key", "")).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+        return keys
+
     def _refresh_guild_dispatcher(self) -> None:
         registered_resources = self._dynamic_registered_resource_keys()
-        for key in registered_resources:
+        all_item_keys = self._all_item_keys()
+        for key in [*registered_resources, *all_item_keys]:
             if key not in self.guild_inventory_by_key:
                 self.guild_inventory_by_key[key] = 0
 
@@ -302,9 +331,13 @@ class SimulationRuntime:
         }
 
         target_stock, target_available = self._default_guild_targets()
+        stock_keys = set(target_stock.keys()) | set(self.target_stock_by_key.keys()) | set(self.guild_inventory_by_key.keys())
+        for key in stock_keys:
+            if key not in self.guild_inventory_by_key:
+                self.guild_inventory_by_key[key] = 0
         self.target_stock_by_key = {
             key: int(self.target_stock_by_key.get(key, target_stock.get(key, 1)))
-            for key in self.guild_dispatcher.resource_keys
+            for key in sorted(stock_keys)
         }
         self.target_available_by_key = {
             key: int(self.target_available_by_key.get(key, target_available.get(key, 1)))
@@ -312,7 +345,8 @@ class SimulationRuntime:
         }
 
     def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
-        target_stock_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
+        stock_keys = sorted(set(self._all_item_keys()))
+        target_stock_by_key = {key: 1 for key in stock_keys}
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
 
@@ -332,10 +366,15 @@ class SimulationRuntime:
         return f"recipe::{action_name.strip()}::{resource_key.strip().lower()}"
 
     def _recompute_work_orders(self, *, reason: str) -> None:
-        issued = self.guild_dispatcher.issue_for_targets(
-            self.target_stock_by_key,
-            self.target_available_by_key,
-        )
+        explore_issued = [
+            row
+            for row in self.guild_dispatcher.issue_for_targets(
+                self.target_stock_by_key,
+                self.target_available_by_key,
+            )
+            if row.action_name == "탐색"
+        ]
+        issued = [*explore_issued]
         now_tick = int(self.ticks)
         for row in issued:
             for job in self.action_candidate_jobs.get(row.action_name, []):
@@ -562,6 +601,7 @@ class SimulationRuntime:
             if key:
                 buffer.record_monster_discovery(key, coord)
 
+
     def _mark_visible_area_discovered(self, npc_name: str, coord: Tuple[int, int]) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
         x, y = coord
@@ -667,6 +707,25 @@ class SimulationRuntime:
                 continue
             out[name] = bool(row.get("interruptible", True))
         return out
+
+    def _item_display_name_map(self) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for row in load_item_defs():
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key", "")).strip().lower()
+            if not key:
+                continue
+            display = str(row.get("display", "")).strip() or key
+            out.setdefault(key, display)
+        return out
+
+    def display_item_name(self, item_key: str) -> str:
+        key = item_key.strip().lower()
+        item_name = self._item_display_name_map().get(key)
+        if item_name:
+            return item_name
+        return self.display_resource_name(key)
 
     def _ticks_until_anchor_hour(self, anchor_hour: int) -> int:
         current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
@@ -1764,7 +1823,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 tab_name_map = {
                     "issues": "의뢰 목록",
                     "minimap": "미니맵",
-                    "known_resources": "노운 리소스",
+                    "known_resources": "길드 인벤토리",
                     "construction": "건설",
                 }
                 tab_name = tab_name_map.get(self.board_modal_tab, "의뢰 목록")
@@ -1798,28 +1857,36 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                             font_name=selected_font,
                         )
                 elif self.board_modal_tab == "known_resources":
-                    rows = sorted(
-                        [
-                            (name, coord, amount)
-                            for (name, coord), amount in simulation.minimap_known_resources_snapshot.items()
-                        ],
-                        key=lambda row: (row[0], row[1][1], row[1][0]),
+                    known_available = simulation._known_available_by_key_from_board()
+                    keys = sorted(set(simulation.guild_inventory_by_key.keys()) | set(simulation.target_stock_by_key.keys()))
+                    arcade.draw_text(
+                        "name | inv | target | deficit | known",
+                        left + 18,
+                        bottom + modal_h - 84,
+                        (210, 210, 210, 255),
+                        11,
+                        font_name=selected_font,
                     )
-                    if not rows:
+                    if not keys:
                         arcade.draw_text(
-                            "게시판 보고 후 노운 리소스 갱신",
+                            "재고/목표 데이터 없음",
                             left + 18,
-                            bottom + modal_h - 84,
+                            bottom + modal_h - 106,
                             (205, 205, 205, 255),
                             11,
                             font_name=selected_font,
                         )
                     else:
-                        for idx, (name, coord, amount) in enumerate(rows[:16]):
+                        for idx, key in enumerate(keys[:14]):
+                            name = simulation.display_item_name(key)
+                            inv = max(0, int(simulation.guild_inventory_by_key.get(key, 0)))
+                            target = max(0, int(simulation.target_stock_by_key.get(key, 0)))
+                            deficit = max(0, target - inv)
+                            known = max(0, int(known_available.get(key, 0)))
                             arcade.draw_text(
-                                f"- {name} @ {coord} : {int(amount)}",
+                                f"{name:<10} | {inv:>3} | {target:>3} | {deficit:>3} | {known:>3}",
                                 left + 18,
-                                bottom + modal_h - 84 - (idx * 22),
+                                bottom + modal_h - 106 - (idx * 22),
                                 (230, 230, 230, 255),
                                 11,
                                 font_name=selected_font,

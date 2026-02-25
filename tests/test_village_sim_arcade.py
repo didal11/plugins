@@ -1007,6 +1007,40 @@ def test_visible_entity_observation_updates_resource_and_monster_buffers(monkeyp
     assert ("monster_rat", (2, 1)) in sim.guild_board_exploration_state.known_monsters
 
 
+
+
+def test_buildings_are_managed_as_global_registry_not_discovery(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=80,
+        height_px=80,
+        entities=[
+            village_sim.BuildingEntity(key="guild", name="길드", x=1, y=1),
+            village_sim.BuildingEntity(key="guild", name="길드", x=2, y=1),
+            village_sim.BuildingEntity(key="inn", name="여관", x=3, y=3),
+        ],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="모험가", x=0, y=0)], seed=1)
+
+    assert sim.global_buildings_by_key == {"guild": [(1, 1), (2, 1)], "inn": [(3, 3)]}
+
 def test_board_check_imports_board_exploration_state_into_npc_buffer(monkeypatch):
     import village_sim
 
@@ -1078,6 +1112,39 @@ def test_runtime_frontier_is_computed_from_buffer_known_only(monkeypatch):
     assert (4, 0) in frontier
     assert (4, 2) in frontier
 
+
+
+
+def test_guild_inventory_registers_all_item_defs(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [{"job": "농부", "work_actions": ["농사"]}])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [{"name": "농사", "duration_minutes": 10, "outputs": {"wheat": {"min": 1, "max": 1}}}])
+    monkeypatch.setattr(
+        village_sim,
+        "load_item_defs",
+        lambda: [
+            {"key": "potion", "display": "포션"},
+            {"key": "tool", "display": "도구"},
+            {"key": "wheat", "display": "밀"},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="F", job="농부", x=0, y=0)], seed=1)
+
+    assert sim.guild_inventory_by_key["potion"] == 0
+    assert sim.guild_inventory_by_key["tool"] == 0
+    assert sim.guild_inventory_by_key["wheat"] == 0
+    assert sim.target_stock_by_key["potion"] == 1
+    assert sim.target_stock_by_key["tool"] == 1
 
 def test_registered_resources_include_world_keys_and_available_follows_global_known_resources(monkeypatch):
     import village_sim
@@ -1446,3 +1513,22 @@ def test_construction_state_minimap_color_mapping():
     assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.IN_PROGRESS) == (235, 208, 74, 240)
     assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.COMPLETED) == (98, 216, 123, 240)
     assert village_sim._construction_state_minimap_color(village_sim.CellConstructionState.IN_USE) == (224, 92, 92, 240)
+
+
+def test_display_item_name_prefers_item_display(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_item_defs", lambda: [{"key": "potion", "display": "포션"}])
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="A", job="농부", x=0, y=0)], seed=1)
+
+    assert sim.display_item_name("potion") == "포션"
+
