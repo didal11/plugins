@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Dict, Iterable, List, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -25,6 +26,121 @@ class GuildIssue(BaseModel):
     action_name: str
     resource_key: str
     amount: int
+
+
+class WorkOrderStatus(str, Enum):
+    OPEN = "open"
+    ASSIGNED = "assigned"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class WorkOrder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: str
+    recipe_id: str
+    action_name: str
+    resource_key: str
+    amount: int
+    job: str
+    priority: int = 1
+    status: WorkOrderStatus = WorkOrderStatus.OPEN
+    assignee_npc_name: str = ""
+    created_tick: int = 0
+    updated_tick: int = 0
+
+
+class WorkOrderQueue:
+    """직업별 큐를 단일 저장소에서 관리하는 큐(필터 기반)."""
+
+    def __init__(self):
+        self.orders_by_id: Dict[str, WorkOrder] = {}
+        self.open_by_job: Dict[str, List[str]] = {}
+
+    def _enqueue_open(self, order: WorkOrder) -> None:
+        q = self.open_by_job.setdefault(order.job, [])
+        if order.order_id not in q:
+            q.append(order.order_id)
+
+    def _dequeue_open(self, order: WorkOrder) -> None:
+        q = self.open_by_job.get(order.job, [])
+        self.open_by_job[order.job] = [oid for oid in q if oid != order.order_id]
+
+    def upsert_open_order(
+        self,
+        *,
+        recipe_id: str,
+        action_name: str,
+        resource_key: str,
+        amount: int,
+        job: str,
+        priority: int,
+        now_tick: int,
+    ) -> WorkOrder:
+        order_id = f"{job}:{recipe_id}"
+        if order_id in self.orders_by_id:
+            row = self.orders_by_id[order_id]
+            if row.status == WorkOrderStatus.OPEN:
+                row.amount = max(int(row.amount), max(1, int(amount)))
+                row.priority = max(int(row.priority), int(priority))
+                row.updated_tick = int(now_tick)
+                return row
+        row = WorkOrder(
+            order_id=order_id,
+            recipe_id=recipe_id,
+            action_name=action_name,
+            resource_key=resource_key,
+            amount=max(1, int(amount)),
+            job=job,
+            priority=max(1, int(priority)),
+            status=WorkOrderStatus.OPEN,
+            assignee_npc_name="",
+            created_tick=int(now_tick),
+            updated_tick=int(now_tick),
+        )
+        self.orders_by_id[row.order_id] = row
+        self._enqueue_open(row)
+        return row
+
+    def assign_next(self, job: str, npc_name: str) -> Optional[WorkOrder]:
+        q = self.open_by_job.get(job, [])
+        if not q:
+            return None
+        ranked = sorted(
+            [self.orders_by_id[oid] for oid in q if self.orders_by_id[oid].status == WorkOrderStatus.OPEN],
+            key=lambda row: (-int(row.priority), int(row.created_tick), row.order_id),
+        )
+        if not ranked:
+            return None
+        row = ranked[0]
+        row.status = WorkOrderStatus.ASSIGNED
+        row.assignee_npc_name = npc_name
+        self._dequeue_open(row)
+        return row
+
+    def complete(self, order_id: str, now_tick: int) -> None:
+        row = self.orders_by_id.get(order_id)
+        if row is None:
+            return
+        row.status = WorkOrderStatus.DONE
+        row.updated_tick = int(now_tick)
+
+    def fail(self, order_id: str, now_tick: int) -> None:
+        row = self.orders_by_id.get(order_id)
+        if row is None:
+            return
+        row.status = WorkOrderStatus.FAILED
+        row.updated_tick = int(now_tick)
+
+    def open_orders(self, *, job: Optional[str] = None) -> List[WorkOrder]:
+        if job is None or not str(job).strip() or str(job).strip() == "전체":
+            return [
+                row for row in self.orders_by_id.values() if row.status == WorkOrderStatus.OPEN
+            ]
+        q = self.open_by_job.get(job, [])
+        return [self.orders_by_id[oid] for oid in q if self.orders_by_id[oid].status == WorkOrderStatus.OPEN]
 
 
 class GuildDispatcher:
