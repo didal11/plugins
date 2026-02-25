@@ -300,9 +300,23 @@ class SimulationRuntime:
             keys.append(key)
         return keys
 
+    def _all_item_keys(self) -> List[str]:
+        keys: List[str] = []
+        seen: set[str] = set()
+        for row in load_item_defs():
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key", "")).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+        return keys
+
     def _refresh_guild_dispatcher(self) -> None:
         registered_resources = self._dynamic_registered_resource_keys()
-        for key in registered_resources:
+        all_item_keys = self._all_item_keys()
+        for key in [*registered_resources, *all_item_keys]:
             if key not in self.guild_inventory_by_key:
                 self.guild_inventory_by_key[key] = 0
 
@@ -333,7 +347,7 @@ class SimulationRuntime:
         }
 
     def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
-        stock_keys = sorted(set(self.guild_dispatcher.resource_keys) | set(self.producer_actions_by_item.keys()))
+        stock_keys = sorted(set(self.guild_dispatcher.resource_keys) | set(self.producer_actions_by_item.keys()) | set(self._all_item_keys()))
         target_stock_by_key = {key: 1 for key in stock_keys}
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
@@ -1889,7 +1903,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 tab_name_map = {
                     "issues": "의뢰 목록",
                     "minimap": "미니맵",
-                    "known_resources": "노운 리소스",
+                    "known_resources": "길드 인벤토리",
                     "construction": "건설",
                 }
                 tab_name = tab_name_map.get(self.board_modal_tab, "의뢰 목록")

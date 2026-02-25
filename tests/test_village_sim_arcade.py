@@ -1113,6 +1113,39 @@ def test_runtime_frontier_is_computed_from_buffer_known_only(monkeypatch):
     assert (4, 2) in frontier
 
 
+
+
+def test_guild_inventory_registers_all_item_defs(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(village_sim, "load_job_defs", lambda: [{"job": "농부", "work_actions": ["농사"]}])
+    monkeypatch.setattr(village_sim, "load_action_defs", lambda: [{"name": "농사", "duration_minutes": 10, "outputs": {"wheat": {"min": 1, "max": 1}}}])
+    monkeypatch.setattr(
+        village_sim,
+        "load_item_defs",
+        lambda: [
+            {"key": "potion", "display": "포션"},
+            {"key": "tool", "display": "도구"},
+            {"key": "wheat", "display": "밀"},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[],
+        tiles=[],
+    )
+    sim = village_sim.SimulationRuntime(world, [village_sim.RenderNpc(name="F", job="농부", x=0, y=0)], seed=1)
+
+    assert sim.guild_inventory_by_key["potion"] == 0
+    assert sim.guild_inventory_by_key["tool"] == 0
+    assert sim.guild_inventory_by_key["wheat"] == 0
+    assert sim.target_stock_by_key["potion"] == 1
+    assert sim.target_stock_by_key["tool"] == 1
+
 def test_registered_resources_include_world_keys_and_available_follows_global_known_resources(monkeypatch):
     import village_sim
 
