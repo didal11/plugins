@@ -51,21 +51,21 @@ from exploration import (
     record_known_cell_discovery,
 )
 from planning import DailyPlanner, ScheduledActivity
+from simulation_contract import (
+    ContractState,
+    ContractExecuteState,
+    apply_assigned_order,
+    apply_resume_or_go_board,
+)
+from simulation_pathing import (
+    neighbors as path_neighbors,
+    find_path_to_nearest_target as path_find_path_to_nearest_target,
+    wavefront_distances as path_wavefront_distances,
+    batch_next_steps_by_wavefront as path_batch_next_steps_by_wavefront,
+)
 
 BOARD_CHECK_ACTION = "게시판확인"
 
-
-class ContractState(str, Enum):
-    NO_CONTRACT = "NO_CONTRACT"
-    GO_BOARD = "GO_BOARD"
-    ACQUIRE_ORDER = "ACQUIRE_ORDER"
-    EXECUTING = "EXECUTING"
-
-
-class ContractExecuteState(str, Enum):
-    IDLE = "IDLE"
-    MOVE_TO_WORKSITE = "MOVE_TO_WORKSITE"
-    PERFORM_ACTION = "PERFORM_ACTION"
 
 try:
     import torch
@@ -862,49 +862,25 @@ class SimulationRuntime:
     def _pick_next_work_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
         """업무 시간 업무 선택 로직 (의뢰 계약 상태 중심)."""
 
-        # 이미 계약된 의뢰가 있으면 재계약하지 않고 실행을 이어간다.
+        order_row = None
         if state.assigned_order_id:
-            row = self.work_order_queue.orders_by_id.get(state.assigned_order_id)
-            if row is not None:
-                state.contract_state = ContractState.EXECUTING
-                state.contract_execute_state = ContractExecuteState.MOVE_TO_WORKSITE
-                action = row.action_name
-                state.current_action = action
-                state.current_action_display = self.display_action_name(
-                    action,
-                    row.resource_key,
-                    issue_type=row.issue_type.value,
-                    item_key=row.item_key,
-                )
-                state.ticks_remaining = self._work_duration_for_action(action, npc, state)
-                state.path = []
-                state.work_path_initialized = False
-                return
-            state.assigned_order_id = ""
+            order_row = self.work_order_queue.orders_by_id.get(state.assigned_order_id)
+            if order_row is None:
+                state.assigned_order_id = ""
 
-        # 계약이 없는 상태에서만 게시판으로 이동해 새 의뢰를 받는다.
-        state.contract_state = ContractState.GO_BOARD
-        state.contract_execute_state = ContractExecuteState.IDLE
-        state.current_action = BOARD_CHECK_ACTION
-        state.current_action_display = BOARD_CHECK_ACTION
-        state.ticks_remaining = self._work_duration_for_action(BOARD_CHECK_ACTION, npc, state)
-        state.path = []
-        state.work_path_initialized = False
+        apply_resume_or_go_board(
+            state=state,
+            npc=npc,
+            order_row=order_row,
+            board_check_action=BOARD_CHECK_ACTION,
+            display_action_name=self.display_action_name,
+            work_duration_for_action=self._work_duration_for_action,
+        )
+
 
 
     def _neighbors(self, x: int, y: int, width_tiles: int, height_tiles: int) -> List[Tuple[int, int]]:
-        out: List[Tuple[int, int]] = []
-        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
-                continue
-            if (nx, ny) in self.blocked_tiles:
-                continue
-            out.append((nx, ny))
-        return out
-
-    @staticmethod
-    def _distance_to_targets(x: int, y: int, targets: List[Tuple[int, int]]) -> int:
-        return min(abs(x - tx) + abs(y - ty) for tx, ty in targets)
+        return path_neighbors(x, y, width_tiles, height_tiles, self.blocked_tiles)
 
     def _find_path_to_nearest_target(
         self,
@@ -913,32 +889,13 @@ class SimulationRuntime:
         width_tiles: int,
         height_tiles: int,
     ) -> List[Tuple[int, int]]:
-        if not targets or start in targets:
-            return []
-        distances = self._wavefront_distances(targets, width_tiles, height_tiles)
-        sx, sy = start
-        if sy < 0 or sx < 0 or sy >= len(distances) or sx >= len(distances[0]):
-            return []
-        if distances[sy][sx] >= 10**9:
-            return []
-
-        path: List[Tuple[int, int]] = []
-        cx, cy = sx, sy
-        while distances[cy][cx] > 0:
-            best_next: Tuple[int, int] | None = None
-            best_dist = distances[cy][cx]
-            for nx, ny in self._neighbors(cx, cy, width_tiles, height_tiles):
-                nb_dist = distances[ny][nx]
-                if nb_dist > best_dist:
-                    continue
-                if nb_dist < best_dist or best_next is None or (ny, nx) < (best_next[1], best_next[0]):
-                    best_dist = nb_dist
-                    best_next = (nx, ny)
-            if best_next is None:
-                return []
-            path.append(best_next)
-            cx, cy = best_next
-        return path
+        return path_find_path_to_nearest_target(
+            start,
+            targets,
+            width_tiles,
+            height_tiles,
+            self.blocked_tiles,
+        )
 
     def _wavefront_distances(
         self,
@@ -946,29 +903,7 @@ class SimulationRuntime:
         width_tiles: int,
         height_tiles: int,
     ) -> List[List[int]]:
-        inf = 10**9
-        distances = [[inf for _ in range(width_tiles)] for _ in range(height_tiles)]
-        q: deque[Tuple[int, int]] = deque()
-
-        for tx, ty in targets:
-            if tx < 0 or ty < 0 or tx >= width_tiles or ty >= height_tiles:
-                continue
-            if (tx, ty) in self.blocked_tiles:
-                continue
-            if distances[ty][tx] == 0:
-                continue
-            distances[ty][tx] = 0
-            q.append((tx, ty))
-
-        while q:
-            x, y = q.popleft()
-            next_dist = distances[y][x] + 1
-            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
-                if next_dist >= distances[ny][nx]:
-                    continue
-                distances[ny][nx] = next_dist
-                q.append((nx, ny))
-        return distances
+        return path_wavefront_distances(targets, width_tiles, height_tiles, self.blocked_tiles)
 
     def _batch_next_steps_by_wavefront(
         self,
@@ -977,23 +912,13 @@ class SimulationRuntime:
         width_tiles: int,
         height_tiles: int,
     ) -> List[Tuple[int, int] | None]:
-        if not starts:
-            return []
-
-        distances = self._wavefront_distances(targets, width_tiles, height_tiles)
-        out: List[Tuple[int, int] | None] = []
-        for x, y in starts:
-            best_next: Tuple[int, int] | None = None
-            best_dist = distances[y][x] if 0 <= x < width_tiles and 0 <= y < height_tiles else 10**9
-            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
-                nb_dist = distances[ny][nx]
-                if nb_dist > best_dist:
-                    continue
-                if nb_dist < best_dist or best_next is None or (ny, nx) < (best_next[1], best_next[0]):
-                    best_dist = nb_dist
-                    best_next = (nx, ny)
-            out.append(best_next)
-        return out
+        return path_batch_next_steps_by_wavefront(
+            starts,
+            targets,
+            width_tiles,
+            height_tiles,
+            self.blocked_tiles,
+        )
 
     def _torch_decision_code(self, planned: ScheduledActivity, ticks_remaining: int) -> int:
         if not self.use_torch_for_npc or torch is None:
@@ -1171,31 +1096,13 @@ class SimulationRuntime:
 
     def _try_assign_order_after_board_check(self, npc: RenderNpc, state: SimulationNpcState) -> None:
         assigned = self.work_order_queue.assign_next(npc.job, npc.name)
-        if assigned is None:
-            state.contract_state = ContractState.NO_CONTRACT
-            state.contract_execute_state = ContractExecuteState.IDLE
-            state.assigned_order_id = ""
-            state.current_action = "배회"
-            state.current_action_display = "배회"
-            state.ticks_remaining = 1
-            state.path = []
-            state.work_path_initialized = False
-            return
-
-        state.assigned_order_id = assigned.order_id
-        state.contract_state = ContractState.EXECUTING
-        state.contract_execute_state = ContractExecuteState.MOVE_TO_WORKSITE
-        action = assigned.action_name
-        state.current_action = action
-        state.current_action_display = self.display_action_name(
-            action,
-            assigned.resource_key,
-            issue_type=assigned.issue_type.value,
-            item_key=assigned.item_key,
+        apply_assigned_order(
+            state=state,
+            npc=npc,
+            assigned=assigned,
+            display_action_name=self.display_action_name,
+            work_duration_for_action=self._work_duration_for_action,
         )
-        state.ticks_remaining = self._work_duration_for_action(action, npc, state)
-        state.path = []
-        state.work_path_initialized = False
 
     def tick_once(self) -> None:
         self._refresh_guild_dispatcher()
