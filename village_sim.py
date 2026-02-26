@@ -745,6 +745,18 @@ class SimulationRuntime:
             return item_name
         return self.display_resource_name(key)
 
+    def _apply_order_completion_effects(self, order_id: str) -> None:
+        row = self.work_order_queue.orders_by_id.get(order_id)
+        if row is None:
+            return
+        if row.action_name == "탐색":
+            return
+        key = row.resource_key.strip().lower()
+        if not key:
+            return
+        produced = max(1, int(row.amount))
+        self.guild_inventory_by_key[key] = max(0, int(self.guild_inventory_by_key.get(key, 0))) + produced
+
     def _ticks_until_anchor_hour(self, anchor_hour: int) -> int:
         current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
         anchor_tick_of_day = (anchor_hour % 24) * self.TICKS_PER_HOUR
