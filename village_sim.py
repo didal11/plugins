@@ -248,6 +248,7 @@ class SimulationRuntime:
         self.use_torch_for_npc = bool(use_torch_for_npc and torch is not None)
 
         self.job_actions = self._job_actions_map()
+        self.job_procure_items = self._job_procure_items_map()
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
         self.action_schedulable = self._action_schedulable_map()
@@ -256,6 +257,7 @@ class SimulationRuntime:
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.work_order_queue = WorkOrderQueue()
         self.action_candidate_jobs = self._action_candidate_jobs_map()
+        self.procure_candidate_jobs_by_item = self._procure_candidate_jobs_by_item_map()
         self.board_issue_job_filter = "전체"
         self.target_stock_by_key, self.target_available_by_key = {}, {}
         self.guild_board_exploration_state = GuildBoardExplorationState()
@@ -377,9 +379,11 @@ class SimulationRuntime:
 
     def _jobs_for_issue(self, issue: GuildIssue) -> List[str]:
         if issue.issue_type == GuildIssueType.PROCURE:
-            if "모험가" in self.job_actions:
-                return ["모험가"]
-            return []
+            item_key = issue.item_key.strip().lower()
+            candidates = list(self.procure_candidate_jobs_by_item.get(item_key, []))
+            if candidates:
+                return candidates
+            return list(self.action_candidate_jobs.get(issue.action_name, []))
         return list(self.action_candidate_jobs.get(issue.action_name, []))
 
     def _recompute_work_orders(self, *, reason: str) -> None:
@@ -687,6 +691,27 @@ class SimulationRuntime:
             actions = [str(x).strip() for x in row.get("work_actions", []) if str(x).strip()]
             if actions:
                 out[job] = actions
+        return out
+
+    def _job_procure_items_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for row in load_job_defs():
+            if not isinstance(row, dict):
+                continue
+            job = str(row.get("job", "")).strip()
+            if not job:
+                continue
+            items = [str(x).strip().lower() for x in row.get("procure_items", []) if str(x).strip()]
+            out[job] = items
+        return out
+
+    def _procure_candidate_jobs_by_item_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for job, items in self.job_procure_items.items():
+            for item_key in items:
+                rows = out.setdefault(item_key, [])
+                if job not in rows:
+                    rows.append(job)
         return out
 
     def _action_duration_map(self) -> Dict[str, int]:
