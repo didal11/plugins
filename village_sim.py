@@ -38,7 +38,7 @@ from ldtk_integration import (
     WorkbenchEntity,
     build_world_from_ldtk,
 )
-from guild_dispatch import GuildDispatcher, GuildIssue, WorkOrderQueue
+from guild_dispatch import GuildDispatcher, GuildIssue, GuildIssueType, WorkOrderQueue
 from exploration import (
     CellConstructionState,
     GuildBoardExplorationState,
@@ -75,8 +75,13 @@ def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
         return ["발행된 의뢰가 없습니다."]
     out: List[str] = []
     for row in issued:
-        display_action = simulation.display_action_name(row.action_name, row.resource_key)
-        display_resource = simulation.display_resource_name(row.resource_key)
+        display_action = simulation.display_action_name(
+            row.action_name,
+            row.resource_key,
+            issue_type=row.issue_type.value,
+            item_key=row.item_key,
+        )
+        display_resource = simulation.display_item_name(row.item_key)
         out.append(
             f"- [{row.job}] {display_action} | 자원:{display_resource} | 수량:{int(row.amount)} | 우선:{int(row.priority)}"
         )
@@ -362,29 +367,38 @@ class SimulationRuntime:
     def board_issue_filter_jobs(self) -> List[str]:
         return ["전체", *sorted(self.job_actions.keys())]
 
-    def _order_recipe_id(self, action_name: str, resource_key: str) -> str:
-        return f"recipe::{action_name.strip()}::{resource_key.strip().lower()}"
+    def _order_recipe_id(self, issue: GuildIssue) -> str:
+        return (
+            f"{issue.issue_type.value}::"
+            f"{issue.action_name.strip()}::"
+            f"{issue.item_key.strip().lower()}::"
+            f"{issue.resource_key.strip().lower()}"
+        )
+
+    def _jobs_for_issue(self, issue: GuildIssue) -> List[str]:
+        if issue.issue_type == GuildIssueType.PROCURE:
+            if "모험가" in self.job_actions:
+                return ["모험가"]
+            return []
+        return list(self.action_candidate_jobs.get(issue.action_name, []))
 
     def _recompute_work_orders(self, *, reason: str) -> None:
-        explore_issued = [
-            row
-            for row in self.guild_dispatcher.issue_for_targets(
-                self.target_stock_by_key,
-                self.target_available_by_key,
-            )
-            if row.action_name == "탐색"
-        ]
-        issued = [*explore_issued]
+        issued = self.guild_dispatcher.issue_for_targets(
+            self.target_stock_by_key,
+            self.target_available_by_key,
+        )
         now_tick = int(self.ticks)
-        for row in issued:
-            for job in self.action_candidate_jobs.get(row.action_name, []):
+        for issue in issued:
+            for job in self._jobs_for_issue(issue):
                 self.work_order_queue.upsert_open_order(
-                    recipe_id=self._order_recipe_id(row.action_name, row.resource_key),
-                    action_name=row.action_name,
-                    resource_key=row.resource_key,
-                    amount=max(1, int(row.amount)),
+                    recipe_id=self._order_recipe_id(issue),
+                    issue_type=issue.issue_type,
+                    action_name=issue.action_name,
+                    item_key=issue.item_key,
+                    resource_key=issue.resource_key,
+                    amount=max(1, int(issue.amount)),
                     job=job,
-                    priority=2 if row.action_name == "탐색" else 1,
+                    priority=2 if issue.issue_type == GuildIssueType.EXPLORE else 1,
                     now_tick=now_tick,
                 )
 
@@ -412,7 +426,18 @@ class SimulationRuntime:
         key = resource_key.strip().lower()
         return self._resource_name_map().get(key, key)
 
-    def display_action_name(self, action_name: str, resource_key: str) -> str:
+    def display_action_name(
+        self,
+        action_name: str,
+        resource_key: str,
+        *,
+        issue_type: str = "",
+        item_key: str = "",
+    ) -> str:
+        issue_key = issue_type.strip().lower()
+        target_key = item_key.strip().lower() or resource_key.strip().lower()
+        if issue_key == GuildIssueType.PROCURE.value:
+            return f"{self.display_item_name(target_key)} 조달"
         if action_name.strip() == "탐색":
             return f"{self.display_resource_name(resource_key)} 탐색"
         return action_name
@@ -749,9 +774,9 @@ class SimulationRuntime:
         row = self.work_order_queue.orders_by_id.get(order_id)
         if row is None:
             return
-        if row.action_name == "탐색":
+        if row.issue_type == GuildIssueType.EXPLORE:
             return
-        key = row.resource_key.strip().lower()
+        key = row.item_key.strip().lower()
         if not key:
             return
         produced = max(1, int(row.amount))
@@ -864,7 +889,12 @@ class SimulationRuntime:
             if assigned is not None:
                 action = assigned.action_name
                 state.current_action = action
-                state.current_action_display = self.display_action_name(action, assigned.resource_key)
+                state.current_action_display = self.display_action_name(
+                    action,
+                    assigned.resource_key,
+                    issue_type=assigned.issue_type.value,
+                    item_key=assigned.item_key,
+                )
                 state.ticks_remaining = self._work_duration_for_action(action, npc, state)
                 state.path = []
                 state.work_path_initialized = False
@@ -886,7 +916,7 @@ class SimulationRuntime:
         if assigned is not None:
             action = assigned.action_name
             state.current_action = action
-            state.current_action_display = self.display_action_name(action, assigned.resource_key)
+            state.current_action_display = self.display_action_name(action, assigned.resource_key, issue_type=assigned.issue_type.value, item_key=assigned.item_key)
             state.ticks_remaining = self._work_duration_for_action(action, npc, state)
             state.path = []
             state.work_path_initialized = False
