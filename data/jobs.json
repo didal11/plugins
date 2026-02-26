@@ -1,40 +1,30 @@
 [
   {
     "job": "모험가",
-    "work_actions": [
-      "게시판보고",
-      "게시판확인",
-      "탐색",
-      "약초채집",
-      "벌목",
-      "채광",
-      "동물사냥",
-      "몬스터사냥"
-    ]
+    "procure_items": ["herb2", "meat2", "wood2", "ore2", "hide2"]
   },
   {
     "job": "농부",
-    "work_actions": [
-      "농사"
-    ]
+    "procure_items": ["wheet2"]
   },
   {
     "job": "어부",
-    "work_actions": [
-      "낚시"
-    ]
+    "procure_items": ["fish2"]
   },
   {
     "job": "대장장이",
-    "work_actions": [
-      "제련",
-      "도구제작"
-    ]
+    "procure_items": ["ingot2", "tool2", "leather2"]
   },
   {
     "job": "약사",
-    "work_actions": [
-      "약 제조"
-    ]
+    "procure_items": ["potion2"]
+  },
+  {
+    "job": "목수",
+    "procure_items": ["lumber2"]
+  },
+  {
+    "job": "요리사",
+    "procure_items": ["bread2"]
   }
 ]
