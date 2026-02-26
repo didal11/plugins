@@ -16,7 +16,7 @@ RACES_FILE = DATA_DIR / "races.json"
 JOBS_FILE = DATA_DIR / "jobs.json"
 SIM_SETTINGS_FILE = DATA_DIR / "sim_settings.json"
 
-VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사"]
+VALID_JOBS = ["모험가", "농부", "어부", "대장장이", "약사", "목수", "요리사"]
 VALID_GENDERS = ["남", "여", "기타"]
 
 DEFAULT_ITEMS: List[Dict[str, object]] = [
@@ -36,12 +36,29 @@ DEFAULT_ITEMS: List[Dict[str, object]] = [
     {"key": "tool", "display": "도구"},
 ]
 
+DEFAULT_JOB_WORK_ACTIONS: Dict[str, List[str]] = {
+    "모험가": ["게시판확인", "탐색", "약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"],
+    "농부": ["농사"],
+    "어부": ["낚시"],
+    "대장장이": ["제련", "도구제작"],
+    "약사": ["약 제조"],
+    "목수": ["목공"],
+    "요리사": ["요리"],
+}
+
+DEFAULT_JOB_PROCURE_ITEMS: Dict[str, List[str]] = {
+    "모험가": ["herb2", "meat2", "wood2", "ore2", "hide2"],
+    "농부": ["wheet2"],
+    "어부": ["fish2"],
+    "대장장이": ["ingot2", "tool2", "leather2"],
+    "약사": ["potion2"],
+    "목수": ["lumber2"],
+    "요리사": ["bread2"],
+}
+
 DEFAULT_JOB_DEFS: List[Dict[str, object]] = [
-    {"job": "모험가", "work_actions": ["게시판확인", "탐색", "약초채집", "벌목", "채광", "동물사냥", "몬스터사냥"]},
-    {"job": "농부", "work_actions": ["농사"]},
-    {"job": "어부", "work_actions": ["낚시"]},
-    {"job": "대장장이", "work_actions": ["제련", "도구제작"]},
-    {"job": "약사", "work_actions": ["약 제조"]},
+    {"job": job, "procure_items": list(DEFAULT_JOB_PROCURE_ITEMS.get(job, []))}
+    for job in VALID_JOBS
 ]
 
 DEFAULT_ACTION_DEFS: List[Dict[str, object]] = [
@@ -263,8 +280,17 @@ def load_job_defs() -> List[Dict[str, object]]:
         job = str(row.get("job", "")).strip()
         if not job:
             continue
-        actions = row.get("work_actions", []) if isinstance(row.get("work_actions", []), list) else []
-        out.append({"job": job, "work_actions": [str(x).strip() for x in actions if str(x).strip()]})
+        raw_actions = row.get("work_actions", []) if isinstance(row.get("work_actions", []), list) else []
+        work_actions = [str(x).strip() for x in raw_actions if str(x).strip()]
+        if not work_actions:
+            work_actions = list(DEFAULT_JOB_WORK_ACTIONS.get(job, []))
+
+        raw_items = row.get("procure_items", []) if isinstance(row.get("procure_items", []), list) else []
+        procure_items = [str(x).strip().lower() for x in raw_items if str(x).strip()]
+        if not procure_items:
+            procure_items = list(DEFAULT_JOB_PROCURE_ITEMS.get(job, []))
+
+        out.append({"job": job, "work_actions": work_actions, "procure_items": procure_items})
     return _seed_if_empty(JOBS_FILE, out, DEFAULT_JOB_DEFS)
 
 
