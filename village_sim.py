@@ -56,6 +56,8 @@ from simulation_contract import (
     ContractExecuteState,
     apply_assigned_order,
     apply_resume_or_go_board,
+    transition_contract_state,
+    set_execute_state,
 )
 from simulation_pathing import (
     neighbors as path_neighbors,
@@ -878,7 +880,6 @@ class SimulationRuntime:
         )
 
 
-
     def _neighbors(self, x: int, y: int, width_tiles: int, height_tiles: int) -> List[Tuple[int, int]]:
         return path_neighbors(x, y, width_tiles, height_tiles, self.blocked_tiles)
 
@@ -1089,12 +1090,13 @@ class SimulationRuntime:
                     if state.current_action == BOARD_CHECK_ACTION:
                         self._handle_board_check(npc.name)
                     if state.assigned_order_id:
-                        state.contract_execute_state = ContractExecuteState.PERFORM_ACTION
+                        set_execute_state(state, ContractExecuteState.PERFORM_ACTION)
                     return
 
         self._step_random(npc, width_tiles, height_tiles)
 
     def _try_assign_order_after_board_check(self, npc: RenderNpc, state: SimulationNpcState) -> None:
+        transition_contract_state(state, ContractState.ACQUIRE_ORDER, reason="arrived_board")
         assigned = self.work_order_queue.assign_next(npc.job, npc.name)
         apply_assigned_order(
             state=state,
@@ -1223,8 +1225,8 @@ class SimulationRuntime:
                 self._apply_order_completion_effects(state.assigned_order_id)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
-                state.contract_state = ContractState.NO_CONTRACT
-                state.contract_execute_state = ContractExecuteState.IDLE
+                transition_contract_state(state, ContractState.NO_CONTRACT, reason="order_done")
+                set_execute_state(state, ContractExecuteState.IDLE)
                 self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
