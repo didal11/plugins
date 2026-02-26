@@ -38,7 +38,7 @@ from ldtk_integration import (
     WorkbenchEntity,
     build_world_from_ldtk,
 )
-from guild_dispatch import GuildDispatcher, GuildIssue, WorkOrderQueue
+from guild_dispatch import GuildDispatcher, GuildIssue, GuildIssueType, WorkOrderQueue
 from exploration import (
     CellConstructionState,
     GuildBoardExplorationState,
@@ -75,8 +75,13 @@ def _format_guild_issue_lines(simulation: "SimulationRuntime") -> List[str]:
         return ["발행된 의뢰가 없습니다."]
     out: List[str] = []
     for row in issued:
-        display_action = simulation.display_action_name(row.action_name, row.resource_key)
-        display_resource = simulation.display_resource_name(row.resource_key)
+        display_action = simulation.display_action_name(
+            row.action_name,
+            row.resource_key,
+            issue_type=row.issue_type.value,
+            item_key=row.item_key,
+        )
+        display_resource = simulation.display_item_name(row.item_key)
         out.append(
             f"- [{row.job}] {display_action} | 자원:{display_resource} | 수량:{int(row.amount)} | 우선:{int(row.priority)}"
         )
@@ -211,6 +216,8 @@ class SimulationNpcState(BaseModel):
     board_cycle_checked: bool = False
     board_cycle_needs_report: bool = False
     assigned_order_id: str = ""
+    contract_state: str = "NO_CONTRACT"
+    contract_execute_state: str = "IDLE"
 
 
 class SimulationRuntime:
@@ -243,16 +250,16 @@ class SimulationRuntime:
         self.use_torch_for_npc = bool(use_torch_for_npc and torch is not None)
 
         self.job_actions = self._job_actions_map()
+        self.job_procure_items = self._job_procure_items_map()
         self.action_duration_ticks = self._action_duration_map()
         self.action_required_entity = self._action_required_entity_map()
         self.action_schedulable = self._action_schedulable_map()
         self.action_interruptible = self._action_interruptible_map()
-        self.producer_actions_by_item = self._producer_actions_by_item_map()
-        self.expected_output_by_action_item = self._expected_output_by_action_item_map()
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.work_order_queue = WorkOrderQueue()
         self.action_candidate_jobs = self._action_candidate_jobs_map()
+        self.procure_candidate_jobs_by_item = self._procure_candidate_jobs_by_item_map()
         self.board_issue_job_filter = "전체"
         self.target_stock_by_key, self.target_available_by_key = {}, {}
         self.guild_board_exploration_state = GuildBoardExplorationState()
@@ -364,29 +371,40 @@ class SimulationRuntime:
     def board_issue_filter_jobs(self) -> List[str]:
         return ["전체", *sorted(self.job_actions.keys())]
 
-    def _order_recipe_id(self, action_name: str, resource_key: str) -> str:
-        return f"recipe::{action_name.strip()}::{resource_key.strip().lower()}"
+    def _order_recipe_id(self, issue: GuildIssue) -> str:
+        return (
+            f"{issue.issue_type.value}::"
+            f"{issue.action_name.strip()}::"
+            f"{issue.item_key.strip().lower()}::"
+            f"{issue.resource_key.strip().lower()}"
+        )
+
+    def _jobs_for_issue(self, issue: GuildIssue) -> List[str]:
+        if issue.issue_type == GuildIssueType.PROCURE:
+            item_key = issue.item_key.strip().lower()
+            candidates = list(self.procure_candidate_jobs_by_item.get(item_key, []))
+            if candidates:
+                return candidates
+            return list(self.action_candidate_jobs.get(issue.action_name, []))
+        return list(self.action_candidate_jobs.get(issue.action_name, []))
 
     def _recompute_work_orders(self, *, reason: str) -> None:
-        explore_issued = [
-            row
-            for row in self.guild_dispatcher.issue_for_targets(
-                self.target_stock_by_key,
-                self.target_available_by_key,
-            )
-            if row.action_name == "탐색"
-        ]
-        issued = [*explore_issued]
+        issued = self.guild_dispatcher.issue_for_targets(
+            self.target_stock_by_key,
+            self.target_available_by_key,
+        )
         now_tick = int(self.ticks)
-        for row in issued:
-            for job in self.action_candidate_jobs.get(row.action_name, []):
+        for issue in issued:
+            for job in self._jobs_for_issue(issue):
                 self.work_order_queue.upsert_open_order(
-                    recipe_id=self._order_recipe_id(row.action_name, row.resource_key),
-                    action_name=row.action_name,
-                    resource_key=row.resource_key,
-                    amount=max(1, int(row.amount)),
+                    recipe_id=self._order_recipe_id(issue),
+                    issue_type=issue.issue_type,
+                    action_name=issue.action_name,
+                    item_key=issue.item_key,
+                    resource_key=issue.resource_key,
+                    amount=max(1, int(issue.amount)),
                     job=job,
-                    priority=2 if row.action_name == "탐색" else 1,
+                    priority=2 if issue.issue_type == GuildIssueType.EXPLORE else 1,
                     now_tick=now_tick,
                 )
 
@@ -414,7 +432,18 @@ class SimulationRuntime:
         key = resource_key.strip().lower()
         return self._resource_name_map().get(key, key)
 
-    def display_action_name(self, action_name: str, resource_key: str) -> str:
+    def display_action_name(
+        self,
+        action_name: str,
+        resource_key: str,
+        *,
+        issue_type: str = "",
+        item_key: str = "",
+    ) -> str:
+        issue_key = issue_type.strip().lower()
+        target_key = item_key.strip().lower() or resource_key.strip().lower()
+        if issue_key == GuildIssueType.PROCURE.value:
+            return f"{self.display_item_name(target_key)} 조달"
         if action_name.strip() == "탐색":
             return f"{self.display_resource_name(resource_key)} 탐색"
         return action_name
@@ -666,6 +695,27 @@ class SimulationRuntime:
                 out[job] = actions
         return out
 
+    def _job_procure_items_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for row in load_job_defs():
+            if not isinstance(row, dict):
+                continue
+            job = str(row.get("job", "")).strip()
+            if not job:
+                continue
+            items = [str(x).strip().lower() for x in row.get("procure_items", []) if str(x).strip()]
+            out[job] = items
+        return out
+
+    def _procure_candidate_jobs_by_item_map(self) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {}
+        for job, items in self.job_procure_items.items():
+            for item_key in items:
+                rows = out.setdefault(item_key, [])
+                if job not in rows:
+                    rows.append(job)
+        return out
+
     def _action_duration_map(self) -> Dict[str, int]:
         out: Dict[str, int] = {}
         for row in load_action_defs():
@@ -728,6 +778,18 @@ class SimulationRuntime:
         if item_name:
             return item_name
         return self.display_resource_name(key)
+
+    def _apply_order_completion_effects(self, order_id: str) -> None:
+        row = self.work_order_queue.orders_by_id.get(order_id)
+        if row is None:
+            return
+        if row.issue_type == GuildIssueType.EXPLORE:
+            return
+        key = row.item_key.strip().lower()
+        if not key:
+            return
+        produced = max(1, int(row.amount))
+        self.guild_inventory_by_key[key] = max(0, int(self.guild_inventory_by_key.get(key, 0))) + produced
 
     def _ticks_until_anchor_hour(self, anchor_hour: int) -> int:
         current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
@@ -806,173 +868,37 @@ class SimulationRuntime:
         return hours_elapsed % 24
 
     def _pick_next_work_action(self, npc: RenderNpc, state: SimulationNpcState) -> None:
-        """업무 시간에만 호출되는 업무 선택 로직."""
+        """업무 시간 업무 선택 로직 (의뢰 계약 상태 중심)."""
 
-        candidates = self.job_actions.get(npc.job, [])
-        if npc.job.strip() == "모험가":
-            check_action = self._board_check_action_name_in_candidates(candidates)
-            report_action = self._board_report_action_name_in_candidates(candidates)
-
-            if not state.board_cycle_checked and check_action is not None:
-                state.current_action = check_action
-                state.current_action_display = check_action
-                state.ticks_remaining = self._work_duration_for_action(check_action, npc, state)
-                state.path = []
-                state.work_path_initialized = False
-                state.board_cycle_checked = True
-                return
-
-            if state.board_cycle_needs_report and report_action is not None:
-                state.current_action = report_action
-                state.current_action_display = report_action
-                state.ticks_remaining = self._work_duration_for_action(report_action, npc, state)
-                state.path = []
-                state.work_path_initialized = False
-                state.board_cycle_checked = False
-                state.board_cycle_needs_report = False
-                return
-
-            assigned = self.work_order_queue.assign_next(npc.job, npc.name)
-            if assigned is not None:
-                action = assigned.action_name
+        # 이미 계약된 의뢰가 있으면 재계약하지 않고 실행을 이어간다.
+        if state.assigned_order_id:
+            row = self.work_order_queue.orders_by_id.get(state.assigned_order_id)
+            if row is not None:
+                state.contract_state = "EXECUTING"
+                state.contract_execute_state = "RUNNING"
+                action = row.action_name
                 state.current_action = action
-                state.current_action_display = self.display_action_name(action, assigned.resource_key)
+                state.current_action_display = self.display_action_name(
+                    action,
+                    row.resource_key,
+                    issue_type=row.issue_type.value,
+                    item_key=row.item_key,
+                )
                 state.ticks_remaining = self._work_duration_for_action(action, npc, state)
                 state.path = []
                 state.work_path_initialized = False
-                state.board_cycle_needs_report = True
-                state.assigned_order_id = assigned.order_id
                 return
-            state.board_cycle_checked = False
-            state.board_cycle_needs_report = False
-            candidates = []
+            state.assigned_order_id = ""
 
-        if not candidates:
-            state.current_action = "배회"
-            state.current_action_display = "배회"
-            state.ticks_remaining = 1
-            state.path = []
-            return
-
-        assigned = self.work_order_queue.assign_next(npc.job, npc.name)
-        if assigned is not None:
-            action = assigned.action_name
-            state.current_action = action
-            state.current_action_display = self.display_action_name(action, assigned.resource_key)
-            state.ticks_remaining = self._work_duration_for_action(action, npc, state)
-            state.path = []
-            state.work_path_initialized = False
-            state.assigned_order_id = assigned.order_id
-            return
-
-        action = self.rng.choice(candidates)
-        state.assigned_order_id = ""
-        state.current_action = action
-        state.current_action_display = action
-        state.ticks_remaining = self._work_duration_for_action(action, npc, state)
+        # 계약이 없는 상태에서만 게시판으로 이동해 새 의뢰를 받는다.
+        state.contract_state = "GO_BOARD"
+        state.contract_execute_state = "IDLE"
+        state.current_action = BOARD_CHECK_ACTION
+        state.current_action_display = BOARD_CHECK_ACTION
+        state.ticks_remaining = self._work_duration_for_action(BOARD_CHECK_ACTION, npc, state)
         state.path = []
         state.work_path_initialized = False
 
-    def _neighbors(self, x: int, y: int, width_tiles: int, height_tiles: int) -> List[Tuple[int, int]]:
-        out: List[Tuple[int, int]] = []
-        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            if nx < 0 or ny < 0 or nx >= width_tiles or ny >= height_tiles:
-                continue
-            if (nx, ny) in self.blocked_tiles:
-                continue
-            out.append((nx, ny))
-        return out
-
-    @staticmethod
-    def _distance_to_targets(x: int, y: int, targets: List[Tuple[int, int]]) -> int:
-        return min(abs(x - tx) + abs(y - ty) for tx, ty in targets)
-
-    def _find_path_to_nearest_target(
-        self,
-        start: Tuple[int, int],
-        targets: List[Tuple[int, int]],
-        width_tiles: int,
-        height_tiles: int,
-    ) -> List[Tuple[int, int]]:
-        if not targets or start in targets:
-            return []
-        distances = self._wavefront_distances(targets, width_tiles, height_tiles)
-        sx, sy = start
-        if distances[sy][sx] >= 10**9:
-            return []
-
-        path: List[Tuple[int, int]] = []
-        cx, cy = sx, sy
-        while distances[cy][cx] > 0:
-            best_next: Tuple[int, int] | None = None
-            best_dist = distances[cy][cx]
-            for nx, ny in self._neighbors(cx, cy, width_tiles, height_tiles):
-                nb_dist = distances[ny][nx]
-                if nb_dist > best_dist:
-                    continue
-                if nb_dist < best_dist or best_next is None or (ny, nx) < (best_next[1], best_next[0]):
-                    best_dist = nb_dist
-                    best_next = (nx, ny)
-            if best_next is None:
-                return []
-            path.append(best_next)
-            cx, cy = best_next
-        return path
-
-    def _wavefront_distances(
-        self,
-        targets: List[Tuple[int, int]],
-        width_tiles: int,
-        height_tiles: int,
-    ) -> List[List[int]]:
-        inf = 10**9
-        distances = [[inf for _ in range(width_tiles)] for _ in range(height_tiles)]
-        q: deque[Tuple[int, int]] = deque()
-
-        for tx, ty in targets:
-            if tx < 0 or ty < 0 or tx >= width_tiles or ty >= height_tiles:
-                continue
-            if (tx, ty) in self.blocked_tiles:
-                continue
-            if distances[ty][tx] == 0:
-                continue
-            distances[ty][tx] = 0
-            q.append((tx, ty))
-
-        while q:
-            x, y = q.popleft()
-            next_dist = distances[y][x] + 1
-            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
-                if next_dist >= distances[ny][nx]:
-                    continue
-                distances[ny][nx] = next_dist
-                q.append((nx, ny))
-        return distances
-
-    def _batch_next_steps_by_wavefront(
-        self,
-        starts: List[Tuple[int, int]],
-        targets: List[Tuple[int, int]],
-        width_tiles: int,
-        height_tiles: int,
-    ) -> List[Tuple[int, int] | None]:
-        if not starts:
-            return []
-
-        distances = self._wavefront_distances(targets, width_tiles, height_tiles)
-        out: List[Tuple[int, int] | None] = []
-        for x, y in starts:
-            best_next: Tuple[int, int] | None = None
-            best_dist = distances[y][x] if 0 <= x < width_tiles and 0 <= y < height_tiles else 10**9
-            for nx, ny in self._neighbors(x, y, width_tiles, height_tiles):
-                nb_dist = distances[ny][nx]
-                if nb_dist > best_dist:
-                    continue
-                if nb_dist < best_dist or best_next is None or (ny, nx) < (best_next[1], best_next[0]):
-                    best_dist = nb_dist
-                    best_next = (nx, ny)
-            out.append(best_next)
-        return out
 
     def _torch_decision_code(self, planned: ScheduledActivity, ticks_remaining: int) -> int:
         if not self.use_torch_for_npc or torch is None:
@@ -1148,6 +1074,34 @@ class SimulationRuntime:
 
         self._step_random(npc, width_tiles, height_tiles)
 
+    def _try_assign_order_after_board_check(self, npc: RenderNpc, state: SimulationNpcState) -> None:
+        assigned = self.work_order_queue.assign_next(npc.job, npc.name)
+        if assigned is None:
+            state.contract_state = "NO_CONTRACT"
+            state.contract_execute_state = "IDLE"
+            state.assigned_order_id = ""
+            state.current_action = "배회"
+            state.current_action_display = "배회"
+            state.ticks_remaining = 1
+            state.path = []
+            state.work_path_initialized = False
+            return
+
+        state.assigned_order_id = assigned.order_id
+        state.contract_state = "EXECUTING"
+        state.contract_execute_state = "RUNNING"
+        action = assigned.action_name
+        state.current_action = action
+        state.current_action_display = self.display_action_name(
+            action,
+            assigned.resource_key,
+            issue_type=assigned.issue_type.value,
+            item_key=assigned.item_key,
+        )
+        state.ticks_remaining = self._work_duration_for_action(action, npc, state)
+        state.path = []
+        state.work_path_initialized = False
+
     def tick_once(self) -> None:
         self._refresh_guild_dispatcher()
         self.ticks += 1
@@ -1257,8 +1211,11 @@ class SimulationRuntime:
             for npc, _ in rows:
                 if (npc.x, npc.y) not in targets:
                     continue
+                state = self.state_by_name[npc.name]
                 if self._is_board_check_like_action(action_name):
                     self._handle_board_check(npc.name)
+                    if not state.assigned_order_id:
+                        self._try_assign_order_after_board_check(npc, state)
                 else:
                     self._handle_board_report(npc.name)
                     self._recompute_work_orders(reason="board_report")
@@ -1269,6 +1226,8 @@ class SimulationRuntime:
                 self._apply_order_completion_effects(state.assigned_order_id)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
+                state.contract_state = "NO_CONTRACT"
+                state.contract_execute_state = "IDLE"
                 self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
