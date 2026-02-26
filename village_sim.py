@@ -393,7 +393,7 @@ class SimulationRuntime:
         )
 
     def _jobs_for_issue(self, issue: GuildIssue) -> List[str]:
-        if issue.issue_type == GuildIssueType.PROCURE:
+        if issue.issue_type == GuildIssueType.GATHER:
             item_key = issue.item_key.strip().lower()
             candidates = list(self.procure_candidate_jobs_by_item.get(item_key, []))
             if candidates:
@@ -455,8 +455,12 @@ class SimulationRuntime:
     ) -> str:
         issue_key = issue_type.strip().lower()
         target_key = item_key.strip().lower() or resource_key.strip().lower()
-        if issue_key == GuildIssueType.PROCURE.value:
-            return f"{self.display_item_name(target_key)} 조달"
+        if issue_key == GuildIssueType.GATHER.value:
+            return f"{self.display_item_name(target_key)} 채집"
+        if issue_key == GuildIssueType.CRAFT.value:
+            return f"{self.display_item_name(target_key)} 제작"
+        if issue_key == GuildIssueType.TRADE.value:
+            return f"{self.display_item_name(target_key)} 교역"
         if action_name.strip() == "탐색":
             return f"{self.display_resource_name(resource_key)} 탐색"
         return action_name

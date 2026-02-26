@@ -22,7 +22,9 @@ _GATHER_ACTION_BY_KEY_PREFIX: Dict[str, str] = {
 
 class GuildIssueType(str, Enum):
     EXPLORE = "explore"
-    PROCURE = "procure"
+    GATHER = "gather"
+    CRAFT = "craft"
+    TRADE = "trade"
 
 
 class GuildIssue(BaseModel):
@@ -48,7 +50,7 @@ class WorkOrder(BaseModel):
 
     order_id: str
     recipe_id: str
-    issue_type: GuildIssueType = GuildIssueType.PROCURE
+    issue_type: GuildIssueType = GuildIssueType.GATHER
     action_name: str
     item_key: str
     resource_key: str
@@ -262,7 +264,7 @@ class GuildDispatcher:
             if gather_amount > 0:
                 issues.append(
                     GuildIssue(
-                        issue_type=GuildIssueType.PROCURE,
+                        issue_type=GuildIssueType.GATHER,
                         action_name=self._gather_action_name(key),
                         item_key=key,
                         resource_key=key,
