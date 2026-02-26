@@ -16,6 +16,7 @@ import argparse
 from collections import deque
 from pathlib import Path
 from random import Random
+from enum import Enum
 from typing import Dict, List, Set, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -51,8 +52,20 @@ from exploration import (
 )
 from planning import DailyPlanner, ScheduledActivity
 
-BOARD_REPORT_ACTION = "게시판보고"
 BOARD_CHECK_ACTION = "게시판확인"
+
+
+class ContractState(str, Enum):
+    NO_CONTRACT = "NO_CONTRACT"
+    GO_BOARD = "GO_BOARD"
+    ACQUIRE_ORDER = "ACQUIRE_ORDER"
+    EXECUTING = "EXECUTING"
+
+
+class ContractExecuteState(str, Enum):
+    IDLE = "IDLE"
+    MOVE_TO_WORKSITE = "MOVE_TO_WORKSITE"
+    PERFORM_ACTION = "PERFORM_ACTION"
 
 try:
     import torch
@@ -213,11 +226,9 @@ class SimulationNpcState(BaseModel):
     work_path_initialized: bool = False
     path: List[Tuple[int, int]] = Field(default_factory=list)
     last_board_check_day: int = -1
-    board_cycle_checked: bool = False
-    board_cycle_needs_report: bool = False
     assigned_order_id: str = ""
-    contract_state: str = "NO_CONTRACT"
-    contract_execute_state: str = "IDLE"
+    contract_state: ContractState = ContractState.NO_CONTRACT
+    contract_execute_state: ContractExecuteState = ContractExecuteState.IDLE
 
 
 class SimulationRuntime:
@@ -561,25 +572,6 @@ class SimulationRuntime:
         self.guild_board_exploration_state.apply_npc_buffer(buffer, self.rng)
         buffer.clear()
 
-    @staticmethod
-    def _board_check_action_name_in_candidates(candidates: List[str]) -> str | None:
-        if BOARD_CHECK_ACTION in candidates:
-            return BOARD_CHECK_ACTION
-        return None
-
-    @staticmethod
-    def _board_report_action_name_in_candidates(candidates: List[str]) -> str | None:
-        if BOARD_REPORT_ACTION in candidates:
-            return BOARD_REPORT_ACTION
-        return None
-
-    @staticmethod
-    def _is_board_report_like_action(action_name: str) -> bool:
-        return action_name == BOARD_REPORT_ACTION
-
-    @staticmethod
-    def _is_board_check_like_action(action_name: str) -> bool:
-        return action_name == BOARD_CHECK_ACTION
 
     def _handle_board_check(self, npc_name: str) -> None:
         buffer = self.exploration_buffer_by_name.setdefault(npc_name, NPCExplorationBuffer())
@@ -587,12 +579,6 @@ class SimulationRuntime:
             self.guild_board_exploration_state.known_cells
         )
         buffer.merge_from(delta)
-
-    def _handle_board_report(self, npc_name: str) -> None:
-        self._flush_exploration_buffer(npc_name)
-        self.minimap_known_cells_snapshot = set(self.guild_board_exploration_state.known_cells)
-        self.minimap_known_resources_snapshot = dict(self.guild_board_exploration_state.known_resources)
-        self.minimap_known_monsters_snapshot = set(self.guild_board_exploration_state.known_monsters)
 
     def _mark_cell_discovered(self, coord: Tuple[int, int], force: bool = False) -> None:
         """Backward-compatible helper used by tests/system flows.
@@ -817,23 +803,11 @@ class SimulationRuntime:
             gap += 24 * self.TICKS_PER_HOUR
         return gap
 
-    def _reserved_adventurer_board_ticks(self, state: SimulationNpcState) -> int:
-        reserve = 0
-        if not state.board_cycle_checked:
-            reserve += self.action_duration_ticks.get(BOARD_CHECK_ACTION, 0)
-        if state.board_cycle_needs_report:
-            reserve += self.action_duration_ticks.get(BOARD_REPORT_ACTION, 0)
-        return reserve
-
     def _work_duration_for_action(self, action_name: str, npc: RenderNpc, state: SimulationNpcState) -> int:
         default_ticks = self.action_duration_ticks.get(action_name, 1)
         if not self.action_schedulable.get(action_name, True):
             return default_ticks
-
-        gap_ticks = self._ticks_until_anchor_hour(self.planner.dinner_hour)
-        if npc.job.strip() == "모험가":
-            gap_ticks = max(1, gap_ticks - self._reserved_adventurer_board_ticks(state))
-        return max(1, gap_ticks)
+        return max(1, self._ticks_until_anchor_hour(self.planner.dinner_hour))
 
     def _can_interrupt_current_action(self, state: SimulationNpcState) -> bool:
         if state.current_action in {"식사", "취침", "대기", "배회"}:
@@ -892,8 +866,8 @@ class SimulationRuntime:
         if state.assigned_order_id:
             row = self.work_order_queue.orders_by_id.get(state.assigned_order_id)
             if row is not None:
-                state.contract_state = "EXECUTING"
-                state.contract_execute_state = "RUNNING"
+                state.contract_state = ContractState.EXECUTING
+                state.contract_execute_state = ContractExecuteState.MOVE_TO_WORKSITE
                 action = row.action_name
                 state.current_action = action
                 state.current_action_display = self.display_action_name(
@@ -909,8 +883,8 @@ class SimulationRuntime:
             state.assigned_order_id = ""
 
         # 계약이 없는 상태에서만 게시판으로 이동해 새 의뢰를 받는다.
-        state.contract_state = "GO_BOARD"
-        state.contract_execute_state = "IDLE"
+        state.contract_state = ContractState.GO_BOARD
+        state.contract_execute_state = ContractExecuteState.IDLE
         state.current_action = BOARD_CHECK_ACTION
         state.current_action_display = BOARD_CHECK_ACTION
         state.ticks_remaining = self._work_duration_for_action(BOARD_CHECK_ACTION, npc, state)
@@ -1084,10 +1058,10 @@ class SimulationRuntime:
                 if self._apply_next_path_step(npc, state):
                     return
                 if (npc.x, npc.y) in work_tiles:
-                    if self._is_board_check_like_action(state.current_action):
+                    if state.current_action == BOARD_CHECK_ACTION:
                         self._handle_board_check(npc.name)
-                    elif self._is_board_report_like_action(state.current_action):
-                        self._handle_board_report(npc.name)
+                    if state.assigned_order_id:
+                        state.contract_execute_state = ContractExecuteState.PERFORM_ACTION
                     return
 
         self._step_random(npc, width_tiles, height_tiles)
@@ -1095,8 +1069,8 @@ class SimulationRuntime:
     def _try_assign_order_after_board_check(self, npc: RenderNpc, state: SimulationNpcState) -> None:
         assigned = self.work_order_queue.assign_next(npc.job, npc.name)
         if assigned is None:
-            state.contract_state = "NO_CONTRACT"
-            state.contract_execute_state = "IDLE"
+            state.contract_state = ContractState.NO_CONTRACT
+            state.contract_execute_state = ContractExecuteState.IDLE
             state.assigned_order_id = ""
             state.current_action = "배회"
             state.current_action_display = "배회"
@@ -1106,8 +1080,8 @@ class SimulationRuntime:
             return
 
         state.assigned_order_id = assigned.order_id
-        state.contract_state = "EXECUTING"
-        state.contract_execute_state = "RUNNING"
+        state.contract_state = ContractState.EXECUTING
+        state.contract_execute_state = ContractExecuteState.MOVE_TO_WORKSITE
         action = assigned.action_name
         state.current_action = action
         state.current_action_display = self.display_action_name(
@@ -1222,21 +1196,16 @@ class SimulationRuntime:
 
         for (request_key, target_key), rows in grouped_requests.items():
             action_name = request_key.removeprefix("work:")
-            if not self._is_board_report_like_action(action_name):
-                if not self._is_board_check_like_action(action_name):
-                    continue
+            if action_name != BOARD_CHECK_ACTION:
+                continue
             targets = set(target_key)
             for npc, _ in rows:
                 if (npc.x, npc.y) not in targets:
                     continue
                 state = self.state_by_name[npc.name]
-                if self._is_board_check_like_action(action_name):
-                    self._handle_board_check(npc.name)
-                    if not state.assigned_order_id:
-                        self._try_assign_order_after_board_check(npc, state)
-                else:
-                    self._handle_board_report(npc.name)
-                    self._recompute_work_orders(reason="board_report")
+                self._handle_board_check(npc.name)
+                if not state.assigned_order_id:
+                    self._try_assign_order_after_board_check(npc, state)
 
         for npc in self.npcs:
             state = self.state_by_name[npc.name]
@@ -1244,8 +1213,8 @@ class SimulationRuntime:
                 self._apply_order_completion_effects(state.assigned_order_id)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
-                state.contract_state = "NO_CONTRACT"
-                state.contract_execute_state = "IDLE"
+                state.contract_state = ContractState.NO_CONTRACT
+                state.contract_execute_state = ContractExecuteState.IDLE
                 self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
