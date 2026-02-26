@@ -247,8 +247,6 @@ class SimulationRuntime:
         self.action_required_entity = self._action_required_entity_map()
         self.action_schedulable = self._action_schedulable_map()
         self.action_interruptible = self._action_interruptible_map()
-        self.producer_actions_by_item = self._producer_actions_by_item_map()
-        self.expected_output_by_action_item = self._expected_output_by_action_item_map()
         self.guild_inventory_by_key: Dict[str, int] = {}
         self.guild_dispatcher = GuildDispatcher(self.world.entities)
         self.work_order_queue = WorkOrderQueue()
