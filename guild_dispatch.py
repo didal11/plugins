@@ -20,10 +20,17 @@ _GATHER_ACTION_BY_KEY_PREFIX: Dict[str, str] = {
 }
 
 
+class GuildIssueType(str, Enum):
+    EXPLORE = "explore"
+    PROCURE = "procure"
+
+
 class GuildIssue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    issue_type: GuildIssueType
     action_name: str
+    item_key: str
     resource_key: str
     amount: int
 
@@ -41,7 +48,9 @@ class WorkOrder(BaseModel):
 
     order_id: str
     recipe_id: str
+    issue_type: GuildIssueType = GuildIssueType.PROCURE
     action_name: str
+    item_key: str
     resource_key: str
     amount: int
     job: str
@@ -72,7 +81,9 @@ class WorkOrderQueue:
         self,
         *,
         recipe_id: str,
+        issue_type: GuildIssueType,
         action_name: str,
+        item_key: str,
         resource_key: str,
         amount: int,
         job: str,
@@ -90,7 +101,9 @@ class WorkOrderQueue:
         row = WorkOrder(
             order_id=order_id,
             recipe_id=recipe_id,
+            issue_type=issue_type,
             action_name=action_name,
+            item_key=item_key,
             resource_key=resource_key,
             amount=max(1, int(amount)),
             job=job,
@@ -236,7 +249,9 @@ class GuildDispatcher:
             if explore_deficit > 0:
                 issues.append(
                     GuildIssue(
+                        issue_type=GuildIssueType.EXPLORE,
                         action_name="탐색",
+                        item_key=key,
                         resource_key=key,
                         amount=explore_deficit,
                     )
@@ -247,7 +262,9 @@ class GuildDispatcher:
             if gather_amount > 0:
                 issues.append(
                     GuildIssue(
+                        issue_type=GuildIssueType.PROCURE,
                         action_name=self._gather_action_name(key),
+                        item_key=key,
                         resource_key=key,
                         amount=gather_amount,
                     )
