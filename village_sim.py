@@ -462,7 +462,8 @@ class SimulationRuntime:
         if issue_key == GuildIssueType.TRADE.value:
             return f"{self.display_item_name(target_key)} 교역"
         if action_name.strip() == "탐색":
-            return f"{self.display_resource_name(resource_key)} 탐색"
+            explore_key = resource_key.strip().lower() or item_key.strip().lower()
+            return f"{self.display_resource_name(explore_key)} 탐색"
         return action_name
 
     def _find_dining_tiles(self) -> List[Tuple[int, int]]:

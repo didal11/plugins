@@ -254,7 +254,7 @@ class GuildDispatcher:
                         issue_type=GuildIssueType.EXPLORE,
                         action_name="탐색",
                         item_key=key,
-                        resource_key=key,
+                        resource_key="",
                         amount=explore_deficit,
                     )
                 )
@@ -267,7 +267,7 @@ class GuildDispatcher:
                         issue_type=GuildIssueType.GATHER,
                         action_name=self._gather_action_name(key),
                         item_key=key,
-                        resource_key=key,
+                        resource_key="",
                         amount=gather_amount,
                     )
                 )
