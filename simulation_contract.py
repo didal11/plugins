@@ -107,7 +107,7 @@ def apply_resume_or_go_board(
         set_execute_state(state, ContractExecuteState.MOVE_TO_WORKSITE)
         action = order_row.action_name
         state.work_state = _work_state_for_action(action)
-        state.action_detail = action
+        state.work_action_name = action
         state.action_display = display_action_name(
             action,
             order_row.resource_key,
@@ -122,7 +122,7 @@ def apply_resume_or_go_board(
     transition_contract_state(state, ContractState.BOARD_CHECK, reason="no_contract_go_board")
     set_execute_state(state, ContractExecuteState.GO_TO_BOARD)
     state.work_state = WorkState.NONE
-    state.action_detail = board_check_action
+    state.work_action_name = ""
     state.action_display = board_check_action
     state.ticks_remaining = work_duration_for_action(board_check_action, npc, state)
     state.path = []
@@ -144,7 +144,7 @@ def apply_assigned_order(
         state.work_state = WorkState.NONE
         state.assigned_order_id = ""
         state.action_state = ActionState.WORK
-        state.action_detail = board_check_action
+        state.work_action_name = ""
         state.action_display = board_check_action
         state.ticks_remaining = 1
         state.path = []
@@ -159,7 +159,7 @@ def apply_assigned_order(
     transition_contract_state(state, ContractState.EXECUTE_WORK, reason="assigned_order_execute")
     set_execute_state(state, ContractExecuteState.MOVE_TO_WORKSITE)
     state.action_state = ActionState.WORK
-    state.action_detail = action
+    state.work_action_name = action
     state.action_display = display_action_name(
         action,
         assigned.resource_key,
