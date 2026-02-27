@@ -55,10 +55,12 @@ from simulation_contract import (
     ContractState,
     ContractExecuteState,
     ActionState,
+    WorkState,
     apply_assigned_order,
     apply_resume_or_go_board,
     transition_contract_state,
     set_execute_state,
+    perform_execute_state_for_work,
 )
 from simulation_pathing import (
     neighbors as path_neighbors,
@@ -221,7 +223,7 @@ class RenderNpc(BaseModel):
 class SimulationNpcState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action_state: ActionState = ActionState.IDLE
+    action_state: ActionState = ActionState.WORK
     action_detail: str = "대기"
     action_display: str = "대기"
     ticks_remaining: int = 0
@@ -231,8 +233,27 @@ class SimulationNpcState(BaseModel):
     path: List[Tuple[int, int]] = Field(default_factory=list)
     last_board_check_day: int = -1
     assigned_order_id: str = ""
-    contract_state: ContractState = ContractState.NO_CONTRACT
-    contract_execute_state: ContractExecuteState = ContractExecuteState.IDLE
+    contract_state: ContractState = ContractState.BOARD_CHECK
+    contract_execute_state: ContractExecuteState = ContractExecuteState.GO_TO_BOARD
+    work_state: WorkState = WorkState.NONE
+    board_cycle_checked: bool = False
+    board_cycle_needs_report: bool = False
+
+    @property
+    def current_action(self) -> str:
+        return self.action_detail
+
+    @current_action.setter
+    def current_action(self, value: str) -> None:
+        self.action_detail = str(value)
+
+    @property
+    def current_action_display(self) -> str:
+        return self.action_display
+
+    @current_action_display.setter
+    def current_action_display(self, value: str) -> None:
+        self.action_display = str(value)
 
 
 class SimulationRuntime:
@@ -826,22 +847,10 @@ class SimulationRuntime:
         if detail == "취침":
             state.action_state = ActionState.SLEEP
             return
-        if detail == "탐색":
-            state.action_state = ActionState.EXPLORE
-            return
-        if detail == BOARD_CHECK_ACTION:
-            state.action_state = ActionState.BOARD_CHECK
-            return
-        if detail == "배회":
-            state.action_state = ActionState.WANDER
-            return
-        if not detail or detail == "대기":
-            state.action_state = ActionState.IDLE
-            return
         state.action_state = ActionState.WORK
 
     def _can_interrupt_action(self, state: SimulationNpcState) -> bool:
-        if state.action_state in {ActionState.MEAL, ActionState.SLEEP, ActionState.IDLE, ActionState.WANDER}:
+        if state.action_state in {ActionState.MEAL, ActionState.SLEEP}:
             return True
         if state.ticks_remaining <= 0:
             return True
@@ -1122,18 +1131,19 @@ class SimulationRuntime:
                     if state.action_detail == BOARD_CHECK_ACTION:
                         self._handle_board_check(npc.name)
                     if state.assigned_order_id:
-                        set_execute_state(state, ContractExecuteState.PERFORM_ACTION)
+                        set_execute_state(state, perform_execute_state_for_work(state.work_state))
                     return
 
         self._step_random(npc, width_tiles, height_tiles)
 
     def _try_assign_order_after_board_check(self, npc: RenderNpc, state: SimulationNpcState) -> None:
-        transition_contract_state(state, ContractState.ACQUIRE_ORDER, reason="arrived_board")
+        transition_contract_state(state, ContractState.SELECT_WORK, reason="arrived_board")
         assigned = self.work_order_queue.assign_next(npc.job, npc.name)
         apply_assigned_order(
             state=state,
             npc=npc,
             assigned=assigned,
+            board_check_action=BOARD_CHECK_ACTION,
             display_action_name=self.display_action_name,
             work_duration_for_action=self._work_duration_for_action,
         )
@@ -1260,8 +1270,11 @@ class SimulationRuntime:
                 self._apply_order_completion_effects(state.assigned_order_id)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
-                transition_contract_state(state, ContractState.NO_CONTRACT, reason="order_done")
-                set_execute_state(state, ContractExecuteState.IDLE)
+                transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="order_done_report")
+                set_execute_state(state, ContractExecuteState.REPORT_AND_SUBMIT)
+                state.work_state = WorkState.NONE
+                transition_contract_state(state, ContractState.BOARD_CHECK, reason="report_done_go_board")
+                set_execute_state(state, ContractExecuteState.GO_TO_BOARD)
                 self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
