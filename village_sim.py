@@ -54,6 +54,7 @@ from planning import DailyPlanner, ScheduledActivity
 from simulation_contract import (
     ContractState,
     ContractExecuteState,
+    ActionState,
     apply_assigned_order,
     apply_resume_or_go_board,
     transition_contract_state,
@@ -220,8 +221,9 @@ class RenderNpc(BaseModel):
 class SimulationNpcState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    current_action: str = "대기"
-    current_action_display: str = "대기"
+    action_state: ActionState = ActionState.IDLE
+    action_detail: str = "대기"
+    action_display: str = "대기"
     ticks_remaining: int = 0
     decision_ticks_until_check: int = 0
     sleep_path_initialized: bool = False
@@ -816,12 +818,34 @@ class SimulationRuntime:
             return default_ticks
         return max(1, self._ticks_until_anchor_hour(self.planner.dinner_hour))
 
-    def _can_interrupt_current_action(self, state: SimulationNpcState) -> bool:
-        if state.current_action in {"식사", "취침", "대기", "배회"}:
+    def _sync_action_state(self, state: SimulationNpcState) -> None:
+        detail = state.action_detail.strip()
+        if detail == "식사":
+            state.action_state = ActionState.MEAL
+            return
+        if detail == "취침":
+            state.action_state = ActionState.SLEEP
+            return
+        if detail == "탐색":
+            state.action_state = ActionState.EXPLORE
+            return
+        if detail == BOARD_CHECK_ACTION:
+            state.action_state = ActionState.BOARD_CHECK
+            return
+        if detail == "배회":
+            state.action_state = ActionState.WANDER
+            return
+        if not detail or detail == "대기":
+            state.action_state = ActionState.IDLE
+            return
+        state.action_state = ActionState.WORK
+
+    def _can_interrupt_action(self, state: SimulationNpcState) -> bool:
+        if state.action_state in {ActionState.MEAL, ActionState.SLEEP, ActionState.IDLE, ActionState.WANDER}:
             return True
         if state.ticks_remaining <= 0:
             return True
-        return self.action_interruptible.get(state.current_action, True)
+        return self.action_interruptible.get(state.action_detail, True)
 
     @staticmethod
     def _entity_matches_key(entity: GameEntity, required_key: str) -> bool:
@@ -1020,19 +1044,21 @@ class SimulationRuntime:
             planned = self.planner.activity_for_hour(self._current_hour())
             decision_code = self._torch_decision_code(planned, state.ticks_remaining)
             if decision_code == 1:
-                if self._can_interrupt_current_action(state):
-                    if state.current_action != "식사":
-                        state.current_action = "식사"
-                        state.current_action_display = "식사"
+                if self._can_interrupt_action(state):
+                    if state.action_detail != "식사":
+                        state.action_state = ActionState.MEAL
+                        state.action_detail = "식사"
+                        state.action_display = "식사"
                         state.path = []
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
                     state.ticks_remaining = 1
             elif decision_code == 2:
-                if self._can_interrupt_current_action(state):
-                    if state.current_action != "취침":
-                        state.current_action = "취침"
-                        state.current_action_display = "취침"
+                if self._can_interrupt_action(state):
+                    if state.action_detail != "취침":
+                        state.action_state = ActionState.SLEEP
+                        state.action_detail = "취침"
+                        state.action_display = "취침"
                         state.path = []
                         state.sleep_path_initialized = False
                         state.work_path_initialized = False
@@ -1044,10 +1070,11 @@ class SimulationRuntime:
 
         state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
         state.ticks_remaining = max(0, state.ticks_remaining - 1)
+        self._sync_action_state(state)
 
         width_tiles = max(1, self.world.width_px // self.world.grid_size)
         height_tiles = max(1, self.world.height_px // self.world.grid_size)
-        if state.current_action == "식사" and self.dining_tiles:
+        if state.action_detail == "식사" and self.dining_tiles:
             if not state.path:
                 state.path = self._find_path_to_nearest_target(
                     (npc.x, npc.y),
@@ -1058,7 +1085,7 @@ class SimulationRuntime:
             if self._apply_next_path_step(npc, state):
                 return
 
-        if state.current_action == "취침" and self.bed_tiles:
+        if state.action_detail == "취침" and self.bed_tiles:
             if not state.sleep_path_initialized:
                 state.path = self._find_path_to_nearest_target(
                     (npc.x, npc.y),
@@ -1072,14 +1099,14 @@ class SimulationRuntime:
             if (npc.x, npc.y) in self.bed_tiles:
                 return
 
-        if state.current_action not in {"식사", "취침"}:
-            if state.current_action == "탐색":
+        if state.action_detail not in {"식사", "취침"}:
+            if state.action_detail == "탐색":
                 moved = self._step_exploration_action(npc, state, width_tiles, height_tiles)
                 if moved:
                     return
                 state.work_path_initialized = False
 
-            work_tiles = self._find_work_tiles(state.current_action)
+            work_tiles = self._find_work_tiles(state.action_detail)
             if work_tiles:
                 if not state.work_path_initialized:
                     state.path = self._find_path_to_nearest_target(
@@ -1092,7 +1119,7 @@ class SimulationRuntime:
                 if self._apply_next_path_step(npc, state):
                     return
                 if (npc.x, npc.y) in work_tiles:
-                    if state.current_action == BOARD_CHECK_ACTION:
+                    if state.action_detail == BOARD_CHECK_ACTION:
                         self._handle_board_check(npc.name)
                     if state.assigned_order_id:
                         set_execute_state(state, ContractExecuteState.PERFORM_ACTION)
@@ -1129,19 +1156,21 @@ class SimulationRuntime:
                 planned = self.planner.activity_for_hour(self._current_hour())
                 decision_code = self._torch_decision_code(planned, state.ticks_remaining)
                 if decision_code == 1:
-                    if self._can_interrupt_current_action(state):
-                        if state.current_action != "식사":
-                            state.current_action = "식사"
-                            state.current_action_display = "식사"
+                    if self._can_interrupt_action(state):
+                        if state.action_detail != "식사":
+                            state.action_state = ActionState.MEAL
+                            state.action_detail = "식사"
+                            state.action_display = "식사"
                             state.path = []
                         state.sleep_path_initialized = False
                         state.work_path_initialized = False
                         state.ticks_remaining = 1
                 elif decision_code == 2:
-                    if self._can_interrupt_current_action(state):
-                        if state.current_action != "취침":
-                            state.current_action = "취침"
-                            state.current_action_display = "취침"
+                    if self._can_interrupt_action(state):
+                        if state.action_detail != "취침":
+                            state.action_state = ActionState.SLEEP
+                            state.action_detail = "취침"
+                            state.action_display = "취침"
                             state.path = []
                             state.sleep_path_initialized = False
                             state.work_path_initialized = False
@@ -1153,16 +1182,17 @@ class SimulationRuntime:
 
             state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
             state.ticks_remaining = max(0, state.ticks_remaining - 1)
+            self._sync_action_state(state)
 
             if not self._is_current_level_town():
                 self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
 
-            if state.current_action == "식사" and self.dining_tiles:
+            if state.action_detail == "식사" and self.dining_tiles:
                 key = ("meal", tuple(sorted(set(self.dining_tiles))))
                 grouped_requests.setdefault(key, []).append((npc, state))
                 continue
 
-            if state.current_action == "취침" and self.bed_tiles:
+            if state.action_detail == "취침" and self.bed_tiles:
                 if not state.sleep_path_initialized:
                     state.path = self._find_path_to_nearest_target(
                         (npc.x, npc.y),
@@ -1175,13 +1205,13 @@ class SimulationRuntime:
                 grouped_requests.setdefault(key, []).append((npc, state))
                 continue
 
-            if state.current_action == "탐색":
+            if state.action_detail == "탐색":
                 moved = self._step_exploration_action(npc, state, width_tiles, height_tiles)
                 if moved:
                     continue
                 state.work_path_initialized = False
 
-            work_tiles = self._find_work_tiles(state.current_action)
+            work_tiles = self._find_work_tiles(state.action_detail)
             if work_tiles:
                 if not state.work_path_initialized:
                     state.path = self._find_path_to_nearest_target(
@@ -1191,7 +1221,7 @@ class SimulationRuntime:
                         height_tiles,
                     )
                     state.work_path_initialized = True
-                key = (f"work:{state.current_action}", tuple(sorted(set(work_tiles))))
+                key = (f"work:{state.action_detail}", tuple(sorted(set(work_tiles))))
                 grouped_requests.setdefault(key, []).append((npc, state))
                 continue
 
@@ -1689,7 +1719,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     if self.selected_npc is npc:
                         arcade.draw_circle_outline(nx, ny, max(6, tile * 0.42), (255, 215, 0, 255), 2)
                     sim_state = simulation.state_by_name.get(npc.name)
-                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.current_action_display})"
+                    label = npc.name if sim_state is None else f"{npc.name}({sim_state.action_display})"
                     arcade.draw_text(label, nx + 5, ny - 12, (240, 240, 240, 255), 9, font_name=selected_font)
 
                 for monster in monsters:

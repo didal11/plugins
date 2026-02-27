@@ -20,6 +20,16 @@ class ContractExecuteState(str, Enum):
     PERFORM_ACTION = "PERFORM_ACTION"
 
 
+class ActionState(str, Enum):
+    IDLE = "IDLE"
+    WANDER = "WANDER"
+    MEAL = "MEAL"
+    SLEEP = "SLEEP"
+    EXPLORE = "EXPLORE"
+    BOARD_CHECK = "BOARD_CHECK"
+    WORK = "WORK"
+
+
 
 _ALLOWED_CONTRACT_TRANSITIONS = {
     ContractState.NO_CONTRACT: {ContractState.GO_BOARD, ContractState.EXECUTING},
@@ -57,8 +67,9 @@ def apply_resume_or_go_board(
         transition_contract_state(state, ContractState.EXECUTING, reason="resume_contract")
         set_execute_state(state, ContractExecuteState.MOVE_TO_WORKSITE)
         action = order_row.action_name
-        state.current_action = action
-        state.current_action_display = display_action_name(
+        state.action_state = ActionState.WORK
+        state.action_detail = action
+        state.action_display = display_action_name(
             action,
             order_row.resource_key,
             issue_type=order_row.issue_type.value,
@@ -71,8 +82,9 @@ def apply_resume_or_go_board(
 
     transition_contract_state(state, ContractState.GO_BOARD, reason="no_contract_go_board")
     set_execute_state(state, ContractExecuteState.IDLE)
-    state.current_action = board_check_action
-    state.current_action_display = board_check_action
+    state.action_state = ActionState.BOARD_CHECK
+    state.action_detail = board_check_action
+    state.action_display = board_check_action
     state.ticks_remaining = work_duration_for_action(board_check_action, npc, state)
     state.path = []
     state.work_path_initialized = False
@@ -90,8 +102,9 @@ def apply_assigned_order(
         transition_contract_state(state, ContractState.NO_CONTRACT, reason="no_assignment")
         set_execute_state(state, ContractExecuteState.IDLE)
         state.assigned_order_id = ""
-        state.current_action = "배회"
-        state.current_action_display = "배회"
+        state.action_state = ActionState.WANDER
+        state.action_detail = "배회"
+        state.action_display = "배회"
         state.ticks_remaining = 1
         state.path = []
         state.work_path_initialized = False
@@ -101,8 +114,9 @@ def apply_assigned_order(
     transition_contract_state(state, ContractState.EXECUTING, reason="assigned_order")
     set_execute_state(state, ContractExecuteState.MOVE_TO_WORKSITE)
     action = assigned.action_name
-    state.current_action = action
-    state.current_action_display = display_action_name(
+    state.action_state = ActionState.WORK
+    state.action_detail = action
+    state.action_display = display_action_name(
         action,
         assigned.resource_key,
         issue_type=assigned.issue_type.value,
