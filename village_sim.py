@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from collections import deque
 from pathlib import Path
 from random import Random
@@ -241,6 +242,8 @@ class SimulationNpcState(BaseModel):
     contract_state: ContractState = ContractState.BOARD_CHECK
     contract_execute_state: ContractExecuteState = ContractExecuteState.GO_TO_BOARD
     work_state: WorkState = WorkState.NONE
+    gather_target: Tuple[int, int] | None = None
+    inventory_by_key: Dict[str, int] = Field(default_factory=dict)
     board_cycle_checked: bool = False
     board_cycle_needs_report: bool = False
 
@@ -846,7 +849,7 @@ class SimulationRuntime:
             return item_name
         return self.display_resource_name(key)
 
-    def _apply_order_completion_effects(self, order_id: str) -> None:
+    def _apply_order_completion_effects(self, order_id: str, *, npc: RenderNpc, state: SimulationNpcState) -> None:
         row = self.work_order_queue.orders_by_id.get(order_id)
         if row is None:
             return
@@ -855,8 +858,15 @@ class SimulationRuntime:
         key = row.item_key.strip().lower()
         if not key:
             return
+
         produced = max(1, int(row.amount))
+        if row.issue_type == GuildIssueType.GATHER:
+            produced = self._consume_gathered_resource(item_key=key, target=state.gather_target, amount=produced)
+            if produced <= 0:
+                return
+
         self.guild_inventory_by_key[key] = max(0, int(self.guild_inventory_by_key.get(key, 0))) + produced
+        state.inventory_by_key[key] = max(0, int(state.inventory_by_key.get(key, 0))) + produced
 
     def _ticks_until_anchor_hour(self, anchor_hour: int) -> int:
         current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
@@ -880,7 +890,20 @@ class SimulationRuntime:
             return default_ticks
         # 스케줄러 업무 시간은 당일 18시 식사 전까지의 남은 슬롯(10분 단위)만 사용한다.
         remaining_slots = self._remaining_work_slots_until_dinner()
+        if action_name.strip() == "탐색":
+            report_ticks = max(1, int(self.action_duration_ticks.get(BOARD_REPORT_ACTION, 1)))
+            reserved_slots = math.ceil(report_ticks / self.WORK_SLOT_MINUTES)
+            remaining_slots = max(0, remaining_slots - reserved_slots)
         return max(1, remaining_slots * self.WORK_SLOT_MINUTES)
+
+    def _transition_to_free_time_contract_state(self, state: SimulationNpcState) -> None:
+        if state.contract_state in {ContractState.BOARD_CHECK, ContractState.SELECT_WORK}:
+            transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+            return
+        if state.contract_state == ContractState.EXECUTE_WORK:
+            transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="free_time_pending_report")
+            return
+        transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="free_time_keep_report")
 
     def _sync_action_state(self, state: SimulationNpcState) -> None:
         if state.action_state == ActionState.MEAL:
@@ -934,6 +957,54 @@ class SimulationRuntime:
                 continue
             out.append((entity.x, entity.y))
         return out
+
+    def _nearest_gather_target_from_board(self, npc: RenderNpc, item_key: str) -> Tuple[int, int] | None:
+        target_key = item_key.strip().lower()
+        if not target_key:
+            return None
+        candidates: List[Tuple[int, int]] = []
+        for (resource_key, coord), amount in self.guild_board_exploration_state.known_resources.items():
+            if resource_key.strip().lower() != target_key:
+                continue
+            if int(amount) <= 0:
+                continue
+            candidates.append(coord)
+        if not candidates:
+            return None
+        return min(candidates, key=lambda coord: abs(coord[0] - npc.x) + abs(coord[1] - npc.y))
+
+    def _consume_gathered_resource(self, *, item_key: str, target: Tuple[int, int] | None, amount: int) -> int:
+        need = max(0, int(amount))
+        if need <= 0:
+            return 0
+
+        target_key = item_key.strip().lower()
+        if not target_key:
+            return 0
+
+        harvested = 0
+        entities: List[ResourceEntity] = []
+        for entity in self.world.entities:
+            if not isinstance(entity, ResourceEntity):
+                continue
+            if entity.key.strip().lower() != target_key:
+                continue
+            if target is not None and (entity.x, entity.y) != target:
+                continue
+            if int(entity.current_quantity) <= 0:
+                continue
+            entities.append(entity)
+
+        for entity in entities:
+            if harvested >= need:
+                break
+            take = min(int(entity.current_quantity), need - harvested)
+            if take <= 0:
+                continue
+            entity.current_quantity = max(0, int(entity.current_quantity) - take)
+            harvested += take
+
+        return harvested
 
     def _current_hour(self) -> int:
         hours_elapsed = self.ticks // self.TICKS_PER_HOUR
@@ -1130,7 +1201,7 @@ class SimulationRuntime:
                     state.path = []
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
-                    transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+                    self._transition_to_free_time_contract_state(state)
                     set_execute_state(state, ContractExecuteState.IDLE)
                     state.ticks_remaining = 1
             state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
@@ -1175,6 +1246,8 @@ class SimulationRuntime:
 
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
             work_tiles = self._find_work_tiles(current_work_action)
+            if state.work_state == WorkState.GATHER and state.gather_target is not None:
+                work_tiles = [state.gather_target]
             if work_tiles:
                 if not state.work_path_initialized:
                     state.path = self._find_path_to_nearest_target(
@@ -1214,6 +1287,9 @@ class SimulationRuntime:
             display_action_name=self.display_action_name,
             work_duration_for_action=self._work_duration_for_action,
         )
+        state.gather_target = None
+        if assigned is not None and assigned.issue_type == GuildIssueType.GATHER:
+            state.gather_target = self._nearest_gather_target_from_board(npc, assigned.item_key)
 
     def tick_once(self) -> None:
         self._refresh_guild_dispatcher()
@@ -1264,7 +1340,7 @@ class SimulationRuntime:
                         state.path = []
                         state.sleep_path_initialized = False
                         state.work_path_initialized = False
-                        transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+                        self._transition_to_free_time_contract_state(state)
                         set_execute_state(state, ContractExecuteState.IDLE)
                         state.ticks_remaining = 1
                 state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
@@ -1302,6 +1378,8 @@ class SimulationRuntime:
 
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
             work_tiles = self._find_work_tiles(current_work_action)
+            if state.work_state == WorkState.GATHER and state.gather_target is not None:
+                work_tiles = [state.gather_target]
             if work_tiles:
                 if not state.work_path_initialized:
                     state.path = self._find_path_to_nearest_target(
@@ -1367,7 +1445,7 @@ class SimulationRuntime:
         for npc in self.npcs:
             state = self.state_by_name[npc.name]
             if state.assigned_order_id and state.ticks_remaining <= 0:
-                self._apply_order_completion_effects(state.assigned_order_id)
+                self._apply_order_completion_effects(state.assigned_order_id, npc=npc, state=state)
                 self.work_order_queue.complete(state.assigned_order_id, self.ticks)
                 state.assigned_order_id = ""
                 transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="order_done_report")
@@ -1378,6 +1456,7 @@ class SimulationRuntime:
                 state.ticks_remaining = self._work_duration_for_action(BOARD_REPORT_ACTION, npc, state)
                 state.path = []
                 state.work_path_initialized = False
+                state.gather_target = None
                 self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
@@ -1633,6 +1712,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
             self.show_item_modal = False
             self.show_npc_modal = False
             self.board_modal_tab = "issues"
+            self.npc_modal_tab = "status"
             self._sync_camera_after_viewport_change()
 
         def _sync_camera_after_viewport_change(self) -> None:
@@ -1731,6 +1811,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     if self.show_npc_modal:
                         self.show_item_modal = False
                         self.show_board_modal = False
+                        self.npc_modal_tab = "status"
                 elif self.selected_entity is None:
                     self.show_item_modal = not self.show_item_modal
                     if self.show_item_modal:
@@ -1743,6 +1824,13 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 except ValueError:
                     idx = 0
                 self.board_modal_tab = order[(idx + 1) % len(order)]
+            elif key == arcade.key.TAB and self.show_npc_modal:
+                order = ["status", "inventory"]
+                try:
+                    idx = order.index(self.npc_modal_tab)
+                except ValueError:
+                    idx = 0
+                self.npc_modal_tab = order[(idx + 1) % len(order)]
             elif key == arcade.key.J and self.show_board_modal and self.board_modal_tab == "issues":
                 jobs = simulation.board_issue_filter_jobs()
                 try:
@@ -1902,27 +1990,44 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 arcade.draw_text("NPC 정보", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
                 arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
                 sim_state = simulation.state_by_name.get(self.selected_npc.name)
-                lines = [
-                    f"name: {self.selected_npc.name}",
-                    f"job: {self.selected_npc.job}",
-                    f"x: {int(self.selected_npc.x)}",
-                    f"y: {int(self.selected_npc.y)}",
-                    f"hp: {int(self.selected_npc.hp)}",
-                    f"strength: {int(self.selected_npc.strength)}",
-                    f"agility: {int(self.selected_npc.agility)}",
-                    f"focus: {int(self.selected_npc.focus)}",
-                ]
-                if sim_state is not None:
-                    lines.extend([
-                        "--- HFSM Layers ---",
-                        f"{LAYER_0_NAME}: {sim_state.action_state.value}",
-                        f"{LAYER_1_NAME}: {sim_state.contract_state.value}",
-                        f"{LAYER_2_NAME}: {sim_state.contract_execute_state.value}",
-                        f"{LAYER_3_NAME}: {sim_state.work_state.value}",
-                        f"LAYER_3_WORK_ACTION: {sim_state.work_action_name or '-'}",
-                        f"display_action: {sim_state.current_action_display}",
-                    ])
-                for idx, line in enumerate(lines):
+                tab_name = "기본 정보" if self.npc_modal_tab == "status" else "인벤토리"
+                arcade.draw_text(
+                    f"탭: {tab_name} (TAB 전환)",
+                    left + 18,
+                    bottom + modal_h - 54,
+                    (210, 210, 210, 255),
+                    11,
+                    font_name=selected_font,
+                )
+                lines: List[str] = []
+                if self.npc_modal_tab == "status":
+                    lines = [
+                        f"name: {self.selected_npc.name}",
+                        f"job: {self.selected_npc.job}",
+                        f"x: {int(self.selected_npc.x)}",
+                        f"y: {int(self.selected_npc.y)}",
+                        f"hp: {int(self.selected_npc.hp)}",
+                        f"strength: {int(self.selected_npc.strength)}",
+                        f"agility: {int(self.selected_npc.agility)}",
+                        f"focus: {int(self.selected_npc.focus)}",
+                    ]
+                    if sim_state is not None:
+                        lines.extend([
+                            "--- HFSM Layers ---",
+                            f"{LAYER_0_NAME}: {sim_state.action_state.value}",
+                            f"{LAYER_1_NAME}: {sim_state.contract_state.value}",
+                            f"{LAYER_2_NAME}: {sim_state.contract_execute_state.value}",
+                            f"{LAYER_3_NAME}: {sim_state.work_state.value}",
+                            f"LAYER_3_WORK_ACTION: {sim_state.work_action_name or '-'}",
+                            f"display_action: {sim_state.current_action_display}",
+                        ])
+                elif sim_state is None or not sim_state.inventory_by_key:
+                    lines = ["수집한 자원이 없습니다."]
+                else:
+                    for key, qty in sorted(sim_state.inventory_by_key.items()):
+                        lines.append(f"{simulation.display_item_name(key)}: {int(qty)}")
+
+                for idx, line in enumerate(lines[:26]):
                     arcade.draw_text(
                         line,
                         left + 18,

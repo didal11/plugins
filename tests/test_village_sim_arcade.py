@@ -1530,8 +1530,145 @@ def test_adventurer_schedulable_gap_reserves_board_cycle_time(monkeypatch):
     _set_sim_time(sim, 9)
     planned = sim._work_duration_for_action("탐색", npcs[0], state)
 
-    assert planned == 540
+    assert planned == 480
 
+
+def test_free_time_transition_keeps_report_state_without_error(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "게시판보고", "탐색"]}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    state.contract_state = village_sim.ContractState.REPORT_AND_SUBMIT
+    sim._transition_to_free_time_contract_state(state)
+
+    assert state.contract_state == village_sim.ContractState.REPORT_AND_SUBMIT
+
+
+
+def test_gather_order_targets_nearest_known_resource(monkeypatch):
+    import village_sim
+    from guild_dispatch import GuildIssueType
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "약초채집"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=96,
+        height_px=96,
+        entities=[
+            village_sim.StructureEntity(key="guild_board", name="길드 게시판", x=1, y=1, min_duration=1, max_duration=1, current_duration=1),
+            village_sim.ResourceEntity(key="herb", name="약초", x=2, y=2, max_quantity=5, current_quantity=5, is_discovered=True),
+            village_sim.ResourceEntity(key="herb", name="약초", x=5, y=5, max_quantity=5, current_quantity=5, is_discovered=True),
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    sim.guild_board_exploration_state.known_resources[("herb", (2, 2))] = 5
+    sim.guild_board_exploration_state.known_resources[("herb", (5, 5))] = 5
+
+    sim.work_order_queue.upsert_open_order(
+        recipe_id="g1",
+        issue_type=GuildIssueType.GATHER,
+        action_name="약초채집",
+        item_key="herb",
+        resource_key="",
+        amount=2,
+        job="모험가",
+        priority=1,
+        now_tick=sim.ticks,
+    )
+
+    sim._try_assign_order_after_board_check(npcs[0], state)
+
+    assert state.gather_target == (2, 2)
+
+
+def test_gather_completion_consumes_world_resource_and_updates_npc_inventory(monkeypatch):
+    import village_sim
+    from guild_dispatch import GuildIssueType, WorkOrderStatus
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "게시판보고", "약초채집"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
+        ],
+    )
+
+    herb = village_sim.ResourceEntity(key="herb", name="약초", x=2, y=2, max_quantity=5, current_quantity=3, is_discovered=True)
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.StructureEntity(key="guild_board", name="길드 게시판", x=1, y=1, min_duration=1, max_duration=1, current_duration=1),
+            herb,
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    row = sim.work_order_queue.upsert_open_order(
+        recipe_id="g2",
+        issue_type=GuildIssueType.GATHER,
+        action_name="약초채집",
+        item_key="herb",
+        resource_key="",
+        amount=4,
+        job="모험가",
+        priority=1,
+        now_tick=sim.ticks,
+    )
+
+    row.status = WorkOrderStatus.ASSIGNED
+    row.assignee_npc_name = "A"
+    state.assigned_order_id = row.order_id
+    state.contract_state = village_sim.ContractState.EXECUTE_WORK
+    state.action_state = village_sim.ActionState.WORK
+    state.ticks_remaining = 0
+    state.decision_ticks_until_check = 1
+    state.gather_target = (2, 2)
+
+    sim.tick_once()
+
+    assert herb.current_quantity == 0
+    assert sim.guild_inventory_by_key.get("herb", 0) == 3
+    assert state.inventory_by_key.get("herb", 0) == 3
 
 def test_non_interruptible_work_is_not_preempted(monkeypatch):
     import village_sim
