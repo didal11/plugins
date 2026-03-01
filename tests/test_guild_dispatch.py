@@ -138,3 +138,25 @@ def test_dispatcher_can_count_available_from_discovered_only_while_keeping_regis
     issues = dispatcher.issue_for_targets({"herb": 0}, {"herb": 2})
     got = {(row.resource_key, row.action_name, row.amount) for row in issues}
     assert ("herb", "탐색", 2) in got
+
+
+def test_issue_for_targets_emits_craft_when_stock_deficit_has_craft_action_mapping():
+    from guild_dispatch import GuildDispatcher, GuildIssueType
+
+    dispatcher = GuildDispatcher(
+        entities=[],
+        registered_resource_keys=["tool"],
+        stock_by_key={"tool": 0},
+        craft_action_by_item={"tool": "도구제작"},
+    )
+
+    issues = dispatcher.issue_for_targets(
+        target_stock_by_key={"tool": 5},
+        target_available_by_key={"tool": 0},
+    )
+
+    craft = [row for row in issues if row.issue_type == GuildIssueType.CRAFT]
+    assert len(craft) == 1
+    assert craft[0].action_name == "도구제작"
+    assert craft[0].item_key == "tool"
+    assert craft[0].amount == 5

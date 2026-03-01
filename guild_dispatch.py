@@ -180,10 +180,16 @@ class GuildDispatcher:
         registered_resource_keys: Optional[Iterable[str]] = None,
         stock_by_key: Optional[Dict[str, int]] = None,
         count_available_only_discovered: bool = False,
+        craft_action_by_item: Optional[Dict[str, str]] = None,
     ):
         self.resource_keys: List[str] = []
         self.stock_by_key: Dict[str, int] = {}
         self.available_by_key: Dict[str, int] = {}
+        self.craft_action_by_item: Dict[str, str] = {
+            str(k).strip().lower(): str(v).strip()
+            for k, v in (craft_action_by_item or {}).items()
+            if str(k).strip() and str(v).strip()
+        }
 
         registered: List[str] = []
         seen: set[str] = set()
@@ -241,7 +247,8 @@ class GuildDispatcher:
     ) -> List[GuildIssue]:
         issues: List[GuildIssue] = []
 
-        for key in sorted(self.resource_keys):
+        candidate_keys = set(self.resource_keys) | set(self.stock_by_key.keys()) | set(target_stock_by_key.keys()) | set(self.craft_action_by_item.keys())
+        for key in sorted(candidate_keys):
             stock = max(0, int(self.stock_by_key.get(key, 0)))
             available = max(0, int(self.available_by_key.get(key, 0)))
             target_stock = max(0, int(target_stock_by_key.get(key, 0)))
@@ -269,6 +276,20 @@ class GuildDispatcher:
                         item_key=key,
                         resource_key="",
                         amount=gather_amount,
+                    )
+                )
+                continue
+
+            craft_action = self.craft_action_by_item.get(key, "")
+            craft_amount = max(0, target_stock - stock)
+            if craft_action and craft_amount > 0:
+                issues.append(
+                    GuildIssue(
+                        issue_type=GuildIssueType.CRAFT,
+                        action_name=craft_action,
+                        item_key=key,
+                        resource_key="",
+                        amount=craft_amount,
                     )
                 )
 
