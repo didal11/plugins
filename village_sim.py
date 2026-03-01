@@ -56,6 +56,10 @@ from simulation_contract import (
     ContractExecuteState,
     ActionState,
     WorkState,
+    LAYER_0_NAME,
+    LAYER_1_NAME,
+    LAYER_2_NAME,
+    LAYER_3_NAME,
     apply_assigned_order,
     apply_resume_or_go_board,
     transition_contract_state,
@@ -1817,6 +1821,7 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                 arcade.draw_lrbt_rectangle_outline(left, left + modal_w, bottom, bottom + modal_h, (220, 220, 220, 255), 2)
                 arcade.draw_text("NPC 정보", left + 16, bottom + modal_h - 34, (245, 245, 245, 255), 16, font_name=selected_font)
                 arcade.draw_text("(I 키로 닫기)", left + modal_w - 120, bottom + modal_h - 30, (200, 200, 200, 255), 10, font_name=selected_font)
+                sim_state = simulation.state_by_name.get(self.selected_npc.name)
                 lines = [
                     f"name: {self.selected_npc.name}",
                     f"job: {self.selected_npc.job}",
@@ -1827,6 +1832,16 @@ def run_arcade(world: GameWorld, config: RuntimeConfig) -> None:
                     f"agility: {int(self.selected_npc.agility)}",
                     f"focus: {int(self.selected_npc.focus)}",
                 ]
+                if sim_state is not None:
+                    lines.extend([
+                        "--- HFSM Layers ---",
+                        f"{LAYER_0_NAME}: {sim_state.action_state.value}",
+                        f"{LAYER_1_NAME}: {sim_state.contract_state.value}",
+                        f"{LAYER_2_NAME}: {sim_state.contract_execute_state.value}",
+                        f"{LAYER_3_NAME}: {sim_state.work_state.value}",
+                        f"LAYER_3_WORK_ACTION: {sim_state.work_action_name or '-'}",
+                        f"display_action: {sim_state.current_action_display}",
+                    ])
                 for idx, line in enumerate(lines):
                     arcade.draw_text(
                         line,

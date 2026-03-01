@@ -7,6 +7,12 @@ from enum import Enum
 from typing import Any, Callable
 
 
+
+LAYER_0_NAME = "LAYER_0_DAILY"
+LAYER_1_NAME = "LAYER_1_WORKFLOW"
+LAYER_2_NAME = "LAYER_2_EXECUTION"
+LAYER_3_NAME = "LAYER_3_WORK_TYPE"
+
 class ContractState(str, Enum):
     BOARD_CHECK = "BOARD_CHECK"
     SELECT_WORK = "SELECT_WORK"
