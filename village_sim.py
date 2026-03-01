@@ -986,6 +986,8 @@ class SimulationRuntime:
                 return 1
             if planned == ScheduledActivity.SLEEP:
                 return 2
+            if planned == ScheduledActivity.FREE:
+                return 4
             if ticks_remaining <= 0:
                 return 3
             return 0
@@ -995,12 +997,16 @@ class SimulationRuntime:
             planned_code = 1
         elif planned == ScheduledActivity.SLEEP:
             planned_code = 2
+        elif planned == ScheduledActivity.FREE:
+            planned_code = 4
 
         decision = torch.tensor([planned_code, int(ticks_remaining)], dtype=torch.int64)
         if int(decision[0].item()) == 1:
             return 1
         if int(decision[0].item()) == 2:
             return 2
+        if int(decision[0].item()) == 4:
+            return 4
         if int(decision[1].item()) <= 0:
             return 3
         return 0
@@ -1096,6 +1102,18 @@ class SimulationRuntime:
             elif decision_code == 3:
                 state.sleep_path_initialized = False
                 self._pick_next_work_action(npc, state)
+            elif decision_code == 4:
+                if self._can_interrupt_action(state):
+                    state.action_state = ActionState.WORK
+                    state.work_state = WorkState.NONE
+                    state.work_action_name = ""
+                    state.action_display = "자유시간"
+                    state.path = []
+                    state.sleep_path_initialized = False
+                    state.work_path_initialized = False
+                    transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+                    set_execute_state(state, ContractExecuteState.IDLE)
+                    state.ticks_remaining = 1
             state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
 
         state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
@@ -1210,6 +1228,18 @@ class SimulationRuntime:
                 elif decision_code == 3:
                     state.sleep_path_initialized = False
                     self._pick_next_work_action(npc, state)
+                elif decision_code == 4:
+                    if self._can_interrupt_action(state):
+                        state.action_state = ActionState.WORK
+                        state.work_state = WorkState.NONE
+                        state.work_action_name = ""
+                        state.action_display = "자유시간"
+                        state.path = []
+                        state.sleep_path_initialized = False
+                        state.work_path_initialized = False
+                        transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+                        set_execute_state(state, ContractExecuteState.IDLE)
+                        state.ticks_remaining = 1
                 state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
 
             state.decision_ticks_until_check = max(0, state.decision_ticks_until_check - 1)
