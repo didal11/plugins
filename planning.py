@@ -13,6 +13,7 @@ class ScheduledActivity(Enum):
     WORK = "work"
     MEAL = "meal"
     SLEEP = "sleep"
+    FREE = "free"
 
 
 @dataclass(frozen=True)
@@ -20,21 +21,23 @@ class DailyPlanner:
     """고정 일과 플래너.
 
     - 06시: 기상 및 식사
-    - 12시: 식사
     - 18시: 식사
+    - 19시: 자유시간
     - 20시~익일 05시: 취침
     - 그 외 시간: 업무
     """
 
     wake_and_meal_hour: int = 6
-    lunch_hour: int = 12
     dinner_hour: int = 18
+    free_hour: int = 19
     sleep_hour: int = 20
 
     def activity_for_hour(self, hour: int) -> ScheduledActivity:
         hour = hour % 24
-        if hour in (self.wake_and_meal_hour, self.lunch_hour, self.dinner_hour):
+        if hour in (self.wake_and_meal_hour, self.dinner_hour):
             return ScheduledActivity.MEAL
+        if hour == self.free_hour:
+            return ScheduledActivity.FREE
         if hour >= self.sleep_hour or hour < self.wake_and_meal_hour:
             return ScheduledActivity.SLEEP
         return ScheduledActivity.WORK
