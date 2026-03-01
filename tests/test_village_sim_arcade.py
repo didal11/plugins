@@ -1530,8 +1530,27 @@ def test_adventurer_schedulable_gap_reserves_board_cycle_time(monkeypatch):
     _set_sim_time(sim, 9)
     planned = sim._work_duration_for_action("탐색", npcs[0], state)
 
-    assert planned == 540
+    assert planned == 480
 
+
+def test_free_time_transition_keeps_report_state_without_error(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "게시판보고", "탐색"]}],
+    )
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+
+    state.contract_state = village_sim.ContractState.REPORT_AND_SUBMIT
+    sim._transition_to_free_time_contract_state(state)
+
+    assert state.contract_state == village_sim.ContractState.REPORT_AND_SUBMIT
 
 def test_non_interruptible_work_is_not_preempted(monkeypatch):
     import village_sim

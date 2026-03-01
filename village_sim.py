@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from collections import deque
 from pathlib import Path
 from random import Random
@@ -880,7 +881,20 @@ class SimulationRuntime:
             return default_ticks
         # 스케줄러 업무 시간은 당일 18시 식사 전까지의 남은 슬롯(10분 단위)만 사용한다.
         remaining_slots = self._remaining_work_slots_until_dinner()
+        if action_name.strip() == "탐색":
+            report_ticks = max(1, int(self.action_duration_ticks.get(BOARD_REPORT_ACTION, 1)))
+            reserved_slots = math.ceil(report_ticks / self.WORK_SLOT_MINUTES)
+            remaining_slots = max(0, remaining_slots - reserved_slots)
         return max(1, remaining_slots * self.WORK_SLOT_MINUTES)
+
+    def _transition_to_free_time_contract_state(self, state: SimulationNpcState) -> None:
+        if state.contract_state in {ContractState.BOARD_CHECK, ContractState.SELECT_WORK}:
+            transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+            return
+        if state.contract_state == ContractState.EXECUTE_WORK:
+            transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="free_time_pending_report")
+            return
+        transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="free_time_keep_report")
 
     def _sync_action_state(self, state: SimulationNpcState) -> None:
         if state.action_state == ActionState.MEAL:
@@ -1130,7 +1144,7 @@ class SimulationRuntime:
                     state.path = []
                     state.sleep_path_initialized = False
                     state.work_path_initialized = False
-                    transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+                    self._transition_to_free_time_contract_state(state)
                     set_execute_state(state, ContractExecuteState.IDLE)
                     state.ticks_remaining = 1
             state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
@@ -1264,7 +1278,7 @@ class SimulationRuntime:
                         state.path = []
                         state.sleep_path_initialized = False
                         state.work_path_initialized = False
-                        transition_contract_state(state, ContractState.SELECT_WORK, reason="free_time")
+                        self._transition_to_free_time_contract_state(state)
                         set_execute_state(state, ContractExecuteState.IDLE)
                         state.ticks_remaining = 1
                 state.decision_ticks_until_check = self.DECISION_INTERVAL_TICKS
