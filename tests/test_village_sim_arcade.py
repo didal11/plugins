@@ -739,7 +739,7 @@ def test_adventurer_does_not_report_first_when_check_action_not_configured(monke
         village_sim,
         "load_action_defs",
         lambda: [
-            {"name": "게시판보고", "duration_minutes": 10, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 10, "schedulable": False, "required_entity": "guild_board"},
             {"name": "게시판확인", "duration_minutes": 10, "required_entity": "guild_board"},
             {"name": "탐색", "duration_minutes": 10},
             {"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"},
@@ -850,8 +850,83 @@ def test_adventurer_board_cycle_is_check_work_report(monkeypatch):
 
     state.ticks_remaining = 0
     sim._pick_next_work_action(npcs[0], state)
-    assert state.current_action == "게시판보고"
+    assert state.current_action == "게시판확인"
 
+
+
+
+def test_order_completion_transitions_to_board_report_with_configured_duration(monkeypatch):
+    import village_sim
+    from guild_dispatch import GuildIssueType
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["게시판확인", "게시판보고", "탐색"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [
+            {"name": "게시판확인", "duration_minutes": 60, "required_entity": "guild_board"},
+            {"name": "게시판보고", "duration_minutes": 10, "schedulable": False, "required_entity": "guild_board"},
+            {"name": "탐색", "duration_minutes": 10},
+        ],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=64,
+        height_px=64,
+        entities=[
+            village_sim.StructureEntity(
+                key="guild_board",
+                name="길드 게시판",
+                x=1,
+                y=1,
+                min_duration=1,
+                max_duration=1,
+                current_duration=1,
+            )
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim.work_order_queue.upsert_open_order(
+        recipe_id="r1",
+        issue_type=GuildIssueType.EXPLORE,
+        action_name="탐색",
+        item_key="",
+        resource_key="herb",
+        amount=1,
+        job="모험가",
+        priority=1,
+        now_tick=sim.ticks,
+    )
+    assigned = sim.work_order_queue.assign_next("모험가", "A")
+    state = sim.state_by_name["A"]
+    _set_sim_time(sim, 9)
+    state.contract_state = village_sim.ContractState.EXECUTE_WORK
+    state.action_state = village_sim.ActionState.WORK
+    state.assigned_order_id = assigned.order_id
+    state.ticks_remaining = 0
+    state.decision_ticks_until_check = 1
+
+    sim.tick_once()
+
+    assert state.contract_state == village_sim.ContractState.REPORT_AND_SUBMIT
+    assert state.current_action == "게시판보고"
+    assert state.ticks_remaining == 10
+
+    state.ticks_remaining = 0
+    state.decision_ticks_until_check = 0
+    sim.tick_once()
+
+    assert state.contract_state == village_sim.ContractState.BOARD_CHECK
+    assert state.current_action == "게시판확인"
 
 def test_adventurer_does_not_start_with_board_report_when_check_action_missing(monkeypatch):
     import village_sim
@@ -1455,7 +1530,7 @@ def test_adventurer_schedulable_gap_reserves_board_cycle_time(monkeypatch):
     _set_sim_time(sim, 9)
     planned = sim._work_duration_for_action("탐색", npcs[0], state)
 
-    assert planned == 481
+    assert planned == 540
 
 
 def test_non_interruptible_work_is_not_preempted(monkeypatch):
