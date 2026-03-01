@@ -285,6 +285,8 @@ class SimulationRuntime:
 
     TICK_MINUTES = 1
     TICKS_PER_HOUR = 60 // TICK_MINUTES
+    WORK_SLOT_MINUTES = 10
+    WORK_SLOTS_PER_HOUR = 60 // WORK_SLOT_MINUTES
     DECISION_INTERVAL_TICKS = 10
 
     def _is_current_level_town(self) -> bool:
@@ -857,11 +859,21 @@ class SimulationRuntime:
             gap += 24 * self.TICKS_PER_HOUR
         return gap
 
+    def _remaining_work_slots_until_dinner(self) -> int:
+        """남은 업무 슬롯(10분 단위)을 당일 18시 식사 전까지만 계산한다."""
+
+        current_tick_of_day = self.ticks % (24 * self.TICKS_PER_HOUR)
+        dinner_tick_of_day = (self.planner.dinner_hour % 24) * self.TICKS_PER_HOUR
+        gap_ticks = max(0, dinner_tick_of_day - current_tick_of_day)
+        return max(0, gap_ticks // self.WORK_SLOT_MINUTES)
+
     def _work_duration_for_action(self, action_name: str, npc: RenderNpc, state: SimulationNpcState) -> int:
         default_ticks = self.action_duration_ticks.get(action_name, 1)
         if not self.action_schedulable.get(action_name, True):
             return default_ticks
-        return max(1, self._ticks_until_anchor_hour(self.planner.dinner_hour))
+        # 스케줄러 업무 시간은 당일 18시 식사 전까지의 남은 슬롯(10분 단위)만 사용한다.
+        remaining_slots = self._remaining_work_slots_until_dinner()
+        return max(1, remaining_slots * self.WORK_SLOT_MINUTES)
 
     def _sync_action_state(self, state: SimulationNpcState) -> None:
         if state.action_state == ActionState.MEAL:
