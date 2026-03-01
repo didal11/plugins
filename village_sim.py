@@ -1279,14 +1279,13 @@ class SimulationRuntime:
             if state.work_state == WorkState.GATHER:
                 handled = self._step_gather_action(npc, state, width_tiles, height_tiles)
                 if handled:
-                    if state.gather_target is None or (npc.x, npc.y) != state.gather_target:
-                        return
+                    return
                 state.work_path_initialized = False
+                self._step_random(npc, width_tiles, height_tiles)
+                return
 
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
             work_tiles = self._find_work_tiles(current_work_action)
-            if state.work_state == WorkState.GATHER and state.gather_target is not None:
-                work_tiles = [state.gather_target]
             if work_tiles:
                 if not state.work_path_initialized:
                     state.path = self._find_path_to_nearest_target(
@@ -1418,14 +1417,13 @@ class SimulationRuntime:
             if state.work_state == WorkState.GATHER:
                 handled = self._step_gather_action(npc, state, width_tiles, height_tiles)
                 if handled:
-                    if state.gather_target is None or (npc.x, npc.y) != state.gather_target:
-                        continue
+                    continue
                 state.work_path_initialized = False
+                fallback_random.append(npc)
+                continue
 
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
             work_tiles = self._find_work_tiles(current_work_action)
-            if state.work_state == WorkState.GATHER and state.gather_target is not None:
-                work_tiles = [state.gather_target]
             if work_tiles:
                 if not state.work_path_initialized:
                     state.path = self._find_path_to_nearest_target(
