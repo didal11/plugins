@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 from collections import deque
 from pathlib import Path
@@ -24,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from editable_data import (
     DATA_DIR,
+    MAP_FILE,
     load_action_defs,
     load_item_defs,
     load_job_defs,
@@ -386,6 +388,64 @@ class SimulationRuntime:
             keys.append(key)
         return keys
 
+    @staticmethod
+    def _normalize_recipe_item_key(raw_identifier: str) -> str:
+        value = str(raw_identifier).strip().lower()
+        if not value:
+            return ""
+        if value.endswith("2"):
+            value = value[:-1]
+        return value
+
+    def _craft_action_by_output_item(self) -> Dict[str, str]:
+        mapping: Dict[str, str] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            action_name = str(row.get("name", "")).strip()
+            outputs = row.get("outputs", {})
+            if not action_name or not isinstance(outputs, dict):
+                continue
+            for raw_item_key in outputs.keys():
+                key = str(raw_item_key).strip().lower()
+                if not key:
+                    continue
+                mapping.setdefault(key, action_name)
+        return mapping
+
+    def _recipe_product_item_keys_from_map(self) -> List[str]:
+        try:
+            raw = json.loads(MAP_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+        levels = raw.get("levels", []) if isinstance(raw, dict) else []
+        out: List[str] = []
+        seen: set[str] = set()
+        for level in levels:
+            if not isinstance(level, dict):
+                continue
+            identifier = str(level.get("identifier", "")).strip().lower()
+            if "recipe" not in identifier:
+                continue
+            for layer in level.get("layerInstances", []) or []:
+                if not isinstance(layer, dict):
+                    continue
+                if str(layer.get("__identifier", "")).strip().lower() != "item":
+                    continue
+                for entity in layer.get("entityInstances", []) or []:
+                    if not isinstance(entity, dict):
+                        continue
+                    entity_id = str(entity.get("__identifier", "")).strip()
+                    if not entity_id or entity_id.lower().startswith("recipe_"):
+                        continue
+                    key = self._normalize_recipe_item_key(entity_id)
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(key)
+        return out
+
     def _refresh_guild_dispatcher(self) -> None:
         registered_resources = self._dynamic_registered_resource_keys()
         all_item_keys = self._all_item_keys()
@@ -398,6 +458,7 @@ class SimulationRuntime:
             registered_resource_keys=registered_resources,
             stock_by_key=self.guild_inventory_by_key,
             count_available_only_discovered=True,
+            craft_action_by_item=self._craft_action_by_output_item(),
         )
         known_available = self._known_available_by_key_from_board()
         self.guild_dispatcher.available_by_key = {
@@ -421,7 +482,11 @@ class SimulationRuntime:
 
     def _default_guild_targets(self) -> Tuple[Dict[str, int], Dict[str, int]]:
         stock_keys = sorted(set(self._all_item_keys()))
-        target_stock_by_key = {key: 1 for key in stock_keys}
+        recipe_outputs = set(self._recipe_product_item_keys_from_map())
+        target_stock_by_key = {
+            key: (100 if key in recipe_outputs else 1)
+            for key in stock_keys
+        }
         target_available_by_key = {key: 1 for key in self.guild_dispatcher.resource_keys}
         return target_stock_by_key, target_available_by_key
 

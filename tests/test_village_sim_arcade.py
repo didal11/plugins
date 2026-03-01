@@ -1754,6 +1754,105 @@ def test_gather_path_does_not_use_generic_work_tiles(monkeypatch):
 
     assert (npcs[0].x, npcs[0].y) != (1, 1)
 
+
+
+def test_default_targets_set_recipe_outputs_to_100(monkeypatch, tmp_path):
+    import json
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "대장장이", "work_actions": ["도구제작"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "도구제작", "duration_minutes": 60, "outputs": {"tool": {"min": 1, "max": 1}}}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_item_defs",
+        lambda: [{"key": "tool", "display": "도구"}],
+    )
+
+    recipe_map = {
+        "levels": [
+            {
+                "identifier": "First_recipe",
+                "layerInstances": [
+                    {
+                        "__identifier": "Item",
+                        "entityInstances": [
+                            {"__identifier": "Recipe_tool"},
+                            {"__identifier": "Tool2"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    map_path = tmp_path / "map.ldtk"
+    map_path.write_text(json.dumps(recipe_map), encoding="utf-8")
+    monkeypatch.setattr(village_sim, "MAP_FILE", map_path)
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="대장장이", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    assert sim.target_stock_by_key.get("tool") == 100
+
+
+def test_recompute_work_orders_emits_craft_issue_from_dispatcher(monkeypatch, tmp_path):
+    import json
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "대장장이", "work_actions": ["도구제작"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "도구제작", "duration_minutes": 60, "outputs": {"tool": {"min": 1, "max": 1}}}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_item_defs",
+        lambda: [{"key": "tool", "display": "도구"}],
+    )
+
+    recipe_map = {
+        "levels": [
+            {
+                "identifier": "Second_recipe",
+                "layerInstances": [
+                    {
+                        "__identifier": "Item",
+                        "entityInstances": [
+                            {"__identifier": "Tool2"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    map_path = tmp_path / "map.ldtk"
+    map_path.write_text(json.dumps(recipe_map), encoding="utf-8")
+    monkeypatch.setattr(village_sim, "MAP_FILE", map_path)
+
+    world = village_sim.GameWorld(level_id="W", grid_size=16, width_px=64, height_px=64, entities=[], tiles=[])
+    npcs = [village_sim.RenderNpc(name="A", job="대장장이", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+
+    sim._recompute_work_orders(reason="test")
+    open_orders = sim.work_order_queue.open_orders(job="대장장이")
+
+    assert any(row.issue_type == village_sim.GuildIssueType.CRAFT for row in open_orders)
+    craft_rows = [row for row in open_orders if row.issue_type == village_sim.GuildIssueType.CRAFT]
+    assert any(row.action_name == "도구제작" and row.item_key == "tool" for row in craft_rows)
+
 def test_non_interruptible_work_is_not_preempted(monkeypatch):
     import village_sim
 
