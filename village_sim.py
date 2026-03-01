@@ -74,6 +74,7 @@ from simulation_pathing import (
 )
 
 BOARD_CHECK_ACTION = "게시판확인"
+BOARD_REPORT_ACTION = "게시판보고"
 
 
 try:
@@ -636,6 +637,12 @@ class SimulationRuntime:
         )
         buffer.merge_from(delta)
 
+    def _handle_board_report(self, npc_name: str) -> None:
+        self._flush_exploration_buffer(npc_name)
+        self.minimap_known_cells_snapshot = set(self.guild_board_exploration_state.known_cells)
+        self.minimap_known_resources_snapshot = dict(self.guild_board_exploration_state.known_resources)
+        self.minimap_known_monsters_snapshot = set(self.guild_board_exploration_state.known_monsters)
+
     def _mark_cell_discovered(self, coord: Tuple[int, int], force: bool = False) -> None:
         """Backward-compatible helper used by tests/system flows.
 
@@ -1182,6 +1189,14 @@ class SimulationRuntime:
                 if (npc.x, npc.y) in work_tiles:
                     if state.contract_state == ContractState.BOARD_CHECK:
                         self._handle_board_check(npc.name)
+                    elif state.contract_state == ContractState.REPORT_AND_SUBMIT:
+                        self._handle_board_report(npc.name)
+                        if state.ticks_remaining <= 0:
+                            transition_contract_state(state, ContractState.BOARD_CHECK, reason="report_submitted_go_board")
+                            set_execute_state(state, ContractExecuteState.GO_TO_BOARD)
+                            state.work_state = WorkState.NONE
+                            state.work_action_name = ""
+                            state.action_display = BOARD_CHECK_ACTION
                     if state.assigned_order_id:
                         set_execute_state(state, perform_execute_state_for_work(state.work_state))
                     return
@@ -1329,6 +1344,26 @@ class SimulationRuntime:
                 if not state.assigned_order_id:
                     self._try_assign_order_after_board_check(npc, state)
 
+        for (request_key, target_key), rows in grouped_requests.items():
+            action_name = request_key.removeprefix("work:")
+            if action_name != BOARD_REPORT_ACTION:
+                continue
+            targets = set(target_key)
+            for npc, _ in rows:
+                if (npc.x, npc.y) not in targets:
+                    continue
+                state = self.state_by_name[npc.name]
+                if state.contract_state != ContractState.REPORT_AND_SUBMIT:
+                    continue
+                self._handle_board_report(npc.name)
+                if state.ticks_remaining > 0:
+                    continue
+                transition_contract_state(state, ContractState.BOARD_CHECK, reason="report_submitted_go_board")
+                set_execute_state(state, ContractExecuteState.GO_TO_BOARD)
+                state.work_state = WorkState.NONE
+                state.work_action_name = ""
+                state.action_display = BOARD_CHECK_ACTION
+
         for npc in self.npcs:
             state = self.state_by_name[npc.name]
             if state.assigned_order_id and state.ticks_remaining <= 0:
@@ -1337,9 +1372,12 @@ class SimulationRuntime:
                 state.assigned_order_id = ""
                 transition_contract_state(state, ContractState.REPORT_AND_SUBMIT, reason="order_done_report")
                 set_execute_state(state, ContractExecuteState.REPORT_AND_SUBMIT)
-                state.work_state = WorkState.NONE
-                transition_contract_state(state, ContractState.BOARD_CHECK, reason="report_done_go_board")
-                set_execute_state(state, ContractExecuteState.GO_TO_BOARD)
+                state.work_state = WorkState.GENERIC
+                state.work_action_name = BOARD_REPORT_ACTION
+                state.action_display = BOARD_REPORT_ACTION
+                state.ticks_remaining = self._work_duration_for_action(BOARD_REPORT_ACTION, npc, state)
+                state.path = []
+                state.work_path_initialized = False
                 self._recompute_work_orders(reason="order_done")
 
         for npc in fallback_random:
