@@ -1670,6 +1670,44 @@ def test_gather_completion_consumes_world_resource_and_updates_npc_inventory(mon
     assert sim.guild_inventory_by_key.get("herb", 0) == 3
     assert state.inventory_by_key.get("herb", 0) == 3
 
+
+
+def test_step_gather_action_moves_toward_selected_target(monkeypatch):
+    import village_sim
+
+    monkeypatch.setattr(
+        village_sim,
+        "load_job_defs",
+        lambda: [{"job": "모험가", "work_actions": ["약초채집"]}],
+    )
+    monkeypatch.setattr(
+        village_sim,
+        "load_action_defs",
+        lambda: [{"name": "약초채집", "duration_minutes": 10, "required_entity": "herb"}],
+    )
+
+    world = village_sim.GameWorld(
+        level_id="W",
+        grid_size=16,
+        width_px=96,
+        height_px=96,
+        entities=[
+            village_sim.ResourceEntity(key="herb", name="약초", x=4, y=1, max_quantity=5, current_quantity=5, is_discovered=True),
+        ],
+        tiles=[],
+    )
+    npcs = [village_sim.RenderNpc(name="A", job="모험가", x=1, y=1)]
+    sim = village_sim.SimulationRuntime(world, npcs, seed=1)
+    state = sim.state_by_name["A"]
+    state.work_state = village_sim.WorkState.GATHER
+    state.gather_target = (4, 1)
+
+    moved = sim._step_gather_action(npcs[0], state, 6, 6)
+
+    assert moved is True
+    assert (npcs[0].x, npcs[0].y) != (1, 1)
+    assert abs(4 - npcs[0].x) + abs(1 - npcs[0].y) < 3
+
 def test_non_interruptible_work_is_not_preempted(monkeypatch):
     import village_sim
 

@@ -726,6 +726,38 @@ class SimulationRuntime:
         self._mark_visible_area_discovered(npc.name, (npc.x, npc.y))
         return True
 
+    def _step_gather_action(
+        self,
+        npc: RenderNpc,
+        state: SimulationNpcState,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> bool:
+        if state.gather_target is None and state.assigned_order_id:
+            row = self.work_order_queue.orders_by_id.get(state.assigned_order_id)
+            if row is not None:
+                state.gather_target = self._nearest_gather_target_from_board(npc, row.item_key)
+
+        target = state.gather_target
+        if target is None:
+            return False
+
+        if (npc.x, npc.y) == target:
+            return True
+
+        if not state.work_path_initialized or not state.path:
+            state.path = self._find_path_to_nearest_target(
+                (npc.x, npc.y),
+                [target],
+                width_tiles,
+                height_tiles,
+            )
+            state.work_path_initialized = True
+            if not state.path:
+                return False
+
+        return self._apply_next_path_step(npc, state)
+
     @staticmethod
     def _duration_to_ticks(minutes: object) -> int:
         try:
@@ -1244,6 +1276,13 @@ class SimulationRuntime:
                     return
                 state.work_path_initialized = False
 
+            if state.work_state == WorkState.GATHER:
+                handled = self._step_gather_action(npc, state, width_tiles, height_tiles)
+                if handled:
+                    if state.gather_target is None or (npc.x, npc.y) != state.gather_target:
+                        return
+                state.work_path_initialized = False
+
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
             work_tiles = self._find_work_tiles(current_work_action)
             if state.work_state == WorkState.GATHER and state.gather_target is not None:
@@ -1374,6 +1413,13 @@ class SimulationRuntime:
                 moved = self._step_exploration_action(npc, state, width_tiles, height_tiles)
                 if moved:
                     continue
+                state.work_path_initialized = False
+
+            if state.work_state == WorkState.GATHER:
+                handled = self._step_gather_action(npc, state, width_tiles, height_tiles)
+                if handled:
+                    if state.gather_target is None or (npc.x, npc.y) != state.gather_target:
+                        continue
                 state.work_path_initialized = False
 
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
