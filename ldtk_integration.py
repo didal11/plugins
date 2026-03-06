@@ -279,8 +279,10 @@ def _entity_from_ldtk(row: LdtkEntityInstance, *, grid_size: int) -> GameEntity:
     )
 
 
-def _tiles_from_layer(layer: LdtkLayerInstance, *, fallback_grid_size: int) -> List[GameTile]:
-    layer_grid = layer.grid_size or fallback_grid_size
+def _tiles_from_layer(layer: LdtkLayerInstance, *, required_grid_size: int) -> List[GameTile]:
+    layer_grid = layer.grid_size
+    if layer_grid is None:
+        raise ValueError(f"layer {layer.identifier} is missing grid_size")
     rows = [*layer.grid_tiles, *layer.auto_layer_tiles]
     return [
         GameTile(
@@ -341,11 +343,13 @@ def _build_level_world(level: LdtkLevel, project: LdtkProject, entity_layer: str
     for layer in layer_instances:
         if layer.layer_type == "Entities":
             continue
-        tiles.extend(_tiles_from_layer(layer, fallback_grid_size=resolved_grid_size))
+        tiles.extend(_tiles_from_layer(layer, required_grid_size=resolved_grid_size))
 
         if layer.identifier.lower() == "wall":
             for row in [*layer.grid_tiles, *layer.auto_layer_tiles]:
-                layer_grid = layer.grid_size or resolved_grid_size
+                layer_grid = layer.grid_size
+                if layer_grid is None:
+                    raise ValueError(f"layer {layer.identifier} is missing grid_size")
                 blocked_set.add((int(row.px[0] // layer_grid), int(row.px[1] // layer_grid)))
 
         is_collision_layer = layer.identifier.lower() == "collision"

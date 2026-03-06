@@ -80,10 +80,7 @@ BOARD_CHECK_ACTION = "게시판확인"
 BOARD_REPORT_ACTION = "게시판보고"
 
 
-try:
-    import torch
-except ImportError:  # optional dependency
-    torch = None
+import torch
 
 def _has_workbench_trait(entity: GameEntity) -> bool:
     return isinstance(entity, WorkbenchEntity) or entity.key.strip().lower().endswith("_workbench")
@@ -309,7 +306,9 @@ class SimulationRuntime:
     ):
         self.world = world
         self.npcs = npcs
-        self.monsters = monsters or []
+        if monsters is None:
+            raise ValueError("monsters must be provided; implicit fallback is not allowed")
+        self.monsters = monsters
         self.tick_seconds = max(0.1, float(tick_seconds))
         self._accumulator = 0.0
         self.ticks = 0
@@ -910,22 +909,45 @@ class SimulationRuntime:
         return out
 
     def _producer_actions_by_item_map(self) -> Dict[str, List[str]]:
-        """호환성을 위해 아이템별 생산 액션 매핑을 제공한다.
-
-        현재 데이터 소스(`load_item_defs`)는 아이템 키/표시명만 제공하므로
-        생산 액션 정보가 없는 경우 빈 매핑을 반환한다.
-        """
-
-        return {}
+        out: Dict[str, List[str]] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            action_name = str(row.get("name", "")).strip()
+            outputs = row.get("outputs", {})
+            if not action_name or not isinstance(outputs, dict):
+                continue
+            for raw_item_key in outputs.keys():
+                key = str(raw_item_key).strip().lower()
+                if not key:
+                    continue
+                rows = out.setdefault(key, [])
+                if action_name not in rows:
+                    rows.append(action_name)
+        if not out:
+            raise ValueError("producer action mapping is empty; outputs must be defined in action defs")
+        return out
 
     def _expected_output_by_action_item_map(self) -> Dict[Tuple[str, str], int]:
-        """호환성을 위해 (action, item)별 기대 산출량 매핑을 제공한다.
-
-        관련 데이터가 정의되지 않은 환경에서도 런타임 초기화가 실패하지 않도록
-        기본값으로 빈 매핑을 사용한다.
-        """
-
-        return {}
+        out: Dict[Tuple[str, str], int] = {}
+        for row in load_action_defs():
+            if not isinstance(row, dict):
+                continue
+            action_name = str(row.get("name", "")).strip()
+            outputs = row.get("outputs", {})
+            if not action_name or not isinstance(outputs, dict):
+                continue
+            for raw_item_key, raw_amount in outputs.items():
+                item_key = str(raw_item_key).strip().lower()
+                if not item_key:
+                    continue
+                amount = int(raw_amount)
+                if amount <= 0:
+                    raise ValueError(f"invalid output amount for {action_name}:{item_key} -> {amount}")
+                out[(action_name, item_key)] = amount
+        if not out:
+            raise ValueError("expected output mapping is empty; outputs must be defined in action defs")
+        return out
 
     def _item_display_name_map(self) -> Dict[str, str]:
         out: Dict[str, str] = {}
@@ -944,7 +966,7 @@ class SimulationRuntime:
         item_name = self._item_display_name_map().get(key)
         if item_name:
             return item_name
-        return self.display_resource_name(key)
+        raise KeyError(f"item display name not found for key: {key}")
 
     def _apply_order_completion_effects(self, order_id: str, *, npc: RenderNpc, state: SimulationNpcState) -> None:
         row = self.work_order_queue.orders_by_id.get(order_id)
@@ -1403,8 +1425,6 @@ class SimulationRuntime:
         height_tiles = max(1, self.world.height_px // self.world.grid_size)
 
         grouped_requests: Dict[Tuple[str, Tuple[Tuple[int, int], ...]], List[Tuple[RenderNpc, SimulationNpcState]]] = {}
-        fallback_random: List[RenderNpc] = []
-
         for npc in self.npcs:
             state = self.state_by_name[npc.name]
 
@@ -1484,8 +1504,7 @@ class SimulationRuntime:
                 if handled:
                     continue
                 state.work_path_initialized = False
-                fallback_random.append(npc)
-                continue
+                raise RuntimeError(f"unexpected gather failure for npc={npc.name} action={state.work_action_name}")
 
             current_work_action = BOARD_CHECK_ACTION if state.contract_state == ContractState.BOARD_CHECK else state.work_action_name
             work_tiles = self._find_work_tiles(current_work_action)
@@ -1502,7 +1521,10 @@ class SimulationRuntime:
                 grouped_requests.setdefault(key, []).append((npc, state))
                 continue
 
-            fallback_random.append(npc)
+            raise RuntimeError(
+                f"unexpected work tile resolution failure for npc={npc.name} action={current_work_action} "
+                f"contract_state={state.contract_state.value}"
+            )
 
         for (_, target_key), rows in grouped_requests.items():
             targets = list(target_key)
@@ -1567,9 +1589,6 @@ class SimulationRuntime:
                 state.work_path_initialized = False
                 state.gather_target = None
                 self._recompute_work_orders(reason="order_done")
-
-        for npc in fallback_random:
-            self._step_random(npc, width_tiles, height_tiles)
 
         for monster in self.monsters:
             self._step_random(monster, width_tiles, height_tiles)
@@ -1664,14 +1683,8 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
         for x in range(spawn_x0, spawn_x0 + max(1, spawn_w))
         if 0 <= x < width_tiles and 0 <= y < height_tiles and (x, y) not in blocked_tiles
     ]
-    fallback_candidates = [
-        (x, y)
-        for y in range(height_tiles)
-        for x in range(width_tiles)
-        if (x, y) not in blocked_tiles
-    ]
     if not spawn_candidates:
-        spawn_candidates = fallback_candidates
+        raise ValueError("no valid npc spawn candidates in town bounds")
 
     rng = Random(42)
     remaining_candidates = list(spawn_candidates)
@@ -1690,12 +1703,8 @@ def _build_render_npcs(world: GameWorld) -> List[RenderNpc]:
         if npc.x is None or npc.y is None:
             if remaining_candidates:
                 default_x, default_y = remaining_candidates.pop(rng.randrange(len(remaining_candidates)))
-            elif spawn_candidates:
-                default_x, default_y = rng.choice(spawn_candidates)
-            elif fallback_candidates:
-                default_x, default_y = rng.choice(fallback_candidates)
             else:
-                default_x, default_y = 0, 0
+                raise ValueError(f"no remaining spawn candidates for npc {npc.name}")
         else:
             default_x, default_y = npc.x, npc.y
         x = npc.x if npc.x is not None else default_x

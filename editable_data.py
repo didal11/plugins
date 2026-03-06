@@ -98,11 +98,11 @@ def _write_json(path: Path, obj: object) -> None:
     path.write_bytes(orjson.dumps(obj, option=orjson.OPT_INDENT_2))
 
 
-def _read_json(path: Path, fallback: object) -> object:
+def _read_json(path: Path) -> object:
     try:
         return orjson.loads(path.read_bytes())
-    except Exception:
-        return fallback
+    except Exception as exc:
+        raise ValueError(f"failed to parse json: {path}") from exc
 
 
 def _seed_if_empty(path: Path, rows: List[Dict[str, object]], defaults: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -128,11 +128,11 @@ def _job_names_from_raw(raw: object) -> List[str]:
 def load_job_names() -> List[str]:
     """jobs.json의 직업명을 읽어 UI/검증에 공통으로 사용한다."""
     ensure_data_files()
-    raw = _read_json(JOBS_FILE, DEFAULT_JOB_DEFS)
+    raw = _read_json(JOBS_FILE)
     names = _job_names_from_raw(raw)
-    if names:
-        return names
-    return list(VALID_JOBS)
+    if not names:
+        raise ValueError("jobs.json does not define valid job names")
+    return names
 
 
 def ensure_data_files() -> None:
@@ -177,8 +177,8 @@ def _entity_default_name(entity_def: Dict[str, object]) -> str:
 
 def load_item_defs() -> List[Dict[str, object]]:
     if not MAP_FILE.exists():
-        return list(DEFAULT_ITEMS)
-    raw = _read_json(MAP_FILE, {})
+        raise FileNotFoundError(f"missing required map file: {MAP_FILE}")
+    raw = _read_json(MAP_FILE)
     defs = raw.get("defs", {}) if isinstance(raw, dict) else {}
     entities = defs.get("entities", []) if isinstance(defs, dict) else []
     out: List[Dict[str, object]] = []
@@ -200,12 +200,14 @@ def load_item_defs() -> List[Dict[str, object]]:
         seen_keys.add(key)
         display = _entity_default_name(entity_def) or identifier or key
         out.append({"key": key, "display": display})
-    return out or list(DEFAULT_ITEMS)
+    if not out:
+        raise ValueError("no item definitions found in map")
+    return out
 
 
 def load_npc_templates() -> List[Dict[str, object]]:
     ensure_data_files()
-    raw = _read_json(NPCS_FILE, DEFAULT_NPCS)
+    raw = _read_json(NPCS_FILE)
     valid_jobs = set(load_job_names())
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
@@ -214,10 +216,16 @@ def load_npc_templates() -> List[Dict[str, object]]:
         name = str(it.get("name", "")).strip()
         if not name:
             continue
-        job = str(it.get("job", "농부")).strip() or "농부"
+        job = str(it.get("job", "")).strip()
+        if not job:
+            raise ValueError(f"npc {name} is missing required job")
         if job not in valid_jobs:
-            job = "농부"
-        row: Dict[str, object] = {"name": name, "race": str(it.get("race", "인간")).strip() or "인간", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 25)), "job": job}
+            raise ValueError(f"npc {name} has invalid job: {job}")
+        race = str(it.get("race", "")).strip()
+        gender = str(it.get("gender", "")).strip()
+        if not race or not gender:
+            raise ValueError(f"npc {name} is missing race/gender")
+        row: Dict[str, object] = {"name": name, "race": race, "gender": gender, "age": int(it.get("age", 25)), "job": job}
         if "height_cm" in it:
             row["height_cm"] = int(it.get("height_cm", 170))
         if "weight_kg" in it:
@@ -235,7 +243,7 @@ def save_npc_templates(npcs: List[Dict[str, object]]) -> None:
 
 def load_monster_templates() -> List[Dict[str, object]]:
     ensure_data_files()
-    raw = _read_json(MONSTERS_FILE, DEFAULT_MONSTERS)
+    raw = _read_json(MONSTERS_FILE)
     valid_jobs = set(load_job_names())
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
@@ -244,10 +252,16 @@ def load_monster_templates() -> List[Dict[str, object]]:
         name = str(it.get("name", "")).strip()
         if not name:
             continue
-        job = str(it.get("job", "모험가")).strip() or "모험가"
+        job = str(it.get("job", "")).strip()
+        if not job:
+            raise ValueError(f"monster {name} is missing required job")
         if job not in valid_jobs:
-            job = "모험가"
-        out.append({"name": name, "race": str(it.get("race", "고블린")).strip() or "고블린", "gender": str(it.get("gender", "기타")).strip() or "기타", "age": int(it.get("age", 5)), "job": job})
+            raise ValueError(f"monster {name} has invalid job: {job}")
+        race = str(it.get("race", "")).strip()
+        gender = str(it.get("gender", "")).strip()
+        if not race or not gender:
+            raise ValueError(f"monster {name} is missing race/gender")
+        out.append({"name": name, "race": race, "gender": gender, "age": int(it.get("age", 5)), "job": job})
     return out
 
 
@@ -258,7 +272,7 @@ def save_monster_templates(monsters: List[Dict[str, object]]) -> None:
 
 def load_races() -> List[Dict[str, object]]:
     ensure_data_files()
-    raw = _read_json(RACES_FILE, DEFAULT_RACES)
+    raw = _read_json(RACES_FILE)
     out: List[Dict[str, object]] = []
     for it in raw if isinstance(raw, list) else []:
         if not isinstance(it, dict):
@@ -267,12 +281,14 @@ def load_races() -> List[Dict[str, object]]:
         if not name:
             continue
         out.append({"name": name, "is_hostile": bool(it.get("is_hostile", False)), "str_bonus": int(it.get("str_bonus", 0)), "agi_bonus": int(it.get("agi_bonus", 0)), "hp_bonus": int(it.get("hp_bonus", 0)), "speed_bonus": float(it.get("speed_bonus", 0.0))})
-    return _seed_if_empty(RACES_FILE, out, DEFAULT_RACES)
+    if not out:
+        raise ValueError("races.json does not define any valid race")
+    return out
 
 
 def load_job_defs() -> List[Dict[str, object]]:
     ensure_data_files()
-    raw = _read_json(JOBS_FILE, DEFAULT_JOB_DEFS)
+    raw = _read_json(JOBS_FILE)
     out: List[Dict[str, object]] = []
     for row in raw if isinstance(raw, list) else []:
         if not isinstance(row, dict):
@@ -283,21 +299,23 @@ def load_job_defs() -> List[Dict[str, object]]:
         raw_actions = row.get("work_actions", []) if isinstance(row.get("work_actions", []), list) else []
         work_actions = [str(x).strip() for x in raw_actions if str(x).strip()]
         if not work_actions:
-            work_actions = list(DEFAULT_JOB_WORK_ACTIONS.get(job, []))
+            raise ValueError(f"job {job} has empty work_actions")
 
         raw_items = row.get("procure_items", []) if isinstance(row.get("procure_items", []), list) else []
         procure_items = [str(x).strip().lower() for x in raw_items if str(x).strip()]
         if not procure_items:
-            procure_items = list(DEFAULT_JOB_PROCURE_ITEMS.get(job, []))
+            raise ValueError(f"job {job} has empty procure_items")
 
         out.append({"job": job, "work_actions": work_actions, "procure_items": procure_items})
-    return _seed_if_empty(JOBS_FILE, out, DEFAULT_JOB_DEFS)
+    if not out:
+        raise ValueError("jobs.json does not define valid job definitions")
+    return out
 
 
 def load_action_defs() -> List[Dict[str, object]]:
     if not MAP_FILE.exists():
-        return list(DEFAULT_ACTION_DEFS)
-    raw = _read_json(MAP_FILE, {})
+        raise FileNotFoundError(f"missing required map file: {MAP_FILE}")
+    raw = _read_json(MAP_FILE)
     defs = raw.get("defs", {}) if isinstance(raw, dict) else {}
     entities = defs.get("entities", []) if isinstance(defs, dict) else []
     out: List[Dict[str, object]] = []
@@ -341,7 +359,9 @@ def load_action_defs() -> List[Dict[str, object]]:
             "schedulable": bool(fields.get("schedulable", True)),
             "interruptible": bool(fields.get("interruptible", True)),
         })
-    return out or list(DEFAULT_ACTION_DEFS)
+    if not out:
+        raise ValueError("no action definitions found in map")
+    return out
 
 def save_job_defs(job_defs: List[Dict[str, object]]) -> None:
     ensure_data_files()
@@ -350,20 +370,16 @@ def save_job_defs(job_defs: List[Dict[str, object]]) -> None:
 
 def load_sim_settings() -> Dict[str, float]:
     ensure_data_files()
-    raw = _read_json(SIM_SETTINGS_FILE, DEFAULT_SIM_SETTINGS)
+    raw = _read_json(SIM_SETTINGS_FILE)
+    if not isinstance(raw, dict):
+        raise ValueError("sim_settings.json must be an object")
     out = dict(DEFAULT_SIM_SETTINGS)
-    if isinstance(raw, dict):
-        if "hunger_gain_per_tick" not in raw and "hunger_gain_per_hour" in raw:
-            raw["hunger_gain_per_tick"] = float(raw.get("hunger_gain_per_hour", 5.0)) / 6.0
-        if "fatigue_gain_per_tick" not in raw and "fatigue_gain_per_hour" in raw:
-            raw["fatigue_gain_per_tick"] = float(raw.get("fatigue_gain_per_hour", 4.0)) / 6.0
-        for k in out:
-            try:
-                out[k] = float(raw.get(k, out[k])) if k != "explore_duration_ticks" else int(raw.get(k, out[k]))
-            except Exception:
-                pass
+    for k in out:
+        if k not in raw:
+            raise ValueError(f"sim_settings.json missing key: {k}")
+        out[k] = float(raw[k]) if k != "explore_duration_ticks" else int(raw[k])
     if int(out.get("explore_duration_ticks", 6)) not in (6, 12, 18):
-        out["explore_duration_ticks"] = 6
+        raise ValueError("explore_duration_ticks must be one of 6, 12, 18")
     return out
 
 
@@ -371,12 +387,11 @@ def save_sim_settings(settings: Dict[str, float]) -> None:
     ensure_data_files()
     out = dict(DEFAULT_SIM_SETTINGS)
     for k in out:
-        try:
-            out[k] = float(settings.get(k, out[k])) if k != "explore_duration_ticks" else int(settings.get(k, out[k]))
-        except Exception:
-            pass
+        if k not in settings:
+            raise ValueError(f"missing simulation setting: {k}")
+        out[k] = float(settings[k]) if k != "explore_duration_ticks" else int(settings[k])
     if int(out.get("explore_duration_ticks", 6)) not in (6, 12, 18):
-        out["explore_duration_ticks"] = 6
+        raise ValueError("explore_duration_ticks must be one of 6, 12, 18")
     _write_json(SIM_SETTINGS_FILE, out)
 
 
