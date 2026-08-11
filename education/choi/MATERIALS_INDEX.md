@@ -13,37 +13,43 @@
 - 본 자료의 문제는 공개 기출문제의 문장을 복제한 것이 아니라 **출제형식을 참고해 새로 만든 연습문제**다.
 - 한 단원은 `시험지도 → 개념골격 → 선지판별 → 시험형문제 → 오답압축 → 제한시간 재시험` 순서로 끝낸다.
 
-## 전체 자료 구조
+# 전체 자료 구조
 
-### 기존 운영 문서
-- `README.md` — 과정의 목표와 기관별 범위
+## 1. 시작/운영 문서
+- `README.md` — 과정 목표, 기관별 범위, 사용 순서
 - `CURRICULUM.md` — 장기 로드맵
+- `WEEKLY_ASSIGNMENTS_54.md` — **1~54주 실제 주간 과제표**
 - `FIRST_4_WEEKS.md` — 첫 4주 일별 실행안
 - `WEEKLY_SYSTEM.md` — 평일 운영, 복습, 오답 규칙
-- `MATERIAL_SYSTEM.md` — 시험역산형 수업자료 설계 규칙
-- `EXAM_CALIBRATION.md` — 공개자료로 출제형식을 보정하는 규칙
-- `SOURCES.md` — 출제범위 확인 기록
+- `TRACKER.md` — 일/주/과목별 점수·속도·오답 추적
+- `FORMULA_SHEET.md` — 재료역학·설계·열·유체·유압·열전달 핵심공식 압축표
 
-### 전공 완성 자료
-- `materials/mechanical/01_MECHANICAL_MATERIALS.md`
-- `materials/mechanical/02_STRENGTH_OF_MATERIALS.md`
-- `materials/mechanical/03_MACHINE_DESIGN.md`
-- `materials/mechanical/04_THERMODYNAMICS.md`
-- `materials/mechanical/05_FLUID_MECHANICS.md`
-- `materials/mechanical/06_MANUFACTURING_HYDRAULICS_HEAT.md`
+## 2. 자료 설계/검증 문서
+- `MATERIAL_SYSTEM.md` — 시험역산형 수업자료·문제은행 설계 규칙
+- `EXAM_CALIBRATION.md` — 공개 복원자료/현행 수험자료로 출제형식을 보정하는 규칙
+- `SOURCES.md` — 2026 공식 출제범위·채용구조 확인 기록
 
-### NCS 완성 자료
-- `materials/ncs/01_COMMUNICATION_PROBLEM.md`
-- `materials/ncs/02_QUANTITATIVE_DEFENSE.md`
-- `materials/ncs/03_OTHER_AREAS.md`
+## 3. 전공 완성 자료
+- `materials/mechanical/01_MECHANICAL_MATERIALS.md` — 기계재료
+- `materials/mechanical/02_STRENGTH_OF_MATERIALS.md` — 재료역학
+- `materials/mechanical/03_MACHINE_DESIGN.md` — 기계설계·기계요소
+- `materials/mechanical/04_THERMODYNAMICS.md` — 열역학
+- `materials/mechanical/05_FLUID_MECHANICS.md` — 유체역학+유체기계 응용
+- `materials/mechanical/06_MANUFACTURING_HYDRAULICS_HEAT.md` — 기계공작·제작법+유압기기+열전달
 
-### 실전 자료
+## 4. NCS 완성 자료
+- `materials/ncs/01_COMMUNICATION_PROBLEM.md` — 의사소통+문제해결
+- `materials/ncs/02_QUANTITATIVE_DEFENSE.md` — 수리 40~50점 방어
+- `materials/ncs/03_OTHER_AREAS.md` — 자원관리·정보·조직이해·대인관계·직업윤리·자기개발·기술능력
+
+## 5. 문제/진단/실전 자료
 - `practice/MECHANICAL_DIAGNOSTIC.md` — 전공 혼합 진단 60문항
-- `practice/NCS_DIAGNOSTIC.md` — NCS 핵심 진단
-- `lessons/DAY01_FULL.md` — 첫날 실제 6시간 수업자료
-- `TRACKER.md` — 점수/속도/오답 기록표
+- `practice/NCS_DIAGNOSTIC.md` — NCS 통합 진단 30문항
+- `practice/INSTITUTION_BLUEPRINTS.md` — 서울/부산/코레일 기관별 실전세트 설계도
+- `lessons/DAY01_FULL.md` — **Day 1 실제 6시간 수업 완성본**
+- `DAY1_PACK.md` — Day 1 자료 설계 근거/구성안
 
-## 전공 학습 순서
+# 전공 학습 순서
 
 1. 기계재료
 2. 재료역학
@@ -54,9 +60,9 @@
 7. 유압기기
 8. 열전달
 
-기계재료 다음에 재료역학을 먼저 두는 이유는 기계설계의 축·나사·키·스프링 등 계산을 단순 공식암기로 만들지 않기 위해서다.
+기계재료 다음에 재료역학을 먼저 두는 이유는 기계설계의 축·나사·키·스프링 계산을 단순 공식암기로 만들지 않기 위해서다.
 
-## NCS 학습 순서
+# NCS 학습 순서
 
 장기 지속축:
 - 의사소통
@@ -74,7 +80,17 @@
 - 대인관계
 - 직업윤리
 
-## 완료 판정
+# 54주 실행 흐름
+
+- Week 1~4: 기계재료 + 재료역학 계산기초
+- Week 5~12: 재료역학 + 기계설계 연결
+- Week 13~19: 기계설계 완성 + 열역학 예열
+- Week 20~27: 열역학
+- Week 28~36: 유체역학 + 유체기계
+- Week 37~46: 기계공작·제작 + 유압 + 열전달 + 추가 NCS
+- Week 47~54: 전범위 혼합 + 서울/부산/코레일 기관별 실전전환
+
+# 완료 판정
 
 한 과목을 완료로 표시하려면 최소 다음을 만족한다.
 
@@ -84,7 +100,7 @@
 4. 핵심공식은 기호만 외우는 것이 아니라 적용조건을 말할 수 있음
 5. 7일 후 재시험에서 정답률 75% 이상 유지
 
-## 80점 전략
+# 80점 전략
 
 80점은 전 범위를 동일한 깊이로 공부한다는 뜻이 아니다.
 
@@ -93,3 +109,7 @@
 - C급: 드문 세부암기·복합계산 — 마지막에 보완한다.
 
 실전에서는 어려운 20%를 모두 풀기보다 **A/B급을 빠르고 안정적으로 회수**하는 것을 우선한다.
+
+# 시작 명령
+
+처음 시작할 때는 `lessons/DAY01_FULL.md`를 그대로 실행한다. 종료 후 `TRACKER.md`에 실제 순공시간·정답률·평균시간·오답코드를 기록하고 `FIRST_4_WEEKS.md`의 Day 2로 이동한다.
