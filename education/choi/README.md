@@ -55,9 +55,10 @@
 처음 시작할 때:
 
 1. [MATERIALS_INDEX.md](./MATERIALS_INDEX.md)
-2. [FIRST_4_WEEKS.md](./FIRST_4_WEEKS.md)
-3. [lessons/DAY01_FULL.md](./lessons/DAY01_FULL.md)
-4. [TRACKER.md](./TRACKER.md)
+2. [WEEKLY_ASSIGNMENTS_54.md](./WEEKLY_ASSIGNMENTS_54.md)
+3. [FIRST_4_WEEKS.md](./FIRST_4_WEEKS.md)
+4. [lessons/DAY01_FULL.md](./lessons/DAY01_FULL.md)
+5. [TRACKER.md](./TRACKER.md)
 
 ## 전공 완성 자료
 
@@ -82,6 +83,7 @@
 ## 운영/근거 문서
 
 - [CURRICULUM.md](./CURRICULUM.md): 장기 로드맵
+- [WEEKLY_ASSIGNMENTS_54.md](./WEEKLY_ASSIGNMENTS_54.md): 1~54주 실제 과제표
 - [MECHANICAL.md](./MECHANICAL.md): 전공 과목별 순서·완료조건
 - [NCS.md](./NCS.md): NCS 영역별 전략·목표시간
 - [WEEKLY_SYSTEM.md](./WEEKLY_SYSTEM.md): 월~금 운영·복습·오답 규칙
