@@ -48,10 +48,11 @@
 
 ## 폴더 구성
 
-- [CURRICULUM.md](./CURRICULUM.md): 1년 장기 로드맵과 단계별 시간 배분
+- [CURRICULUM.md](./CURRICULUM.md): 54주 장기 로드맵과 단계별 시간 배분
 - [MECHANICAL.md](./MECHANICAL.md): 전공 과목별 세부 학습내용·순서·완료조건
 - [NCS.md](./NCS.md): NCS 10영역 세부 전략과 목표시간
 - [WEEKLY_SYSTEM.md](./WEEKLY_SYSTEM.md): 월~금 실제 운영법, 복습·오답·GPT 사용 규칙
+- [FIRST_4_WEEKS.md](./FIRST_4_WEEKS.md): 바로 시작할 수 있는 첫 4주 일자별 실행안
 - [SOURCES.md](./SOURCES.md): 2026년 출제구조 확인 근거와 확인이 필요한 불확실성
 
 ## 이동 규칙
