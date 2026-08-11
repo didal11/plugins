@@ -59,6 +59,7 @@
 3. [FIRST_4_WEEKS.md](./FIRST_4_WEEKS.md)
 4. [lessons/DAY01_FULL.md](./lessons/DAY01_FULL.md)
 5. [TRACKER.md](./TRACKER.md)
+6. 계산복습 시 [FORMULA_SHEET.md](./FORMULA_SHEET.md)
 
 ## 전공 완성 자료
 
@@ -68,6 +69,7 @@
 - [열역학](./materials/mechanical/04_THERMODYNAMICS.md)
 - [유체역학+유체기계](./materials/mechanical/05_FLUID_MECHANICS.md)
 - [기계공작·유압·열전달](./materials/mechanical/06_MANUFACTURING_HYDRAULICS_HEAT.md)
+- [핵심 공식 압축표](./FORMULA_SHEET.md)
 
 ## NCS 완성 자료
 
@@ -75,10 +77,12 @@
 - [수리 40~50점 방어](./materials/ncs/02_QUANTITATIVE_DEFENSE.md)
 - [자원관리·정보·조직·대인·윤리·자기개발·기술](./materials/ncs/03_OTHER_AREAS.md)
 
-## 진단/문제 자료
+## 진단/문제/실전 자료
 
 - [전공 혼합 진단 60문항](./practice/MECHANICAL_DIAGNOSTIC.md)
-- [NCS 통합 진단](./practice/NCS_DIAGNOSTIC.md)
+- [NCS 통합 진단 30문항](./practice/NCS_DIAGNOSTIC.md)
+- [서울·부산·코레일 기관별 실전세트 설계도](./practice/INSTITUTION_BLUEPRINTS.md)
+- [Day 1 실제 6시간 수업](./lessons/DAY01_FULL.md)
 
 ## 운영/근거 문서
 
@@ -87,6 +91,7 @@
 - [MECHANICAL.md](./MECHANICAL.md): 전공 과목별 순서·완료조건
 - [NCS.md](./NCS.md): NCS 영역별 전략·목표시간
 - [WEEKLY_SYSTEM.md](./WEEKLY_SYSTEM.md): 월~금 운영·복습·오답 규칙
+- [TRACKER.md](./TRACKER.md): 일/주/과목별 데이터 추적
 - [MATERIAL_SYSTEM.md](./MATERIAL_SYSTEM.md): 시험역산형 자료 설계 규칙
 - [EXAM_CALIBRATION.md](./EXAM_CALIBRATION.md): 인터넷 자료로 출제형식 보정
 - [SOURCES.md](./SOURCES.md): 2026 출제구조 확인 기록
