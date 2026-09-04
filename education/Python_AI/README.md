@@ -1,5 +1,89 @@
 # Python / AI 교육
 
-Python 기초부터 머신러닝·딥러닝, 온디바이스 AI 실습까지 정리하는 교육 트랙입니다.
+Python으로 CNN을 직접 구성하고 학습한 뒤, 학습된 모델을 LiteRT(TFLite)로 변환하고 추론 성능을 비교하는 학습 프로젝트입니다.
 
-현재 학습 범위와 실습 자료를 단계적으로 추가합니다.
+첫 실습 대상은 TensorFlow Datasets의 `rock_paper_scissors`입니다. 데이터 수집 자체보다 **학습 파이프라인의 구조를 읽고 이해하는 것**에 초점을 둡니다.
+
+## 전체 흐름
+
+```text
+데이터 로드/전처리
+→ CNN 구조 생성
+→ Loss / Optimizer 설정
+→ Training
+→ Test evaluation
+→ Keras model 저장
+→ LiteRT float / INT8 변환
+→ 추론 benchmark
+```
+
+## 구조
+
+```text
+Python_AI/
+├── src/
+│   ├── config.py          # epoch, batch, learning rate 등 공통 설정
+│   ├── data_loader.py     # RPS 데이터 로드/전처리/증강
+│   ├── model.py           # CNN 구조와 compile 설정
+│   ├── train.py           # 실제 학습
+│   ├── evaluate.py        # 학습에 쓰지 않은 test 데이터 평가
+│   ├── inference.py       # 이미지 1장의 실제 추론
+│   ├── export_litert.py   # float / INT8 LiteRT 모델 변환
+│   └── benchmark.py       # LiteRT 추론 정확도·지연시간·크기 비교
+├── requirements.txt
+└── README.md
+```
+
+`models/`와 `results/`는 실행할 때 자동 생성되며 Git에는 올리지 않습니다.
+
+## 실행
+
+`education/Python_AI`에서 실행합니다.
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+
+python -m src.train
+python -m src.evaluate
+python -m src.export_litert
+python -m src.benchmark
+python -m src.inference path/to/image.jpg
+```
+
+TFDS 데이터셋은 첫 실행 시 내려받습니다.
+
+## 지금 공부할 때 볼 부분
+
+Python 7장까지 학습한 상태라면 우선 다음 연결만 확인합니다.
+
+- `config.py`: 이름 바인딩과 상수처럼 사용하는 설정값
+- `model.py`: 함수 정의/호출, 객체 생성, 메서드 호출, 키워드 인자
+- `train.py`: 함수를 나눠 프로그램을 구성하는 방법
+- `model.fit(...)`: 우리가 학습 조건을 주고, TensorFlow/Keras가 실제 역전파와 weight 갱신을 수행하는 경계
+
+이후 `if`, `for`, comprehension, class, module을 배우면 `data_loader.py`, `benchmark.py`까지 순서대로 읽습니다.
+
+## 사람과 라이브러리의 역할
+
+사람이 정하는 것:
+
+- CNN 구조
+- learning rate / epoch / batch size
+- loss / optimizer
+- 데이터 증강과 early stopping 같은 과적합 대응
+- 어떤 기준으로 평가·벤치마크할지
+
+TensorFlow/Keras가 수행하는 것:
+
+- forward 계산
+- loss 실제 계산
+- 미분과 backpropagation
+- optimizer에 따른 weight 갱신
+- CPU/GPU에서의 수치 연산
+
+## 주의
+
+이 코드는 학습용 의사코드가 아니라 실제 실행을 목표로 작성했습니다. 다만 실행 머신의 TensorFlow 버전과 하드웨어 환경에 따라 설치·LiteRT 변환 호환성은 달라질 수 있습니다.
